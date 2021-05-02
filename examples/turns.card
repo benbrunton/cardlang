@@ -1,15 +1,10 @@
 name turns
-set deck as StandardDeck
-set players as Players(2)
-set current_player as 1
-
+deck StandardDeck
+players 2
+current_player 1
 stack middle
 
 define setup(){
-    reset deck
-    reset players
-    reset current_player
-    clear middle
     deck > players alt end
 }
 

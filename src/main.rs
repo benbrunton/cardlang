@@ -2,7 +2,9 @@ use std::io::{stdin, stdout, Write};
 use std::fs;
 
 mod lex;
+mod parse;
 mod token;
+mod ast;
 
 struct Game;
 

@@ -3,12 +3,14 @@ use crate::token::Token;
 enum TokenResult {
     Token(Token),
     PartialToken(String),
-    Empty
+    Empty,
+    Error
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum LexErrorType{
-    EmptySpecification
+    EmptySpecification,
+    ParseError
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -48,6 +50,10 @@ pub fn lexer(source: &str) -> Result<Vec<Token>, LexError> {
             },
             TokenResult::Empty => {
                 partial_token = None;
+            },
+            TokenResult::Error => {
+                let lex_error = LexError::new(LexErrorType::ParseError);
+                return Err(lex_error);
             }
         }
     }
@@ -64,16 +70,32 @@ pub fn lexer(source: &str) -> Result<Vec<Token>, LexError> {
 fn handle_char(partial_token: &Option<String>, current_char: char, next_char: Option<&char>) -> TokenResult {
     match partial_token {
         None => {
-            if current_char == ' ' {
-                TokenResult::Empty
-            } else {
-                handle_partial(current_char.to_string(), next_char)
+            let single_char = handle_single_chars(current_char);
+            if single_char.is_some() {
+                return single_char.expect("should have a single char");
             }
+            
+            handle_partial(current_char.to_string(), next_char)
         },
         Some(x) => {
             let new_partial = format!("{}{}", x, current_char);
             handle_partial(new_partial, next_char)
         }
+    }
+}
+
+fn handle_single_chars(current_char: char) -> Option<TokenResult> {
+    match current_char {
+        '(' => Some(TokenResult::Token(Token::OpenParens)),
+        ')' => Some(TokenResult::Token(Token::CloseParens)),
+        ' ' => Some(TokenResult::Empty),
+        ',' => Some(TokenResult::Token(Token::Comma)),
+        '{' => Some(TokenResult::Token(Token::OpenBracket)),
+        '}' => Some(TokenResult::Token(Token::CloseBracket)),
+        '>' => Some(TokenResult::Token(Token::Transfer)),
+        '\n' => Some(TokenResult::Token(Token::Newline)),
+        '.' => Some(TokenResult::PartialToken(current_char.to_string())),
+        _ => None
     }
 }
 
@@ -85,7 +107,7 @@ fn handle_partial(current_partial: String, next_char: Option<&char>) -> TokenRes
     }
 
     if is_word_finished(next_char) {
-        return TokenResult::Token(Token::Symbol(current_partial));
+        return resolve_partial(current_partial);
     }
 
     TokenResult::PartialToken(current_partial)
@@ -98,16 +120,44 @@ fn handle_keyword(partial_token: &str, next_char: Option<&char>) -> Option<Token
 
     match partial_token {
         "name" => Some(TokenResult::Token(Token::Name)),
-        "set" => Some(TokenResult::Token(Token::Set)),
-        "as" => Some(TokenResult::Token(Token::As)),
         "stack" => Some(TokenResult::Token(Token::Stack)),
+        "deck" => Some(TokenResult::Token(Token::Deck)),
+        "players" => Some(TokenResult::Token(Token::Players)),
+        "current_player" => Some(TokenResult::Token(Token::CurrentPlayer)),
+        "define" => Some(TokenResult::Token(Token::Define)),
+        "check" => Some(TokenResult::Token(Token::Check)),
+        "is" => Some(TokenResult::Token(Token::Is)),
+        "if" => Some(TokenResult::Token(Token::If)),
         _ => None
     }
 }
 
+fn resolve_partial(partial_token: String) -> TokenResult {
+    let mut chars = partial_token.chars();
+    let first = chars.next().expect("unable to find first char in partial token");
+    match first {
+        'A'..='z' => TokenResult::Token(Token::Symbol(partial_token)),
+        '.' => {
+            match chars.last() {
+                Some(')') => TokenResult::Empty,
+                _ => TokenResult::PartialToken(partial_token)
+            }
+        },
+        _ => {
+            let parse_result = partial_token.parse::<f64>();
+            match parse_result {
+                Ok(float) => TokenResult::Token(Token::Number(float)),
+                _ => TokenResult::Error
+            }
+            
+        }
+    }
+    
+}
+
 fn is_word_finished(next_char: Option<&char>) -> bool {
     match next_char {
-        Some('A'..='z') | Some('_') => {
+        Some('A'..='z') | Some('_') | Some('0'..='9')=> {
             false
         },
         _ => true
@@ -136,30 +186,33 @@ mod test{
     }
 
     #[test]
-    fn it_recognises_the_set_token() {
-        let src = "set";
-        let result = lexer(&src).unwrap();
-
-        assert_eq!(result[0], Token::Set);
-        assert_eq!(result.len(), 1);
-    }
-
-    #[test]
-    fn it_recognises_the_as_token() {
-        let src = "as";
-        let result = lexer(&src).unwrap();
-
-        assert_eq!(result[0], Token::As);
-        assert_eq!(result.len(), 1);
-    }
-
-    #[test]
     fn it_recognises_the_stack_token() {
         let src = "stack";
         let result = lexer(&src).unwrap();
 
         assert_eq!(result[0], Token::Stack);
         assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn it_recognises_the_deck_keyword() {
+        let src = "deck";
+        let result = lexer(&src).unwrap();
+
+        assert_eq!(result[0], Token::Deck);
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn it_recognises_keywords(){
+        let src = "deck players stack current_player define";
+        let result = lexer(&src).unwrap();
+
+        assert_eq!(result[0], Token::Deck);
+        assert_eq!(result[1], Token::Players);
+        assert_eq!(result[2], Token::Stack);
+        assert_eq!(result[3], Token::CurrentPlayer);
+        assert_eq!(result[4], Token::Define);
     }
 
     #[test]
@@ -180,14 +233,111 @@ mod test{
 
     #[test]
     fn it_handles_full_lines() {
-        let src = "set deck as StandardDeck";
+        let src = "deck StandardDeck";
         let result = lexer(&src).unwrap();
         let expected = vec!(
-            Token::Set,
-            Token::Symbol("deck".to_owned()),
-            Token::As,
+            Token::Deck,
             Token::Symbol("StandardDeck".to_owned())
         );
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn it_handles_open_parens() {
+        let src = "(";
+        let result = lexer(&src).unwrap();
+        let expected = vec!(Token::OpenParens);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn it_handles_close_parens() {
+        let src = ")";
+        let result = lexer(&src).unwrap();
+        let expected = vec!(Token::CloseParens);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn it_handles_comma() {
+        let src = ",";
+        let result = lexer(&src).unwrap();
+        let expected = vec!(Token::Comma);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn it_handles_brackets() {
+        let src = "{}";
+        let result = lexer(&src).unwrap();
+        let expected = vec!(Token::OpenBracket, Token::CloseBracket);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn it_handles_transfer() {
+        let src = ">";
+        let result = lexer(&src).unwrap();
+        let expected = vec!(Token::Transfer);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn it_handles_check_and_is() {
+        let src = "check cards is fun";
+        let result = lexer(&src).unwrap();
+        let expected = vec!(
+            Token::Check, Token::Symbol("cards".to_owned()),
+            Token::Is, Token::Symbol("fun".to_owned())
+        );
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn it_handles_if(){
+        let src ="if";
+        let result = lexer(&src).unwrap();
+        let expected = vec!(Token::If);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn it_handles_numbers(){
+        let src ="1";
+        let result = lexer(&src).unwrap();
+        let expected = vec!(Token::Number(1.0));
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn symbols_cant_start_with_a_num() {
+        let src = "1foo";
+        let result = lexer(&src).unwrap_err();
+
+        assert_eq!(result.error_type, LexErrorType::ParseError);
+    }
+
+    #[test]
+    fn symbols_can_contain_a_num() {
+        let src = "foo1";
+        let result = lexer(&src).unwrap();
+
+        assert_eq!(result[0], Token::Symbol("foo1".to_owned()));
+    }
+
+    #[test]
+    fn newlines_are_tokenised() {
+        let src = "\n";
+        let result = lexer(&src).unwrap();
+
+        assert_eq!(result[0], Token::Newline);
+    }
+
+    #[test]
+    fn it_ignores_comments() {
+        let src = "name .( this is a comment ) test1";
+        let result = lexer(&src).unwrap();
+        let expected = vec!(Token::Name, Token::Symbol("test1".to_owned()));
         assert_eq!(result, expected);
     }
 }

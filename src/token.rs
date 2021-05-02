@@ -2,7 +2,20 @@
 pub enum Token {
     Name,
     Symbol(String),
-    Set,
-    As,
-    Stack
+    Number(f64),
+    Stack,
+    Deck,
+    Players,
+    CurrentPlayer,
+    Define,
+    OpenParens,
+    CloseParens,
+    Comma,
+    OpenBracket,
+    CloseBracket,
+    Transfer,
+    Check,
+    Is,
+    If,
+    Newline
 }
