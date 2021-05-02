@@ -1,5 +1,8 @@
 use std::fmt;
 
+mod player;
+pub use player::*;
+
 #[derive(Debug, Copy, Clone)]
 pub enum Suit {
     Spades,
