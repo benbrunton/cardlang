@@ -3,7 +3,9 @@ use crate::ast::*;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum ParseError{
-    ExpectedSymbol
+    ExpectedSymbol,
+    UnexpectedEndOfStream,
+    UnexpectedToken
 }
 
 pub fn parse(tokens: Vec<Token>) -> Result<Vec<Statement>, ParseError> {
@@ -45,7 +47,7 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Statement>, ParseError> {
                         let statement = Statement::Transfer(transfer);
                         ast.push(statement);
                     },
-                    _ => { /* todo - error */ }
+                    _ => { return Err(ParseError::UnexpectedToken); }
                 }
             },
             Some(Token::Define) => {
@@ -57,7 +59,33 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Statement>, ParseError> {
                     }
                 };
 
-                let definition = Definition{ name, body: vec!() };
+                // parens
+                tokens_iter.next();
+                tokens_iter.next();
+
+                // bracket
+                tokens_iter.next();
+
+                let mut body_tokens = vec!();
+
+                loop {
+                    match tokens_iter.next() {
+                        Some(Token::CloseBracket) => {
+                            break;
+                        },
+                        Some(t) => {
+                            body_tokens.push(t.clone());
+                        },
+                        None => return Err(ParseError::UnexpectedEndOfStream)
+                    }
+                }
+
+                let body = match parse(body_tokens) {
+                    Ok(v) => v,
+                    Err(e) => { return Err(e); }
+                };
+
+                let definition = Definition{ name, body };
                 let statement = Statement::Definition(definition);
                 ast.push(statement);
             },
@@ -281,5 +309,93 @@ mod test{
         let result = parse(tokens);
 
         assert_eq!(result, expected);
+    }
+
+    /*
+    define setup(){
+        deck > players alt end
+    }
+    */
+    #[test]
+    fn it_can_handle_function_body() {
+        let tokens = vec!(
+            Token::Define,
+            Token::Symbol("setup".to_owned()),
+            Token::OpenParens,
+            Token::CloseParens,
+            Token::OpenBracket,
+            Token::Deck,
+            Token::Transfer,
+            Token::Players,
+            Token::Symbol("alt".to_owned()),
+            Token::Symbol("end".to_owned()),
+            Token::Newline,
+            Token::CloseBracket
+        );
+
+        let from = "deck".to_owned();
+        let to = "players".to_owned();
+        let modifier = Some(TransferModifier::Alternate);
+        let count = Some(TransferCount::End);
+        let transfer = Transfer{ from, to, modifier, count };
+        let transfer_statement = Statement::Transfer(transfer);
+
+        let name = "setup".to_owned();
+        let body = vec!(transfer_statement);
+        let definition = Definition{ name, body };
+        let statement = Statement::Definition(definition);
+        let expected = vec!(statement);
+        let result = parse(tokens);
+
+        assert_eq!(Ok(expected), result);
+    }
+
+    #[test]
+    fn it_returns_error_for_incomplete_function_body() {
+        let tokens = vec!(
+            Token::Define,
+            Token::Symbol("setup".to_owned()),
+            Token::OpenParens,
+            Token::CloseParens,
+            Token::OpenBracket
+        );
+
+        let expected = Err(ParseError::UnexpectedEndOfStream);
+        let result = parse(tokens);
+
+        assert_eq!(expected, result);
+    }
+
+    
+    #[test]
+    fn it_returns_error_for_invalid_function_body() {
+        let tokens = vec!(
+            Token::Define,
+            Token::Symbol("setup".to_owned()),
+            Token::OpenParens,
+            Token::CloseParens,
+            Token::OpenBracket,
+            Token::Define,
+            Token::Newline,
+            Token::CloseBracket
+        );
+
+        let expected = Err(ParseError::ExpectedSymbol);
+        let result = parse(tokens);
+
+        assert_eq!(expected, result);
+    }
+
+    #[test]
+    fn deck_must_be_followed_by_a_symbol_or_transfer() {
+        let tokens = vec!(
+            Token::Deck,
+            Token::Players
+        );
+
+        let expected = Err(ParseError::UnexpectedToken);
+        let result = parse(tokens);
+
+        assert_eq!(expected, result);
     }
 }

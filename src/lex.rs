@@ -340,4 +340,13 @@ mod test{
         let expected = vec!(Token::Name, Token::Symbol("test1".to_owned()));
         assert_eq!(result, expected);
     }
+
+    #[test]
+    fn comments_can_be_multiline() {
+        let src = "name .( 
+this is a comment ) test2";
+        let result = lexer(&src).unwrap();
+        let expected = vec!(Token::Name, Token::Symbol("test2".to_owned()));
+        assert_eq!(result, expected);
+    }
 }

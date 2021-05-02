@@ -8,6 +8,7 @@ define setup(){
     deck > players alt end
 }
 
+.(
 define player_move(move, player){
     check player id is current_player
     player hand > middle
@@ -19,3 +20,4 @@ define player_move(move, player){
 
     rotate_players()
 }
+)
