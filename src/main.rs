@@ -6,6 +6,7 @@ mod parse;
 mod token;
 mod ast;
 mod interpreter;
+mod cards;
 
 use interpreter::Game;
 
@@ -13,12 +14,13 @@ use interpreter::Game;
 enum CommandResult {
     Game(Game),
     CommandFailed,
-    Exit
+    Exit,
+    Show(String)
 }
 
 fn main() {
     println!("Cardlang interpreter");
-    let mut _game;
+    let mut game: Option<Game> = None;
 
     loop {
         print!("> ");
@@ -28,12 +30,12 @@ fn main() {
         stdin().read_line(&mut input).unwrap();
 
         let command = input.trim().split(' ').collect();
-
         let command_result = handle_command(command);
         
         match command_result {
             CommandResult::Exit => break,
-            CommandResult::Game(g) => _game = g,
+            CommandResult::Game(g) => game = Some(g),
+            CommandResult::Show(c) => handle_show(&game, &c),
             _ => ()
         }
     }
@@ -43,7 +45,18 @@ fn handle_command(command: Vec<&str>) -> CommandResult {
     match command[0] {
         "exit" => CommandResult::Exit,
         "build" => build_game(command),
+        "show" => {
+            let display_list = &command[1..];
+            CommandResult::Show(display_list.join(" "))
+        },
         _ => unrecognised_command()
+    }
+}
+
+fn handle_show(game: &Option<Game>, display: &str){
+    match game {
+        Some(g) => println!("{}", g.show(display)),
+        _ => println!("No game has been loaded")
     }
 }
 
