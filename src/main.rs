@@ -5,8 +5,10 @@ mod lex;
 mod parse;
 mod token;
 mod ast;
+mod interpreter;
 
-struct Game;
+use interpreter::Game;
+
 
 enum CommandResult {
     Game(Game),
@@ -16,7 +18,7 @@ enum CommandResult {
 
 fn main() {
     println!("Cardlang interpreter");
-    let mut game;
+    let mut _game;
 
     loop {
         print!("> ");
@@ -31,7 +33,7 @@ fn main() {
         
         match command_result {
             CommandResult::Exit => break,
-            CommandResult::Game(g) => game = g,
+            CommandResult::Game(g) => _game = g,
             _ => ()
         }
     }
@@ -59,14 +61,33 @@ fn build_game(command: Vec<&str>) -> CommandResult {
     }
 
     let game = parse_game(file_result.expect("unable to read file"));
-    CommandResult::Game(game)
+
+    match game {
+        Some(g) => CommandResult::Game(g),
+        None => CommandResult::CommandFailed 
+    }
 }
 
-fn parse_game(source: String) -> Game {
-    let tokens = lex::lexer(&source);
+fn parse_game(source: String) -> Option<Game> {
+    let lex_result = lex::lexer(&source);
+    if lex_result.is_err() {
+        println!("parse error: {:?}", lex_result.unwrap_err());
+        return None;
+    }
 
+    let tokens = lex_result.expect("unable to unwrap tokens");
+
+    let parse_result = parse::parse(tokens);
+
+    if parse_result.is_err() {
+        println!("parse error: {:?}", parse_result.unwrap_err());
+        return None;
+    }
+
+    let ast = parse_result.expect("unable to unwrap ast!");
+    let game = Game::new(ast);
     println!("Game loaded");
-    Game
+    Some(game)
 }
 
 fn unrecognised_command() -> CommandResult {

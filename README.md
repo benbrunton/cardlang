@@ -7,6 +7,8 @@ A DSL for specifying card games
 cardlang
 > build ./gamedef.card
 > load ./gamestate
-> players[current_player] hand
-> three hearts, four diamonds, five clubs
+> show deck
+ace spades, two spades, three spades...
+> show players[current_player] hand
+three hearts, four diamonds, five clubs
 ```

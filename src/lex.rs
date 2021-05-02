@@ -138,9 +138,27 @@ fn resolve_partial(partial_token: String) -> TokenResult {
     match first {
         'A'..='z' => TokenResult::Token(Token::Symbol(partial_token)),
         '.' => {
-            match chars.last() {
-                Some(')') => TokenResult::Empty,
-                _ => TokenResult::PartialToken(partial_token)
+            match chars.next() {
+                // comments
+                Some('(') => {
+                    let mut open_count = 0;
+                    loop {
+                        match chars.next() {
+                            Some('(') => open_count += 1,
+                            Some(')') => {
+                                if open_count == 0 {
+                                    return TokenResult::Empty;
+                                }
+
+                                open_count -= 1;
+                            },
+                            None => break,
+                            _ => ()
+                        }
+                    }
+                    TokenResult::PartialToken(partial_token)
+                },
+                _ => TokenResult::Error
             }
         },
         _ => {
@@ -157,7 +175,7 @@ fn resolve_partial(partial_token: String) -> TokenResult {
 
 fn is_word_finished(next_char: Option<&char>) -> bool {
     match next_char {
-        Some('A'..='z') | Some('_') | Some('0'..='9')=> {
+        Some('A'..='z') | Some('0'..='9')=> {
             false
         },
         _ => true
@@ -348,5 +366,21 @@ this is a comment ) test2";
         let result = lexer(&src).unwrap();
         let expected = vec!(Token::Name, Token::Symbol("test2".to_owned()));
         assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn comments_can_contain_parens() {
+        let src = "name .(()) test2";
+        let result = lexer(&src).unwrap();
+        let expected = vec!(Token::Name, Token::Symbol("test2".to_owned()));
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn symbols_can_contain_underscores() {
+        let src = "hello_world";
+        let result = lexer(&src).unwrap();
+
+        assert_eq!(result[0], Token::Symbol("hello_world".to_owned()));
     }
 }
