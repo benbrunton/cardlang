@@ -1,5 +1,6 @@
 use crate::ast::*;
 use crate::cards::{standard_deck, Card, Player};
+use std::fmt::Display;
 
 
 
@@ -11,7 +12,7 @@ pub struct Game {
 
 impl Game {
     pub fn new(ast: Vec<Statement>) -> Game {
-        let mut deck = standard_deck();
+        let deck = standard_deck();
         let mut name = None;
         let mut players = vec!();
 
@@ -25,6 +26,14 @@ impl Game {
                 ) => {
                     name = Some(v.to_string());
                 },
+                Statement::Declaration(
+                    Declaration{
+                        key: GlobalKey::Players,
+                        value: Expression::Number(n)
+                    }
+                ) => {
+                    players = Self::generate_players(*n as i32);
+                },
                 _ => ()
             }
         }
@@ -34,14 +43,11 @@ impl Game {
 
     pub fn show(&self, key: &str) -> String {
         match key {
-            "deck" => self.display_deck(),
+            "deck" => Self::display_list(&self.deck),
             "name" => self.display_name(),
+            "players" => Self::display_list(&self.players),
             _ => format!("Unknown item: {}", key)
         }
-    }
-
-    fn display_deck(&self) -> String {
-        self.deck.iter().map(|x|x.to_string()).collect::<Vec<String>>().join(", ")
     }
 
     fn display_name(&self) -> String {
@@ -49,6 +55,20 @@ impl Game {
             Some(name) => name.to_string(),
             None => "Name not initalised!".to_string() // TODO - Error? Default? 
          }
+    }
+    
+    fn display_list<D: Display>(list: &Vec<D>) -> String {
+        list.iter().map(|x|x.to_string()).collect::<Vec<String>>().join(", ")
+    }
+
+    fn generate_players(n: i32) -> Vec<Player>{
+        let mut players = vec!();
+        for i in 0..n {
+            players.push(
+                Player::new(i + 1)
+            );
+        }
+        players
     }
 }
 
@@ -90,5 +110,39 @@ mod test{
         let name = game.show("name");
 
         assert_eq!(name, "turns".to_string());
+    }
+
+    #[test]
+    fn it_can_display_players() {
+        let ast = vec!(
+            Statement::Declaration(
+                Declaration {
+                    key: GlobalKey::Players,
+                    value: Expression::Number(3.0)
+                }
+            )
+        );
+
+        let game = Game::new(ast);
+        let players = game.show("players");
+
+        assert_eq!(players, "player 1, player 2, player 3".to_string());
+    }
+
+    #[test]
+    fn it_can_display_a_single_player() {
+        let ast = vec!(
+            Statement::Declaration(
+                Declaration {
+                    key: GlobalKey::Players,
+                    value: Expression::Number(1.0)
+                }
+            )
+        );
+
+        let game = Game::new(ast);
+        let players = game.show("players");
+
+        assert_eq!(players, "player 1".to_string());
     }
 }
