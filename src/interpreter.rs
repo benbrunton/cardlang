@@ -17,13 +17,22 @@ pub enum TransferTarget {
     StackList(Vec<Stack>)
 }
 
+impl TransferTarget {
+    pub fn count(&self) -> usize {
+        match self {
+            TransferTarget::Stack(s) => s.len(),
+            TransferTarget::StackList(s) => s.len()
+        }
+    }
+}
+
 type Stack = Vec<Card>;
 
 impl Game {
     pub fn new(ast: Vec<Statement>) -> Game {
         let deck = vec!();
-        let mut name = None;
-        let mut players = vec!();
+        let name = None;
+        let players = vec!();
         let mut setup = vec!();
 
         for statement in ast.iter() {
@@ -81,8 +90,21 @@ impl Game {
             "deck" => Self::display_list(&self.deck),
             "name" => self.display_name(),
             "players" => Self::display_list(&self.players),
+            _ => self.check_exploded_show(key)
+        }
+    }
+
+    fn check_exploded_show(&self, key: &str) -> String {
+        let instructions: Vec<&str> = key.split(" ").collect();
+        match instructions[0] {
+            "player" => self.handle_show_player(instructions),
             _ => format!("Unknown item: {}", key)
         }
+    }
+
+    fn handle_show_player(&self, args: Vec<&str>) -> String {
+        let player_num = args[1].parse::<usize>().unwrap_or(1) - 1;
+        Self::display_list(&self.players[player_num].get_hand())
     }
 
     pub fn start(&mut self) {
@@ -133,25 +155,51 @@ impl Game {
         let mut from = self.get_stack(&transfer.from);
         let mut to = self.get_stack(&transfer.to);
 
-        let card_result = match from {
-            Some(TransferTarget::Stack(ref mut s)) => s.pop(),
-            _ => None
+        let mut count = match transfer.count {
+            None => 1,
+            Some(TransferCount::End) => from.as_ref().unwrap().count()
         };
 
-        // todo - error?
-        if card_result.is_none() {
-            return;
-        }
+        // multiply by number of target stacks
+        count *= match &to {
+            Some(TransferTarget::Stack(_)) => 1,
+            Some(TransferTarget::StackList(s)) => s.len(),
+            _ => 0
+        };
 
-        if to.is_none() {
-            return;
-        }
+        let mut transfer_index = 0;
 
-        let card = card_result.expect("unable to get card");
+        while count > 0 {
 
-        match to {
-            Some(TransferTarget::StackList(ref mut s)) => s[0].push(card),
-            _ => ()
+            let card_result = match from {
+                Some(TransferTarget::Stack(ref mut s)) => s.pop(),
+                _ => None
+            };
+
+            // todo - error?
+            if card_result.is_none() {
+                break;
+            }
+
+            if to.is_none() {
+                return;
+            }
+
+            let card = card_result.expect("unable to get card");
+
+            match to {
+                Some(TransferTarget::StackList(ref mut s)) => {
+                    s[transfer_index].push(card);
+                    if transfer_index >= s.len() - 1 {
+                        transfer_index = 0;
+                    } else {
+                        transfer_index += 1
+                    }
+                },
+                _ => ()
+            }
+
+            count -= 1;
         }
 
         self.set_stack(&transfer.from, from.expect("unable to find stack (from)"));
@@ -253,13 +301,13 @@ mod test{
         let game = Game::new(ast);
         let players = game.show("players");
 
-        assert_eq!(players, "player 1, player 2, player 3".to_string());
+        assert_eq!(players, "player 1 (cards: 0), player 2 (cards: 0), player 3 (cards: 0)".to_string());
     }
 
     #[test]
     fn it_can_display_a_single_player() {
         let ast = vec!(
-            Statement::Declaration(
+            Statement::Declaration (
                 Declaration {
                     key: GlobalKey::Players,
                     value: Expression::Number(1.0)
@@ -270,7 +318,7 @@ mod test{
         let game = Game::new(ast);
         let players = game.show("players");
 
-        assert_eq!(players, "player 1".to_string());
+        assert_eq!(players, "player 1 (cards: 0)".to_string());
     }
 
     #[test]
@@ -285,8 +333,8 @@ mod test{
         );
         let from = "deck".to_owned();
         let to = "players".to_owned();
-        let modifier = None; //Some(TransferModifier::Alternate);
-        let count = None; //Some(TransferCount::End);
+        let modifier = None;
+        let count = None;
         let transfer = Transfer{ from, to, modifier, count };
         let transfer_statement = Statement::Transfer(transfer);
 
@@ -303,7 +351,7 @@ mod test{
         let deck = game.show("deck");
         let split_deck: Vec<&str> = deck.split(",").collect();
 
-        assert_eq!(split_deck.len(), 51);
+        assert_eq!(split_deck.len(), 49);
     }
 
     #[test]
@@ -318,8 +366,8 @@ mod test{
         );
         let from = "deck".to_owned();
         let to = "players".to_owned();
-        let modifier = None; //Some(TransferModifier::Alternate);
-        let count = None; //Some(TransferCount::End);
+        let modifier = None;
+        let count = None;
         let transfer = Transfer{ from, to, modifier, count };
         let transfer_statement = Statement::Transfer(transfer);
 
@@ -337,6 +385,102 @@ mod test{
         let deck = game.show("deck");
         let split_deck: Vec<&str> = deck.split(",").collect();
 
-        assert_eq!(split_deck.len(), 51);
+        assert_eq!(split_deck.len(), 49);
+    }
+
+    #[test]
+    fn it_deals_to_the_end_with_the_count_modifier() {
+        let mut ast = vec!(
+            Statement::Declaration(
+                Declaration {
+                    key: GlobalKey::Players,
+                    value: Expression::Number(3.0)
+                }
+            )
+        );
+        let from = "deck".to_owned();
+        let to = "players".to_owned();
+        let modifier = None; //Some(TransferModifier::Alternate);
+        let count = Some(TransferCount::End);
+        let transfer = Transfer{ from, to, modifier, count };
+        let transfer_statement = Statement::Transfer(transfer);
+
+        let name = "setup".to_owned();
+        let body = vec!(transfer_statement);
+        let definition = Definition{ name, body };
+        let statement = Statement::Definition(definition);
+
+        ast.push(statement);
+
+        let mut game = Game::new(ast);
+        game.start();
+
+        let deck = game.show("deck");
+        assert_eq!(&deck, "");
+    }
+
+    #[test]
+    fn it_can_show_player_hand(){
+        let mut ast = vec!(
+            Statement::Declaration(
+                Declaration {
+                    key: GlobalKey::Players,
+                    value: Expression::Number(1.0)
+                }
+            )
+        );
+        let from = "deck".to_owned();
+        let to = "players".to_owned();
+        let modifier = None; //Some(TransferModifier::Alternate);
+        let count = None;
+        let transfer = Transfer{ from, to, modifier, count };
+        let transfer_statement = Statement::Transfer(transfer);
+
+        let name = "setup".to_owned();
+        let body = vec!(transfer_statement);
+        let definition = Definition{ name, body };
+        let statement = Statement::Definition(definition);
+
+        ast.push(statement);
+
+        let mut game = Game::new(ast);
+        game.start();
+
+        let hand = game.show("player 1 hand");
+        assert_eq!(&hand, "king diamonds");
+    }
+
+    #[test]
+    fn it_can_show_multiple_player_hand(){
+        let mut ast = vec!(
+            Statement::Declaration(
+                Declaration {
+                    key: GlobalKey::Players,
+                    value: Expression::Number(2.0)
+                }
+            )
+        );
+        let from = "deck".to_owned();
+        let to = "players".to_owned();
+        let modifier = None; //Some(TransferModifier::Alternate);
+        let count = None;
+        let transfer = Transfer{ from, to, modifier, count };
+        let transfer_statement = Statement::Transfer(transfer);
+
+        let name = "setup".to_owned();
+        let body = vec!(transfer_statement);
+        let definition = Definition{ name, body };
+        let statement = Statement::Definition(definition);
+
+        ast.push(statement);
+
+        let mut game = Game::new(ast);
+        game.start();
+
+        let show_players = game.show("players");
+        assert_eq!(&show_players, "player 1 (cards: 1), player 2 (cards: 1)");
+
+        let hand = game.show("player 2 hand");
+        assert_eq!(&hand, "queen diamonds");
     }
 }

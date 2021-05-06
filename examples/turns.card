@@ -6,7 +6,7 @@ stack middle
 
 define setup(){
     .(shuffle(deck))
-    deck > players alt end
+    deck > players end
 }
 
 .(

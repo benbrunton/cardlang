@@ -21,7 +21,6 @@ enum CommandResult {
 fn main() {
     println!("Cardlang interpreter");
     let mut game: Option<Game> = None;
-    let mut game_loaded = false;
 
     loop {
         print!("> ");
