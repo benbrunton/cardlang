@@ -1,14 +1,23 @@
 use super::*;
 use std::fmt;
 
+#[derive(Debug, Clone)]
 pub struct Player {
     id: i32,
-    _hand: Vec<Card>
+    hand: Vec<Card>
 }
 
 impl Player{
     pub fn new(id: i32) -> Player {
-        Player { _hand: vec!(), id }
+        Player { hand: vec!(), id }
+    }
+
+    pub fn get_hand(&self) -> Vec<Card> {
+        self.hand.clone()
+    }
+
+    pub fn set_hand(&mut self, hand: Vec<Card>) {
+        self.hand = hand;
     }
 }
 
