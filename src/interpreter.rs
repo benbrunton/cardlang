@@ -1,7 +1,7 @@
 use crate::ast::*;
 use crate::cards::{standard_deck, Card, Player};
 use std::fmt::Display;
-
+use crate::runtime::transfer::{transfer, TransferTarget, Stack};
 
 #[derive(Clone)]
 pub struct Game {
@@ -11,22 +11,6 @@ pub struct Game {
     setup: Vec<Statement>,
     ast: Vec<Statement>
 }
-
-pub enum TransferTarget {
-    Stack(Stack),
-    StackList(Vec<Stack>)
-}
-
-impl TransferTarget {
-    pub fn count(&self) -> usize {
-        match self {
-            TransferTarget::Stack(s) => s.len(),
-            TransferTarget::StackList(s) => s.len()
-        }
-    }
-}
-
-type Stack = Vec<Card>;
 
 impl Game {
     pub fn new(ast: Vec<Statement>) -> Game {
@@ -129,81 +113,19 @@ impl Game {
     }
 
     // todo - handle failures
-    fn handle_transfer(&mut self, transfer: &Transfer) {
-        /*
-            Transfer {
-                pub from: String,
-                pub to: String,
-                pub modifier: Option<TransferModifier>,
-                pub count: Option<TransferCount>
-            }
+    fn handle_transfer(&mut self, t: &Transfer) {
+        let mut from = self.get_stack(&t.from);
+        let mut to = self.get_stack(&t.to);
 
-            find from stack
-            find to stack (if list then stack list)
+        let transfer_result = transfer(to, from, t.count.as_ref());
 
-            move card from from to to
-
-            set from to new from
-            set to to new to
-
-        let mut count = 0;
-        loop {
-            match transfer.count
-        }
-        */
-
-        let mut from = self.get_stack(&transfer.from);
-        let mut to = self.get_stack(&transfer.to);
-
-        let mut count = match transfer.count {
-            None => 1,
-            Some(TransferCount::End) => from.as_ref().unwrap().count()
+        let (new_from, new_to) = match transfer_result {
+            Some((a, b)) => (a, b),
+            _ => return
         };
 
-        // multiply by number of target stacks
-        count *= match &to {
-            Some(TransferTarget::Stack(_)) => 1,
-            Some(TransferTarget::StackList(s)) => s.len(),
-            _ => 0
-        };
-
-        let mut transfer_index = 0;
-
-        while count > 0 {
-
-            let card_result = match from {
-                Some(TransferTarget::Stack(ref mut s)) => s.pop(),
-                _ => None
-            };
-
-            // todo - error?
-            if card_result.is_none() {
-                break;
-            }
-
-            if to.is_none() {
-                return;
-            }
-
-            let card = card_result.expect("unable to get card");
-
-            match to {
-                Some(TransferTarget::StackList(ref mut s)) => {
-                    s[transfer_index].push(card);
-                    if transfer_index >= s.len() - 1 {
-                        transfer_index = 0;
-                    } else {
-                        transfer_index += 1
-                    }
-                },
-                _ => ()
-            }
-
-            count -= 1;
-        }
-
-        self.set_stack(&transfer.from, from.expect("unable to find stack (from)"));
-        self.set_stack(&transfer.to, to.expect("unable to find stack (to)"));
+        self.set_stack(&t.from, new_from);
+        self.set_stack(&t.to, new_to);
     }
 
     fn get_stack(&self, stack_key: &str) -> Option<TransferTarget> {
@@ -216,19 +138,12 @@ impl Game {
 
     fn set_stack(&mut self, stack_key: &str, stack: TransferTarget) {
         match stack_key {
-            "deck" => self.deck = Self::get_stack_from_transfer(&stack, 0),
+            "deck" => self.deck = stack.get_stack(0),
             "players" => self.players.iter_mut().enumerate().for_each(|(n, p)| {
-                let new_hand = Self::get_stack_from_transfer(&stack, n);
+                let new_hand = stack.get_stack(n);
                 p.set_hand(new_hand)
             }),
             _ => ()
-        }
-    }
-
-    fn get_stack_from_transfer(stack: &TransferTarget, n: usize) -> Stack {
-        match stack {
-            TransferTarget::Stack(s) => s.clone(),
-            TransferTarget::StackList(s) => s[n].clone()
         }
     }
 
