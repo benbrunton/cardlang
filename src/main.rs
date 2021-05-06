@@ -10,17 +10,18 @@ mod cards;
 
 use interpreter::Game;
 
-
 enum CommandResult {
     Game(Game),
     CommandFailed,
     Exit,
-    Show(String)
+    Show(String),
+    Start
 }
 
 fn main() {
     println!("Cardlang interpreter");
     let mut game: Option<Game> = None;
+    let mut game_loaded = false;
 
     loop {
         print!("> ");
@@ -30,18 +31,20 @@ fn main() {
         stdin().read_line(&mut input).unwrap();
 
         let command = input.trim().split(' ').collect();
-        let command_result = handle_command(command);
-        
+        let command_result = translate_command(command);
+
+        // handle global commands
         match command_result {
+            CommandResult::Game(ref g) => game = Some(g.clone()),
             CommandResult::Exit => break,
-            CommandResult::Game(g) => game = Some(g),
-            CommandResult::Show(c) => handle_show(&game, &c),
             _ => ()
         }
+
+        handle_game_command(command_result, &mut game);
     }
 }
 
-fn handle_command(command: Vec<&str>) -> CommandResult {
+fn translate_command(command: Vec<&str>) -> CommandResult {
     match command[0] {
         "exit" => CommandResult::Exit,
         "build" => build_game(command),
@@ -49,14 +52,18 @@ fn handle_command(command: Vec<&str>) -> CommandResult {
             let display_list = &command[1..];
             CommandResult::Show(display_list.join(" "))
         },
+        "start" => CommandResult::Start,
         _ => unrecognised_command()
     }
 }
 
-fn handle_show(game: &Option<Game>, display: &str){
-    match game {
-        Some(g) => println!("{}", g.show(display)),
-        _ => println!("No game has been loaded")
+fn handle_game_command(command: CommandResult, game: &mut Option<Game>) {
+    if let Some(ref mut g) = game { 
+        match command {
+            CommandResult::Show(c) => println!("{}", g.show(&c)),
+            CommandResult::Start => g.start(),
+            _ => ()
+        }
     }
 }
 

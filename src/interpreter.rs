@@ -3,7 +3,7 @@ use crate::cards::{standard_deck, Card, Player};
 use std::fmt::Display;
 
 
-
+#[derive(Clone)]
 pub struct Game {
     name: Option<String>,
     deck: Vec<Card>,
