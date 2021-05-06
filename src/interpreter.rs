@@ -8,7 +8,8 @@ pub struct Game {
     name: Option<String>,
     deck: Vec<Card>,
     players: Vec<Player>,
-    setup: Vec<Statement>
+    setup: Vec<Statement>,
+    ast: Vec<Statement>
 }
 
 pub enum TransferTarget {
@@ -20,29 +21,13 @@ type Stack = Vec<Card>;
 
 impl Game {
     pub fn new(ast: Vec<Statement>) -> Game {
-        let deck = standard_deck();
+        let deck = vec!();
         let mut name = None;
         let mut players = vec!();
         let mut setup = vec!();
 
         for statement in ast.iter() {
             match statement {
-                Statement::Declaration(
-                    Declaration{
-                        key: GlobalKey::Name,
-                        value: Expression::Symbol(v)
-                    }
-                ) => {
-                    name = Some(v.to_string());
-                },
-                Statement::Declaration(
-                    Declaration{
-                        key: GlobalKey::Players,
-                        value: Expression::Number(n)
-                    }
-                ) => {
-                    players = Self::generate_players(*n as i32);
-                },
                 Statement::Definition(
                     Definition{
                         name: name,
@@ -59,7 +44,36 @@ impl Game {
             }
         }
 
-        Game{ deck, name, players, setup }
+        let mut g = Game{ deck, name, players, setup, ast };
+        g.initialise_declarations();
+
+        g
+    }
+
+    fn initialise_declarations(&mut self) {
+        self.deck = standard_deck();
+
+        for statement in self.ast.iter() {
+            match statement {
+                Statement::Declaration(
+                    Declaration{
+                        key: GlobalKey::Name,
+                        value: Expression::Symbol(v)
+                    }
+                ) => {
+                    self.name = Some(v.to_string());
+                },
+                Statement::Declaration(
+                    Declaration{
+                        key: GlobalKey::Players,
+                        value: Expression::Number(n)
+                    }
+                ) => {
+                    self.players = Self::generate_players(*n as i32);
+                },
+                _ => ()
+            }
+        }
     }
 
     pub fn show(&self, key: &str) -> String {
@@ -72,6 +86,7 @@ impl Game {
     }
 
     pub fn start(&mut self) {
+        self.initialise_declarations();
         self.handle_statements(&self.setup.clone());
     }
 
@@ -283,6 +298,40 @@ mod test{
         ast.push(statement);
 
         let mut game = Game::new(ast);
+        game.start();
+
+        let deck = game.show("deck");
+        let split_deck: Vec<&str> = deck.split(",").collect();
+
+        assert_eq!(split_deck.len(), 51);
+    }
+
+    #[test]
+    fn second_start_restarts() {
+        let mut ast = vec!(
+            Statement::Declaration(
+                Declaration {
+                    key: GlobalKey::Players,
+                    value: Expression::Number(3.0)
+                }
+            )
+        );
+        let from = "deck".to_owned();
+        let to = "players".to_owned();
+        let modifier = None; //Some(TransferModifier::Alternate);
+        let count = None; //Some(TransferCount::End);
+        let transfer = Transfer{ from, to, modifier, count };
+        let transfer_statement = Statement::Transfer(transfer);
+
+        let name = "setup".to_owned();
+        let body = vec!(transfer_statement);
+        let definition = Definition{ name, body };
+        let statement = Statement::Definition(definition);
+
+        ast.push(statement);
+
+        let mut game = Game::new(ast);
+        game.start();
         game.start();
 
         let deck = game.show("deck");
