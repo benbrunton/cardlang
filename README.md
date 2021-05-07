@@ -14,8 +14,7 @@ three hearts, four diamonds, five clubs
 ```
 
 ## Todo
-- player_move handler
-- args in function definitions
+- custom stacks
 - check operator
 - is comparison operator
 - if conditional flow
