@@ -438,4 +438,25 @@ mod test{
 
         assert_eq!(result, expected);
     }
+
+    #[test]
+    fn it_recognises_player_hand_to_deck_transfer() {
+        let tokens = vec!(
+            Token::Symbol("player".to_string()),
+            Token::Symbol("hand".to_string()),
+            Token::Transfer,
+            Token::Deck
+        );
+
+        let from = "player hand".to_owned();
+        let to = "deck".to_owned();
+        let modifier = None;
+        let count = None;
+        let transfer = Transfer{ from, to, modifier, count };
+        let statement = Statement::Transfer(transfer);
+        let expected = Ok(vec!(statement));
+        
+        let result = parse(tokens);
+        assert_eq!(result, expected);
+    }
 }

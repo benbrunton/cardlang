@@ -17,7 +17,8 @@ pub struct Game {
     setup: Vec<Statement>,
     player_move: Vec<Statement>,
     ast: Vec<Statement>,
-    call_stack: Vec<HashMap<String, ArgumentValue>>
+    call_stack: Vec<HashMap<String, ArgumentValue>>,
+    card_stacks: HashMap<String, Vec<Card>>
 }
 
 impl Game {
@@ -28,6 +29,7 @@ impl Game {
         let mut setup = vec!();
         let mut player_move = vec!();
         let call_stack = vec!();
+        let card_stacks = HashMap::new();
 
         for statement in ast.iter() {
             match statement {
@@ -53,7 +55,8 @@ impl Game {
             setup,
             ast,
             player_move,
-            call_stack
+            call_stack,
+            card_stacks
         };
         game.initialise_declarations();
         game
@@ -61,23 +64,26 @@ impl Game {
 
     fn initialise_declarations(&mut self) {
         self.deck = standard_deck();
+        self.card_stacks = HashMap::new();
         for statement in self.ast.iter() {
             match statement {
-                Statement::Declaration(
-                    Declaration{
-                        key: GlobalKey::Name,
-                        value: Expression::Symbol(v)
-                    }
-                ) => {
+                Statement::Declaration(Declaration{
+                    key: GlobalKey::Name,
+                    value: Expression::Symbol(v)
+                }) => {
                     self.name = Some(v.to_string());
                 },
-                Statement::Declaration(
-                    Declaration{
-                        key: GlobalKey::Players,
-                        value: Expression::Number(n)
-                    }
-                ) => {
+                Statement::Declaration(Declaration{
+                    key: GlobalKey::Players,
+                    value: Expression::Number(n)
+                }) => {
                     self.players = Self::generate_players(*n as i32);
+                },
+                Statement::Declaration(Declaration{
+                    key: GlobalKey::Stack,
+                    value: Expression::Symbol(s)
+                }) => {
+                    self.card_stacks.insert(s.to_string(), vec!());
                 },
                 _ => ()
             }
@@ -111,7 +117,7 @@ impl Game {
         let instructions: Vec<&str> = key.split(" ").collect();
         match instructions[0] {
             "player" => self.handle_show_player(instructions),
-            _ => format!("Unknown item: {}", key)
+            key => self.find_custom_item(key) //format!("Unknown item: {}", key)
         }
     }
 
@@ -177,7 +183,7 @@ impl Game {
                     _ => None
                 }
             },
-            _ => None
+            key => self.find_custom_stack(key)
         }
     }
 
@@ -196,10 +202,24 @@ impl Game {
                     _ => ()
                 }
             },
-            _ => ()
+            key => { self.card_stacks.insert(key.to_string(), stack.get_stack(0)); }
         }
     }
 
+    fn find_custom_stack(&self, key: &str) -> Option<TransferTarget> {
+        let stack_result = self.card_stacks.get(key);
+        match stack_result {
+            Some(s) => Some(TransferTarget::Stack(s.clone())),
+            _ => None
+        }
+    }
+
+    fn find_custom_item(&self, key: &str) -> String {
+        match self.card_stacks.get(key) {
+            Some(v) => Self::display_list(v),
+            _ => "".to_string()
+        }
+    }
     fn find_in_call_stack(&self, key: &str) -> Option<ArgumentValue> {
         for frame in self.call_stack.iter().rev(){
             let result = frame.get(key);
@@ -593,5 +613,43 @@ mod test{
 
         assert_eq!(&player1_hand, "");
         assert_eq!(&player2_hand, "king diamonds");
+    }
+
+    #[test]
+    fn it_can_handle_custom_stacks() {
+        let mut ast = vec!(
+            Statement::Declaration(
+                Declaration {
+                    key: GlobalKey::Players,
+                    value: Expression::Number(1.0)
+                }
+            ),
+            Statement::Declaration(
+                Declaration {
+                    key: GlobalKey::Stack,
+                    value: Expression::Symbol("middle".to_string())
+                }
+            )
+        );
+        let from = "deck".to_owned();
+        let to = "middle".to_owned();
+        let modifier = None;
+        let count = None;
+        let transfer = Transfer{ from, to, modifier, count };
+        let transfer_statement = Statement::Transfer(transfer);
+
+        let name = "setup".to_owned();
+        let body = vec!(transfer_statement);
+        let definition = Definition{ name, body };
+        let statement = Statement::Definition(definition);
+
+        ast.push(statement);
+
+        let mut game = Game::new(ast);
+        game.start();
+
+        let middle = game.show("middle");
+
+        assert_eq!(&middle, "king diamonds");
     }
 }

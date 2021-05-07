@@ -14,9 +14,10 @@ three hearts, four diamonds, five clubs
 ```
 
 ## Todo
-- custom stacks
+- end condition
+- winners
+- if conditional flow
 - check operator
 - is comparison operator
-- if conditional flow
 - object attributes (player hand / player id)
 - count, winner, end, next_player inbuilt functions

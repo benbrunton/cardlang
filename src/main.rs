@@ -16,7 +16,8 @@ enum CommandResult {
     CommandFailed,
     Exit,
     Show(String),
-    Start
+    Start,
+    Move(usize)
 }
 
 fn main() {
@@ -53,6 +54,7 @@ fn translate_command(command: Vec<&str>) -> CommandResult {
             CommandResult::Show(display_list.join(" "))
         },
         "start" => CommandResult::Start,
+        "move" => CommandResult::Move(command[1].parse().unwrap_or(1)),
         _ => unrecognised_command()
     }
 }
@@ -62,6 +64,7 @@ fn handle_game_command(command: CommandResult, game: &mut Option<Game>) {
         match command {
             CommandResult::Show(c) => println!("{}", g.show(&c)),
             CommandResult::Start => g.start(),
+            CommandResult::Move(n) => g.player_move(n),
             _ => ()
         }
     }
