@@ -1,42 +1,30 @@
 name simple scopa
-def not_royal(card){
-   card rank is not King
-   & card rank is not Queen
-   & card rank is not Jack 
-}
-
-set deck as filter(StandardDeck, not_royal)
-set players as Players(2)
-set current_player as 1
-
-Stack middle
+deck filter(StandardDeck, not_royal)
+players 2
+current_player 1
+stack middle
 
 def setup(){
-    reset deck
-    reset players
-    reset current_player
-    clear middle
-
-    deck > middle x 4
-    deck > players alt 3
+    deck > middle 4
+    deck > players 3
 }
 
-def player_move(move, player){
+def player_move(player, move){
     check player id is current_player
     switch move type {
-        "take": take(move, player),
-        "place": place(move, player),
+        "take": take(player, move),
+        "place": place(player, move),
         _: error "unrecognised move type"
     }
 }
 
-def take(move, player) {
+def take(move, player, move) {
     .(each card in players hand)
     check cards_in_stack(move cards, player hand)
     .(target is single card)
     check count(move target) is 1
     .(target is in middle)
-    check cards_in_stack(target, middle)
+    check cards_in_stack(move target, middle)
     .(move matches target value)
     check get_value(move cards) is get_value(move target)
 }
@@ -47,4 +35,10 @@ def place(move, player) {
 
 def get_value(cards) {
 
+}
+
+def not_royal(card){
+   card rank is not King
+   & card rank is not Queen
+   & card rank is not Jack 
 }

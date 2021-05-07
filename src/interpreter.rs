@@ -2,6 +2,12 @@ use crate::ast::*;
 use crate::cards::{standard_deck, Card, Player};
 use std::fmt::Display;
 use crate::runtime::{transfer::{transfer, TransferTarget}, std::inbuilt};
+use std::collections::HashMap;
+
+#[derive(Clone)]
+enum ArgumentValue {
+    Number(usize)
+}
 
 #[derive(Clone)]
 pub struct Game {
@@ -9,7 +15,9 @@ pub struct Game {
     deck: Vec<Card>,
     players: Vec<Player>,
     setup: Vec<Statement>,
-    ast: Vec<Statement>
+    player_move: Vec<Statement>,
+    ast: Vec<Statement>,
+    call_stack: Vec<HashMap<String, ArgumentValue>>
 }
 
 impl Game {
@@ -18,6 +26,8 @@ impl Game {
         let name = None;
         let players = vec!();
         let mut setup = vec!();
+        let mut player_move = vec!();
+        let call_stack = vec!();
 
         for statement in ast.iter() {
             match statement {
@@ -29,13 +39,22 @@ impl Game {
                 ) => {
                     match name.as_str() {
                         "setup" => {setup = b.to_vec();},
+                        "player_move" => { player_move = b.to_vec(); },
                         _ => ()
                     }
                 },
                 _ => ()
             }
         }
-        let mut game = Game{ deck, name, players, setup, ast };
+        let mut game = Game{
+            deck,
+            name,
+            players,
+            setup,
+            ast,
+            player_move,
+            call_stack
+        };
         game.initialise_declarations();
         game
     }
@@ -74,6 +93,20 @@ impl Game {
         }
     }
 
+    pub fn start(&mut self) {
+        self.initialise_declarations();
+        self.handle_statements(&self.setup.clone());
+    }
+
+    pub fn player_move(&mut self, player: usize) {
+        let mut call_stack_frame = HashMap::new();
+
+        call_stack_frame.insert("player".to_string(), ArgumentValue::Number(player));
+        self.call_stack.push(call_stack_frame);
+        self.handle_statements(&self.player_move.clone());
+        self.call_stack.pop();
+    }
+
     fn check_exploded_show(&self, key: &str) -> String {
         let instructions: Vec<&str> = key.split(" ").collect();
         match instructions[0] {
@@ -85,11 +118,6 @@ impl Game {
     fn handle_show_player(&self, args: Vec<&str>) -> String {
         let player_num = args[1].parse::<usize>().unwrap_or(1) - 1;
         Self::display_list(&self.players[player_num].get_hand())
-    }
-
-    pub fn start(&mut self) {
-        self.initialise_declarations();
-        self.handle_statements(&self.setup.clone());
     }
 
     fn display_name(&self) -> String {
@@ -114,7 +142,7 @@ impl Game {
         let from = self.get_stack(&t.from);
         let to = self.get_stack(&t.to);
 
-        let transfer_result = transfer(to, from, t.count.as_ref());
+        let transfer_result = transfer(from, to, t.count.as_ref());
 
         let (new_from, new_to) = match transfer_result {
             Some((a, b)) => (a, b),
@@ -127,8 +155,10 @@ impl Game {
 
     fn handle_function_call(&mut self, f: &FunctionCall) {
         /*
-            grab function
-            pass arguments num, stack, stack o stacks
+            resolve expressions
+            pass arguments num, stack, stack o stacks, player?
+            maybe std funcs need &mut self passing?
+            e.g. next_player(), end(), win(player)
         */
 
         let resolved_args = vec!(&mut self.deck);
@@ -136,22 +166,51 @@ impl Game {
     }
 
     fn get_stack(&self, stack_key: &str) -> Option<TransferTarget> {
-        match stack_key {
+        let instructions: Vec<&str> = stack_key.split(" ").collect();
+        match instructions[0] {
             "deck" => Some(TransferTarget::Stack(self.deck.clone())),
             "players" => Some(TransferTarget::StackList(self.players.iter().map(|p| p.get_hand()).collect())),
+            "player" => {
+                let mut player = self.find_in_call_stack("player");
+                match player {
+                    Some(ArgumentValue::Number(n)) => Some(TransferTarget::Stack(self.players[n - 1].get_hand())),
+                    _ => None
+                }
+            },
             _ => None
         }
     }
 
     fn set_stack(&mut self, stack_key: &str, stack: TransferTarget) {
-        match stack_key {
+        let instructions: Vec<&str> = stack_key.split(" ").collect();
+        match instructions[0] {
             "deck" => self.deck = stack.get_stack(0),
             "players" => self.players.iter_mut().enumerate().for_each(|(n, p)| {
                 let new_hand = stack.get_stack(n);
                 p.set_hand(new_hand)
             }),
+            "player" => {
+                let mut player = self.find_in_call_stack("player");
+                match player {
+                    Some(ArgumentValue::Number(n)) => self.players[n - 1].set_hand(stack.get_stack(0)),
+                    _ => ()
+                }
+            },
             _ => ()
         }
+    }
+
+    fn find_in_call_stack(&self, key: &str) -> Option<ArgumentValue> {
+        for frame in self.call_stack.iter().rev(){
+            let result = frame.get(key);
+            match result {
+                Some(r)  => return Some(r.clone()),
+                _ => ()
+
+            }
+        }
+
+        None
     }
 
     fn display_list<D: Display>(list: &Vec<D>) -> String {
@@ -427,8 +486,112 @@ mod test{
 
         let usual_order = Game::display_list(&standard_deck());
         let deck = game.show("deck");
-        let split_deck: Vec<&str> = deck.split(",").collect();
 
         assert_ne!(deck, usual_order);
+    }
+
+    #[test]
+    fn it_can_make_a_move() {
+        let body = vec!(
+            Statement::FunctionCall(
+                FunctionCall{
+                    name: "shuffle".to_string(),
+                    arguments: vec!(Expression::Symbol("deck".to_string()))
+                }
+            )
+        );
+
+        let name = "player_move".to_owned();
+        let definition = Definition{ name, body };
+        let statement = Statement::Definition(definition);
+
+        let ast = vec!(statement);
+
+        let mut game = Game::new(ast);
+        game.start();
+        game.player_move(1);
+
+        let usual_order = Game::display_list(&standard_deck());
+        let deck = game.show("deck");
+
+        assert_ne!(deck, usual_order);
+    }
+
+    #[test]
+    fn it_passes_the_player_to_the_move() {
+        let players = Statement::Declaration(
+            Declaration {
+                key: GlobalKey::Players,
+                value: Expression::Number(3.0)
+            }
+        );
+
+        let body = vec!(
+            Statement::Transfer(
+                Transfer{
+                    from: "deck".to_string(),
+                    to: "player hand".to_string(),
+                    modifier: None,
+                    count: None
+                }
+            )
+        );
+
+        let name = "player_move".to_owned();
+        let definition = Definition{ name, body };
+        let statement = Statement::Definition(definition);
+
+        let ast = vec!(
+            players,
+            statement
+        );
+
+        let mut game = Game::new(ast);
+        game.start();
+        game.player_move(1);
+
+        let player_hand = game.show("player 1 hand");
+
+        assert_eq!(player_hand, "king diamonds".to_string());
+    }
+
+    #[test]
+    fn it_passes_the_player_num_to_the_move() {
+        let players = Statement::Declaration(
+            Declaration {
+                key: GlobalKey::Players,
+                value: Expression::Number(3.0)
+            }
+        );
+
+        let body = vec!(
+            Statement::Transfer(
+                Transfer{
+                    from: "deck".to_string(),
+                    to: "player hand".to_string(),
+                    modifier: None,
+                    count: None
+                }
+            )
+        );
+
+        let name = "player_move".to_owned();
+        let definition = Definition{ name, body };
+        let statement = Statement::Definition(definition);
+
+        let ast = vec!(
+            players,
+            statement
+        );
+
+        let mut game = Game::new(ast);
+        game.start();
+        game.player_move(2);
+
+        let player1_hand = game.show("player 1 hand");
+        let player2_hand = game.show("player 2 hand");
+
+        assert_eq!(&player1_hand, "");
+        assert_eq!(&player2_hand, "king diamonds");
     }
 }

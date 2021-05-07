@@ -9,16 +9,16 @@ define setup(){
     deck > players end
 }
 
-.(
-define player_move(move, player){
-    check player id is current_player
+define player_move(player){
+    .(check player id is current_player)
     player hand > middle
 
+    .(
     if(count(player hand) is 0){
         winner(player id)
         end()
     }
 
-    rotate_players()
+    next_player()
+    )
 }
-)

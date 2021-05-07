@@ -25,8 +25,8 @@ impl TransferTarget {
 pub type Stack = Vec<Card>;
 
 pub fn transfer(
-    mut to: Option<TransferTarget>,
     mut from: Option<TransferTarget>,
+    mut to: Option<TransferTarget>,
     t_count: Option<&TransferCount>
 ) -> Option<(TransferTarget, TransferTarget)> {
     let mut count = match t_count {
@@ -70,10 +70,29 @@ pub fn transfer(
                     transfer_index += 1
                 }
             },
+            Some(TransferTarget::Stack(ref mut s)) => s.push(card),
             _ => ()
         }
         count -= 1;
     }
 
     Some((from.unwrap(), to.unwrap()))
+}
+
+#[cfg(test)]
+mod test{
+    use super::*;
+    use crate::cards::standard_deck;
+
+    #[test]
+    fn it_can_handle_moving_stack_to_stack() {
+        let from = Some(TransferTarget::Stack(standard_deck()));
+        let to = Some(TransferTarget::Stack(vec!()));
+
+        let result = transfer(from, to, None);
+
+        let (new_from, new_to) = result.unwrap();
+
+        assert_eq!(new_to.count(), 1);
+    }
 }
