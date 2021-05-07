@@ -383,4 +383,15 @@ this is a comment ) test2";
 
         assert_eq!(result[0], Token::Symbol("hello_world".to_owned()));
     }
+
+    #[test]
+    fn it_recognises_function_calls() {
+        let src = "shuffle(deck)";
+        let result = lexer(&src).unwrap();
+        let expected = vec!(
+            Token::Symbol("shuffle".to_string()), Token::OpenParens,
+            Token::Deck, Token::CloseParens
+        );
+        assert_eq!(result, expected);
+    }
 }

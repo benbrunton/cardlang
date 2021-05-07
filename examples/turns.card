@@ -5,7 +5,7 @@ current_player 1
 stack middle
 
 define setup(){
-    .(shuffle(deck))
+    shuffle(deck)
     deck > players end
 }
 

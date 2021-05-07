@@ -43,6 +43,14 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Statement>, ParseError> {
                         let to = get_transfer_value(transfer_target);
                         let modifier = Some(TransferModifier::Alternate);
                         let count = Some(TransferCount::End);
+
+                        // handle optional params here...
+                        let _potential_count = tokens_iter.next().expect("unable to find next token");
+                        match _potential_count {
+                            Token::Symbol(_) => (), //count = Some(TransferCount::End)
+                            _ => ()
+                        }
+
                         let transfer = Transfer{ from, to, modifier, count };
                         let statement = Statement::Transfer(transfer);
                         ast.push(statement);
@@ -87,6 +95,26 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Statement>, ParseError> {
 
                 let definition = Definition{ name, body };
                 let statement = Statement::Definition(definition);
+                ast.push(statement);
+            },
+            Some(Token::Symbol(name)) => {
+                //open parens
+                tokens_iter.next();
+
+                let mut arguments = vec!();
+
+                match tokens_iter.next() {
+                    Some(Token::Deck) => {
+                        arguments.push(Expression::Symbol("deck".to_string()));
+                    },
+                    _ => ()
+                };
+
+                //close parens
+                tokens_iter.next();
+
+                let function_call = FunctionCall { name: name.to_string(), arguments };
+                let statement = Statement::FunctionCall(function_call);
                 ast.push(statement);
             },
             None => { break; },
@@ -295,7 +323,6 @@ mod test{
             Token::Deck,
             Token::Transfer,
             Token::Players,
-            Token::Symbol("alt".to_owned()),
             Token::Symbol("end".to_owned())
         );
 
@@ -311,11 +338,6 @@ mod test{
         assert_eq!(result, expected);
     }
 
-    /*
-    define setup(){
-        deck > players alt end
-    }
-    */
     #[test]
     fn it_can_handle_function_body() {
         let tokens = vec!(
@@ -327,7 +349,6 @@ mod test{
             Token::Deck,
             Token::Transfer,
             Token::Players,
-            Token::Symbol("alt".to_owned()),
             Token::Symbol("end".to_owned()),
             Token::Newline,
             Token::CloseBracket
@@ -397,5 +418,24 @@ mod test{
         let result = parse(tokens);
 
         assert_eq!(expected, result);
+    }
+
+    #[test]
+    fn it_can_recognise_function_calls() {
+        let tokens = vec!(
+            Token::Symbol("shuffle".to_string()), Token::OpenParens,
+            Token::Deck, Token::CloseParens
+        );
+
+        let function_call = FunctionCall{
+            name: "shuffle".to_string(),
+            arguments: vec!(Expression::Symbol("deck".to_string()))
+        };
+        let statement = Statement::FunctionCall(function_call);
+        let expected = Ok(vec!(statement));
+
+        let result = parse(tokens);
+
+        assert_eq!(result, expected);
     }
 }

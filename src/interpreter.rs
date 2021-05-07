@@ -1,7 +1,7 @@
 use crate::ast::*;
 use crate::cards::{standard_deck, Card, Player};
 use std::fmt::Display;
-use crate::runtime::transfer::{transfer, TransferTarget, Stack};
+use crate::runtime::{transfer::{transfer, TransferTarget}, std::inbuilt};
 
 #[derive(Clone)]
 pub struct Game {
@@ -23,7 +23,7 @@ impl Game {
             match statement {
                 Statement::Definition(
                     Definition{
-                        name: name,
+                        name,
                         body: b
                     }
                 ) => {
@@ -31,21 +31,17 @@ impl Game {
                         "setup" => {setup = b.to_vec();},
                         _ => ()
                     }
-                    
                 },
                 _ => ()
             }
         }
-
-        let mut g = Game{ deck, name, players, setup, ast };
-        g.initialise_declarations();
-
-        g
+        let mut game = Game{ deck, name, players, setup, ast };
+        game.initialise_declarations();
+        game
     }
 
     fn initialise_declarations(&mut self) {
         self.deck = standard_deck();
-
         for statement in self.ast.iter() {
             match statement {
                 Statement::Declaration(
@@ -107,6 +103,7 @@ impl Game {
         statements.iter().for_each(|statement|{
             match statement {
                 Statement::Transfer(t) => self.handle_transfer(t),
+                Statement::FunctionCall(f) => self.handle_function_call(f),
                 _ => ()
             }
         })
@@ -114,8 +111,8 @@ impl Game {
 
     // todo - handle failures
     fn handle_transfer(&mut self, t: &Transfer) {
-        let mut from = self.get_stack(&t.from);
-        let mut to = self.get_stack(&t.to);
+        let from = self.get_stack(&t.from);
+        let to = self.get_stack(&t.to);
 
         let transfer_result = transfer(to, from, t.count.as_ref());
 
@@ -126,6 +123,16 @@ impl Game {
 
         self.set_stack(&t.from, new_from);
         self.set_stack(&t.to, new_to);
+    }
+
+    fn handle_function_call(&mut self, f: &FunctionCall) {
+        /*
+            grab function
+            pass arguments num, stack, stack o stacks
+        */
+
+        let resolved_args = vec!(&mut self.deck);
+        let _func_result = inbuilt(&f.name, resolved_args);
     }
 
     fn get_stack(&self, stack_key: &str) -> Option<TransferTarget> {
@@ -397,5 +404,31 @@ mod test{
 
         let hand = game.show("player 2 hand");
         assert_eq!(&hand, "queen diamonds");
+    }
+
+    #[test]
+    fn it_can_access_built_in_functions() {
+        let body = vec!(
+            Statement::FunctionCall(
+                FunctionCall{
+                    name: "shuffle".to_string(),
+                    arguments: vec!(Expression::Symbol("deck".to_string()))
+                }
+            )
+        );
+
+        let name = "setup".to_owned();
+        let definition = Definition{ name, body };
+        let statement = Statement::Definition(definition);
+        let ast = vec!(statement);
+
+        let mut game = Game::new(ast);
+        game.start();
+
+        let usual_order = Game::display_list(&standard_deck());
+        let deck = game.show("deck");
+        let split_deck: Vec<&str> = deck.split(",").collect();
+
+        assert_ne!(deck, usual_order);
     }
 }

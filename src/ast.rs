@@ -2,7 +2,8 @@
 pub enum Statement {
     Declaration(Declaration),
     Definition(Definition),
-    Transfer(Transfer)
+    Transfer(Transfer),
+    FunctionCall(FunctionCall)
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -48,4 +49,10 @@ pub enum TransferModifier {
 #[derive(Debug, PartialEq, Clone)]
 pub enum TransferCount {
     End
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct FunctionCall {
+    pub name: String,
+    pub arguments: Vec<Expression>
 }

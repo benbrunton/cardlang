@@ -72,7 +72,6 @@ pub fn transfer(
             },
             _ => ()
         }
-
         count -= 1;
     }
 
