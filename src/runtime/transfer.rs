@@ -91,7 +91,7 @@ mod test{
 
         let result = transfer(from, to, None);
 
-        let (new_from, new_to) = result.unwrap();
+        let (_new_from, new_to) = result.unwrap();
 
         assert_eq!(new_to.count(), 1);
     }

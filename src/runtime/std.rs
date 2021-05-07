@@ -2,7 +2,7 @@ use crate::cards::Card;
 use rand::seq::SliceRandom;
 
 
-pub fn inbuilt(name: &str, mut args: Vec<&mut Vec<Card>>) -> Option<()> {
+pub fn inbuilt(_name: &str, mut args: Vec<&mut Vec<Card>>) -> Option<()> {
     shuffle(args[0]);
     Some(())
 }

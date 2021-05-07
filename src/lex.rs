@@ -175,7 +175,7 @@ fn resolve_partial(partial_token: String) -> TokenResult {
 
 fn is_word_finished(next_char: Option<&char>) -> bool {
     match next_char {
-        Some('A'..='z') | Some('0'..='9')=> {
+        Some('A'..='z') | Some('0'..='9') | Some(':') => {
             false
         },
         _ => true
@@ -393,5 +393,13 @@ this is a comment ) test2";
             Token::Deck, Token::CloseParens
         );
         assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn a_symbol_can_contain_an_attribute() {
+        let src = "player:hand";
+        let result = lexer(&src).unwrap();
+        let expected = vec!(Token::Symbol("player:hand".to_owned()));
+        assert_eq!(result, expected)
     }
 }

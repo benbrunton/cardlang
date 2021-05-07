@@ -171,13 +171,13 @@ impl Game {
         let _func_result = inbuilt(&f.name, resolved_args);
     }
 
-    fn get_stack(&self, stack_key: &str) -> Option<TransferTarget> {
-        let instructions: Vec<&str> = stack_key.split(" ").collect();
+    fn get_stack(&self, stack_key: &str) -> Option<TransferTarget> {    
+        let instructions: Vec<&str> = stack_key.split(&[' ', ':'][..]).collect();
         match instructions[0] {
             "deck" => Some(TransferTarget::Stack(self.deck.clone())),
             "players" => Some(TransferTarget::StackList(self.players.iter().map(|p| p.get_hand()).collect())),
             "player" => {
-                let mut player = self.find_in_call_stack("player");
+                let player = self.find_in_call_stack("player");
                 match player {
                     Some(ArgumentValue::Number(n)) => Some(TransferTarget::Stack(self.players[n - 1].get_hand())),
                     _ => None
@@ -188,7 +188,7 @@ impl Game {
     }
 
     fn set_stack(&mut self, stack_key: &str, stack: TransferTarget) {
-        let instructions: Vec<&str> = stack_key.split(" ").collect();
+        let instructions: Vec<&str> = stack_key.split(&[' ', ':'][..]).collect();
         match instructions[0] {
             "deck" => self.deck = stack.get_stack(0),
             "players" => self.players.iter_mut().enumerate().for_each(|(n, p)| {
@@ -196,7 +196,7 @@ impl Game {
                 p.set_hand(new_hand)
             }),
             "player" => {
-                let mut player = self.find_in_call_stack("player");
+                let player = self.find_in_call_stack("player");
                 match player {
                     Some(ArgumentValue::Number(n)) => self.players[n - 1].set_hand(stack.get_stack(0)),
                     _ => ()
@@ -229,7 +229,6 @@ impl Game {
 
             }
         }
-
         None
     }
 
@@ -588,7 +587,7 @@ mod test{
             Statement::Transfer(
                 Transfer{
                     from: "deck".to_string(),
-                    to: "player hand".to_string(),
+                    to: "player:hand".to_string(),
                     modifier: None,
                     count: None
                 }

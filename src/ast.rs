@@ -43,7 +43,7 @@ pub struct Transfer {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum TransferModifier {
-    Alternate
+    //Alternate
 }
 
 #[derive(Debug, PartialEq, Clone)]

@@ -38,22 +38,11 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Statement>, ParseError> {
                         ast.push(statement);
                     },
                     Some(Token::Transfer) => {
-                        let transfer_target = tokens_iter.next().expect("unable to find next token");
-                        let from = get_transfer_value(deck_token);
-                        let to = get_transfer_value(transfer_target);
-                        let modifier = Some(TransferModifier::Alternate);
-                        let count = Some(TransferCount::End);
-
-                        // handle optional params here...
-                        let _potential_count = tokens_iter.next().expect("unable to find next token");
-                        match _potential_count {
-                            Token::Symbol(_) => (), //count = Some(TransferCount::End)
-                            _ => ()
+                        let transfer_result = create_transfer("deck", &mut tokens_iter);
+                        if transfer_result.is_err() {
+                            return Err(transfer_result.unwrap_err());
                         }
-
-                        let transfer = Transfer{ from, to, modifier, count };
-                        let statement = Statement::Transfer(transfer);
-                        ast.push(statement);
+                        ast.push(transfer_result.unwrap())
                     },
                     _ => { return Err(ParseError::UnexpectedToken); }
                 }
@@ -98,24 +87,26 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Statement>, ParseError> {
                 ast.push(statement);
             },
             Some(Token::Symbol(name)) => {
-                //open parens
-                tokens_iter.next();
-
-                let mut arguments = vec!();
-
                 match tokens_iter.next() {
-                    Some(Token::Deck) => {
-                        arguments.push(Expression::Symbol("deck".to_string()));
+                    Some(Token::OpenParens) => {
+                        let func_result = create_function(name, &mut tokens_iter);
+                        if func_result.is_err() {
+                            return Err(func_result.unwrap_err());
+                        }
+                        ast.push(func_result.unwrap());
                     },
-                    _ => ()
-                };
+                    Some(Token::Transfer) => {
+                        let transfer_result = create_transfer(name, &mut tokens_iter);
+                        if transfer_result.is_err() {
+                            return Err(transfer_result.unwrap_err());
+                        }
+                        ast.push(transfer_result.unwrap())
 
-                //close parens
-                tokens_iter.next();
+                    },
+                    _ => return Err(ParseError::UnexpectedToken)
+                }
 
-                let function_call = FunctionCall { name: name.to_string(), arguments };
-                let statement = Statement::FunctionCall(function_call);
-                ast.push(statement);
+ 
             },
             None => { break; },
             _ => (),
@@ -124,6 +115,55 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Statement>, ParseError> {
 
     Ok(ast)
 }
+
+fn create_function(name: &str, tokens_iter: &mut std::slice::Iter<Token>) -> Result<Statement, ParseError> {
+    let mut arguments = vec!();
+
+    match tokens_iter.next() {
+        Some(Token::Deck) => {
+            arguments.push(Expression::Symbol("deck".to_string()));
+        },
+        _ => ()
+    };
+
+    //close parens
+    tokens_iter.next();
+
+    let function_call = FunctionCall { name: name.to_string(), arguments };
+    Ok(Statement::FunctionCall(function_call))
+}
+
+
+fn create_transfer(from: &str, tokens_iter: &mut std::slice::Iter<Token>) -> Result<Statement, ParseError> {
+    let transfer_target = tokens_iter.next().expect("unable to find next token");
+    let from = get_transfer_value(&Token::Symbol(from.to_string()));
+    let to = get_transfer_value(transfer_target);
+    let modifier = None;
+    let count = match tokens_iter.next() {
+        Some(Token::Symbol(s)) => {
+            if s == "end" {
+                Some(TransferCount::End)
+            } else {
+                None
+            }
+        },
+        _ => None
+    };
+
+    /*
+    // handle optional params here...
+    let _potential_count = tokens_iter.next();
+    match _potential_count {
+        Token::Symbol(_) => (), //count = Some(TransferCount::End)
+        _ => ()
+    }
+    */
+
+    let transfer = Transfer{ from, to, modifier, count };
+    let statement = Statement::Transfer(transfer);
+    Ok(statement)
+}
+
 
 fn get_key(token: &Token) -> Option<GlobalKey> {
     match token {
@@ -148,6 +188,7 @@ fn get_transfer_value(token: &Token) -> String {
     match token {
         Token::Deck => "deck".to_owned(),
         Token::Players => "players".to_owned(),
+        Token::Symbol(s) => s.to_owned(),
         _ => "".to_owned() // todo - handle errors
     }
 }
@@ -322,14 +363,13 @@ mod test{
         let tokens = vec!(
             Token::Deck,
             Token::Transfer,
-            Token::Players,
-            Token::Symbol("end".to_owned())
+            Token::Players
         );
 
         let from = "deck".to_owned();
         let to = "players".to_owned();
-        let modifier = Some(TransferModifier::Alternate);
-        let count = Some(TransferCount::End);
+        let modifier = None;
+        let count = None;
         let transfer = Transfer{ from, to, modifier, count };
         let statement = Statement::Transfer(transfer);
         let expected = Ok(vec!(statement));
@@ -349,15 +389,14 @@ mod test{
             Token::Deck,
             Token::Transfer,
             Token::Players,
-            Token::Symbol("end".to_owned()),
             Token::Newline,
             Token::CloseBracket
         );
 
         let from = "deck".to_owned();
         let to = "players".to_owned();
-        let modifier = Some(TransferModifier::Alternate);
-        let count = Some(TransferCount::End);
+        let modifier = None;
+        let count = None;
         let transfer = Transfer{ from, to, modifier, count };
         let transfer_statement = Statement::Transfer(transfer);
 
@@ -442,16 +481,36 @@ mod test{
     #[test]
     fn it_recognises_player_hand_to_deck_transfer() {
         let tokens = vec!(
-            Token::Symbol("player".to_string()),
-            Token::Symbol("hand".to_string()),
+            Token::Symbol("player:hand".to_string()),
             Token::Transfer,
             Token::Deck
         );
 
-        let from = "player hand".to_owned();
+        let from = "player:hand".to_owned();
         let to = "deck".to_owned();
         let modifier = None;
         let count = None;
+        let transfer = Transfer{ from, to, modifier, count };
+        let statement = Statement::Transfer(transfer);
+        let expected = Ok(vec!(statement));
+        
+        let result = parse(tokens);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn it_can_pass_a_count_to_transfer() {
+        let tokens = vec!(
+            Token::Symbol("player:hand".to_string()),
+            Token::Transfer,
+            Token::Deck,
+            Token::Symbol("end".to_string())
+        );
+
+        let from = "player:hand".to_owned();
+        let to = "deck".to_owned();
+        let modifier = None;
+        let count = Some(TransferCount::End);
         let transfer = Transfer{ from, to, modifier, count };
         let statement = Statement::Transfer(transfer);
         let expected = Ok(vec!(statement));
