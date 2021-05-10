@@ -1,12 +1,19 @@
 use crate::ast::*;
 use crate::cards::{standard_deck, Card, Player};
 use std::fmt::Display;
-use crate::runtime::{transfer::{transfer, TransferTarget}, std::shuffle};
+use crate::runtime::{transfer::{transfer, TransferTarget}, std::{shuffle, end}};
 use std::collections::HashMap;
 
 #[derive(Clone)]
 enum ArgumentValue {
     Number(usize)
+}
+
+#[derive(Clone)]
+pub enum GameState {
+    Pending,
+    Active,
+    GameOver
 }
 
 #[derive(Clone)]
@@ -19,7 +26,7 @@ pub struct Game {
     ast: Vec<Statement>,
     call_stack: Vec<HashMap<String, ArgumentValue>>,
     card_stacks: HashMap<String, Vec<Card>>,
-    active: bool
+    status: GameState
 }
 
 impl Game {
@@ -31,7 +38,7 @@ impl Game {
         let mut player_move = vec!();
         let call_stack = vec!();
         let card_stacks = HashMap::new();
-        let active = true;
+        let status = GameState::Pending;
 
         for statement in ast.iter() {
             match statement {
@@ -59,7 +66,7 @@ impl Game {
             player_move,
             call_stack,
             card_stacks,
-            active
+            status
         };
         game.initialise_declarations();
         game
@@ -98,12 +105,17 @@ impl Game {
             "deck" => Self::display_list(&self.deck),
             "name" => self.display_name(),
             "players" => Self::display_list(&self.players),
-            "game" => if self.active { "active".to_string() } else { "game over".to_string() },
+            "game" => match self.status {
+                GameState::Pending => "pending".to_string(), 
+                GameState::Active => "active".to_string(),
+                GameState::GameOver => "game over".to_string()
+            },
             _ => self.check_exploded_show(key)
         }
     }
 
     pub fn start(&mut self) {
+        self.status = GameState::Active;
         self.initialise_declarations();
         self.handle_statements(&self.setup.clone());
     }
@@ -172,12 +184,10 @@ impl Game {
         */
 
         match f.name.as_str() {
-            "end" => self.active = false,
+            "end" => end(&mut self.status),
             "shuffle" => shuffle(&mut self.deck),
             _ => ()
-        }
-
-        
+        }        
     }
 
     fn get_stack(&self, stack_key: &str) -> Option<TransferTarget> {    
@@ -675,7 +685,7 @@ mod test{
         let game = Game::new(ast);
         let display = game.show("game");
 
-        assert_eq!(display, "active"); 
+        assert_eq!(display, "pending"); 
     }
 
     #[test]

@@ -10,8 +10,9 @@ define setup(){
 }
 
 define player_move(player){
-    .(check player id is current_player)
+    .(check player:id is current_player)
     player:hand > middle
+    end()
 
     .(
     if(count(player:hand) is 0){
