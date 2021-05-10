@@ -1,7 +1,7 @@
 use crate::ast::*;
 use crate::cards::{standard_deck, Card, Player};
 use std::fmt::Display;
-use crate::runtime::{transfer::{transfer, TransferTarget}, std::inbuilt};
+use crate::runtime::{transfer::{transfer, TransferTarget}, std::shuffle};
 use std::collections::HashMap;
 
 #[derive(Clone)]
@@ -18,7 +18,8 @@ pub struct Game {
     player_move: Vec<Statement>,
     ast: Vec<Statement>,
     call_stack: Vec<HashMap<String, ArgumentValue>>,
-    card_stacks: HashMap<String, Vec<Card>>
+    card_stacks: HashMap<String, Vec<Card>>,
+    active: bool
 }
 
 impl Game {
@@ -30,6 +31,7 @@ impl Game {
         let mut player_move = vec!();
         let call_stack = vec!();
         let card_stacks = HashMap::new();
+        let active = true;
 
         for statement in ast.iter() {
             match statement {
@@ -56,7 +58,8 @@ impl Game {
             ast,
             player_move,
             call_stack,
-            card_stacks
+            card_stacks,
+            active
         };
         game.initialise_declarations();
         game
@@ -95,6 +98,7 @@ impl Game {
             "deck" => Self::display_list(&self.deck),
             "name" => self.display_name(),
             "players" => Self::display_list(&self.players),
+            "game" => if self.active { "active".to_string() } else { "game over".to_string() },
             _ => self.check_exploded_show(key)
         }
     }
@@ -162,13 +166,18 @@ impl Game {
     fn handle_function_call(&mut self, f: &FunctionCall) {
         /*
             resolve expressions
-            pass arguments num, stack, stack o stacks, player?
+            pass arguments num, stack, stack o stacks, player?, bool
             maybe std funcs need &mut self passing?
             e.g. next_player(), end(), win(player)
         */
 
-        let resolved_args = vec!(&mut self.deck);
-        let _func_result = inbuilt(&f.name, resolved_args);
+        match f.name.as_str() {
+            "end" => self.active = false,
+            "shuffle" => shuffle(&mut self.deck),
+            _ => ()
+        }
+
+        
     }
 
     fn get_stack(&self, stack_key: &str) -> Option<TransferTarget> {    
@@ -651,4 +660,46 @@ mod test{
 
         assert_eq!(&middle, "king diamonds");
     }
+
+    #[test]
+    fn it_can_show_info_about_the_game() {
+        let ast = vec!(
+            Statement::Declaration(
+                Declaration {
+                    key: GlobalKey::Deck,
+                    value: Expression::Symbol("StandardDeck".to_string())
+                }
+            )
+        );
+
+        let game = Game::new(ast);
+        let display = game.show("game");
+
+        assert_eq!(display, "active"); 
+    }
+
+    #[test]
+    fn it_can_end_a_game() {
+        let body = vec!(
+            Statement::FunctionCall(
+                FunctionCall{
+                    name: "end".to_string(),
+                    arguments: vec!()
+                }
+            )
+        );
+
+        let name = "setup".to_owned();
+        let definition = Definition{ name, body };
+        let statement = Statement::Definition(definition);
+        let ast = vec!(statement);
+
+        let mut game = Game::new(ast);
+        game.start();
+
+        let display = game.show("game");
+
+        assert_eq!(display, "game over");
+    }
+
 }

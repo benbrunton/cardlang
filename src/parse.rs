@@ -119,6 +119,12 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Statement>, ParseError> {
 fn create_function(name: &str, tokens_iter: &mut std::slice::Iter<Token>) -> Result<Statement, ParseError> {
     let mut arguments = vec!();
 
+    // inbuilt hacks
+    match name {
+        "end" => arguments.push(Expression::Symbol("active".to_string())),
+        _ => ()
+    }
+
     match tokens_iter.next() {
         Some(Token::Deck) => {
             arguments.push(Expression::Symbol("deck".to_string()));
@@ -149,15 +155,6 @@ fn create_transfer(from: &str, tokens_iter: &mut std::slice::Iter<Token>) -> Res
         },
         _ => None
     };
-
-    /*
-    // handle optional params here...
-    let _potential_count = tokens_iter.next();
-    match _potential_count {
-        Token::Symbol(_) => (), //count = Some(TransferCount::End)
-        _ => ()
-    }
-    */
 
     let transfer = Transfer{ from, to, modifier, count };
     let statement = Statement::Transfer(transfer);
@@ -340,6 +337,7 @@ mod test{
 
         assert_eq!(Ok(expected), result);
     }
+
     #[test]
     fn it_returns_a_parse_error_when_function_not_defined_correctly() {
         let tokens = vec!(
@@ -516,6 +514,27 @@ mod test{
         let expected = Ok(vec!(statement));
         
         let result = parse(tokens);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn it_can_recognise_function_calls_with_no_arguments() {
+        let tokens = vec!(
+            Token::Symbol("end".to_string()),
+            Token::OpenParens,
+            Token::CloseParens
+        );
+
+        let function_call = FunctionCall{
+            name: "end".to_string(),
+            arguments: vec!(Expression::Symbol("active".to_string()))
+        };
+
+        let statement = Statement::FunctionCall(function_call);
+        let expected = Ok(vec!(statement));
+
+        let result = parse(tokens);
+
         assert_eq!(result, expected);
     }
 }
