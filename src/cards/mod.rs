@@ -3,7 +3,7 @@ use std::fmt;
 mod player;
 pub use player::*;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Suit {
     Spades,
     Hearts,
@@ -11,7 +11,7 @@ pub enum Suit {
     Diamonds
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Rank {
     Ace,
     Two,
@@ -28,7 +28,7 @@ pub enum Rank {
     King
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Card {
     suit: Suit,
     rank: Rank

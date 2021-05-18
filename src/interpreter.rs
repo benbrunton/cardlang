@@ -1,12 +1,19 @@
 use crate::ast::*;
 use crate::cards::{standard_deck, Card, Player};
 use std::fmt::Display;
-use crate::runtime::{transfer::{transfer, TransferTarget}, std::{shuffle, end, winner}};
+use crate::runtime::{transfer::{transfer, TransferTarget}, std::{shuffle, end, winner, count}};
 use std::collections::HashMap;
 
 #[derive(Clone)]
 enum ArgumentValue {
     Number(usize)
+}
+
+#[derive(Clone, PartialEq)]
+pub enum PrimitiveValue {
+    Bool(bool),
+    Number(f64),
+    Stack(Vec<Card>)
 }
 
 #[derive(Clone, PartialEq)]
@@ -169,7 +176,9 @@ impl Game {
         statements.iter().for_each(|statement|{
             match statement {
                 Statement::Transfer(t) => self.handle_transfer(t),
-                Statement::FunctionCall(f) => self.handle_function_call(f),
+                Statement::FunctionCall(f) => {
+                    let _ = self.handle_function_call(f);
+                },
                 Statement::IfStatement(i) => self.handle_if_statement(i),
                 _ => ()
             }
@@ -192,22 +201,38 @@ impl Game {
         self.set_stack(&t.to, new_to);
     }
 
-    fn handle_function_call(&mut self, f: &FunctionCall) {
+    fn handle_function_call(&mut self, f: &FunctionCall) -> Option<PrimitiveValue>{
         match f.name.as_str() {
-            "end" => end(&mut self.status),
-            "shuffle" => shuffle(&mut self.deck),
-            "winner" => {
-                let player_id = self.resolve_expression(&f.arguments[0]).to_number();
-                winner(&mut self.winners, player_id)
+            "end" => {
+                end(&mut self.status);
+                None
             },
-            _ => ()
+            "shuffle" => {
+                shuffle(&mut self.deck);
+                None
+            },
+            "winner" => {
+                let player_id = match self.resolve_expression(&f.arguments[0]) {
+                    PrimitiveValue::Number(n) => n,
+                    _ => 0.0
+                };
+
+                winner(&mut self.winners, player_id);
+                None
+            },
+            "count" => {
+                let stack_to_count = self.resolve_expression(&f.arguments[0]);
+                let c = count(stack_to_count);
+                Some(PrimitiveValue::Number(c as f64))
+            }
+            _ => None
         }        
     }
 
     fn handle_if_statement(&mut self, i: &IfStatement) {
         let should_execute = match &i.expression {
             Expression::Bool(b) => *b,
-            Expression::Comparison(c) => c.left == c.right,
+            Expression::Comparison(c) => self.resolve_expression(&c.left) == self.resolve_expression(&c.right),
             _ => false
         };
 
@@ -277,16 +302,29 @@ impl Game {
         None
     }
 
-    fn resolve_expression(&self, expression: &Expression) -> Expression {
+    fn resolve_expression(&mut self, expression: &Expression) -> PrimitiveValue {
         match expression {
-            Expression::Symbol(_s) => {
-                //let components = s.split(&[':']).collect();
+            Expression::Symbol(s) => {
+                let components: Vec<&str> = s.split(&[':'][..]).collect();
                 match self.find_in_call_stack("player") {
-                    Some(ArgumentValue::Number(n)) => Expression::Number(n as f64),
-                    _ => expression.to_owned()
+                    Some(ArgumentValue::Number(n)) => {
+                        if components.len() > 1 {
+                            match components[1] {
+                                "hand" => PrimitiveValue::Stack(self.players[(n as usize) - 1 ].get_hand()),
+                                _ => PrimitiveValue::Number(n as f64)
+                            }
+                        } else {
+                            PrimitiveValue::Number(n as f64)
+                        }
+                    },
+                    _ => PrimitiveValue::Bool(false)
                 }
             },
-            _ => expression.to_owned()
+            Expression::FunctionCall(f) => {
+                self.handle_function_call(&f).unwrap_or(PrimitiveValue::Bool(false))
+            },
+            Expression::Number(n) => PrimitiveValue::Number(*n),
+            _ => PrimitiveValue::Bool(false) // expression.to_owned()
         }
     }
 
@@ -1016,6 +1054,128 @@ mod test{
 
         let mut game = Game::new(ast);
         game.start();
+
+        let display = game.show("game");
+
+        assert_eq!(display, "game over");
+    }
+
+    #[test]
+    fn it_can_compare_based_on_function_calls() {
+        let mut ast = vec!(
+            Statement::Declaration(
+                Declaration {
+                    key: GlobalKey::Players,
+                    value: Expression::Number(2.0)
+                }
+            )
+        );
+        let if_body = vec!(
+            Statement::FunctionCall(
+                FunctionCall{
+                    name: "end".to_string(),
+                    arguments: vec!()
+                }
+            )
+        );
+
+        let count_call = FunctionCall {
+            name: "count".to_string(),
+            arguments: vec!(
+                Expression::Symbol("player:hand".to_string())
+            )
+        };
+
+        let comparison = Comparison{
+            left: Expression::FunctionCall(count_call),
+            right: Expression::Number(0.0)
+        };
+
+        let if_statement = IfStatement{
+            expression: Expression::Comparison(Box::new(comparison)),
+            body: if_body
+        };
+
+        let body = vec!(
+            Statement::IfStatement(if_statement)
+        );
+
+        let name = "player_move".to_owned();
+        let definition = Definition{ name, body };
+        let statement = Statement::Definition(definition);
+        ast.push(statement);
+
+        let mut game = Game::new(ast);
+        game.start();
+        game.player_move(1);
+
+        let display = game.show("game");
+
+        assert_eq!(display, "game over");
+    }
+
+    #[test]
+    fn it_can_compare_based_on_function_calls_with_cards() {
+        let mut ast = vec!(
+            Statement::Declaration(
+                Declaration {
+                    key: GlobalKey::Players,
+                    value: Expression::Number(2.0)
+                }
+            )
+        );
+        let from = "deck".to_owned();
+        let to = "players".to_owned();
+        let modifier = None; //Some(TransferModifier::Alternate);
+        let count = Some(TransferCount::End);
+        let transfer = Transfer{ from, to, modifier, count };
+        let transfer_statement = Statement::Transfer(transfer);
+
+        let name = "setup".to_owned();
+        let body = vec!(transfer_statement);
+        let definition = Definition{ name, body };
+        let statement = Statement::Definition(definition);
+
+        ast.push(statement);
+
+        let if_body = vec!(
+            Statement::FunctionCall(
+                FunctionCall{
+                    name: "end".to_string(),
+                    arguments: vec!()
+                }
+            )
+        );
+
+        let count_call = FunctionCall {
+            name: "count".to_string(),
+            arguments: vec!(
+                Expression::Symbol("player:hand".to_string())
+            )
+        };
+
+        let comparison = Comparison{
+            left: Expression::FunctionCall(count_call),
+            right: Expression::Number(26.0)
+        };
+
+        let if_statement = IfStatement{
+            expression: Expression::Comparison(Box::new(comparison)),
+            body: if_body
+        };
+
+        let body = vec!(
+            Statement::IfStatement(if_statement)
+        );
+
+        let name = "player_move".to_owned();
+        let definition = Definition{ name, body };
+        let statement = Statement::Definition(definition);
+        ast.push(statement);
+
+        let mut game = Game::new(ast);
+        game.start();
+        game.player_move(1);
 
         let display = game.show("game");
 
