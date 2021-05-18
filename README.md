@@ -17,5 +17,4 @@ three hearts, four diamonds, five clubs
 - count inbuilt func
 - if conditional flow
 - check operator
-- is comparison operator
 - next_player inbuilt func

@@ -104,7 +104,7 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Statement>, ParseError> {
                     Err(e) => return Err(e)
                 };
 
-                tokens_iter.next();  // close parens?
+                //tokens_iter.next();  // close parens?
 
                 let body = match build_block(&mut tokens_iter) {
                     Ok(b) => b,
@@ -221,7 +221,6 @@ fn build_expression(tokens_iter: &mut std::slice::Iter<Token>) -> Result<Express
         None => return Err(ParseError::UnexpectedEndOfStream),
         _ => return Err(ParseError::UnexpectedToken)
     };
-
     combine_expression(tokens_iter, left)
 }
 
@@ -235,6 +234,19 @@ fn combine_expression(tokens_iter: &mut std::slice::Iter<Token>, left: Expressio
                 right
             };
             Ok(Expression::Comparison(Box::new(comparison)))
+        },
+        Some(Token::OpenParens) => {
+            match left {
+                Expression::Symbol(s) => {
+                    let arguments = vec!(build_expression(tokens_iter).expect("bad args!"));
+                    let function = FunctionCall{
+                        name: s.to_string(),
+                        arguments
+                    };
+                    combine_expression(tokens_iter, Expression::FunctionCall(function))
+                },
+                _ => Err(ParseError::UnexpectedToken)
+            }
         },
         _ => Err(ParseError::UnexpectedToken)
     }
@@ -697,6 +709,44 @@ mod test{
             arguments: vec!(Expression::Symbol("deck".to_string()))
         };
         let body = vec!(Statement::FunctionCall(function_call));
+        let if_statement = IfStatement{ expression, body };
+        let statement = Statement::IfStatement(if_statement);
+        let expected = vec!(statement);
+        let result = parse(tokens);
+
+        assert_eq!(Ok(expected), result);
+    }
+
+    // if(count(player:hand) is 0)
+    #[test]
+    fn it_can_handle_func_calls_in_comparisons() {
+        let tokens = vec!(
+            Token::If,
+            Token::OpenParens,
+            Token::Symbol("count".to_string()),
+            Token::OpenParens,
+            Token::Symbol("player:hand".to_string()),
+            Token::CloseParens,
+            Token::Is,
+            Token::Number(0.0),
+            Token::CloseParens,
+            Token::OpenBracket,
+            Token::CloseBracket
+        );
+
+        let function_call = FunctionCall{
+            name: "count".to_string(),
+            arguments: vec!(
+                Expression::Symbol("player:hand".to_string())
+            )
+        };
+
+        let comparison = Comparison {
+            left: Expression::FunctionCall(function_call),
+            right: Expression::Number(0.0)
+        };
+        let expression = Expression::Comparison(Box::new(comparison));
+        let body = vec!();
         let if_statement = IfStatement{ expression, body };
         let statement = Statement::IfStatement(if_statement);
         let expected = vec!(statement);

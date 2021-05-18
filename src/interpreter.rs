@@ -205,9 +205,14 @@ impl Game {
     }
 
     fn handle_if_statement(&mut self, i: &IfStatement) {
-        match i.expression {
-            Expression::Bool(true) => self.handle_statements(&i.body.clone()),
-            _ => ()
+        let should_execute = match &i.expression {
+            Expression::Bool(b) => *b,
+            Expression::Comparison(c) => c.left == c.right,
+            _ => false
+        };
+
+        if should_execute {
+            self.handle_statements(&i.body.clone());
         }
     }
 
@@ -977,5 +982,43 @@ mod test{
         let display = game.show("game");
 
         assert_eq!(display, "active");
+    }
+
+    #[test]
+    fn it_executes_if_statement_when_expression_is_true_comparison() {
+        let if_body = vec!(
+            Statement::FunctionCall(
+                FunctionCall{
+                    name: "end".to_string(),
+                    arguments: vec!()
+                }
+            )
+        );
+
+        let comparison = Comparison{
+            left: Expression::Number(1.0),
+            right: Expression::Number(1.0)
+        };
+
+        let if_statement = IfStatement{
+            expression: Expression::Comparison(Box::new(comparison)),
+            body: if_body
+        };
+
+        let body = vec!(
+            Statement::IfStatement(if_statement)
+        );
+
+        let name = "setup".to_owned();
+        let definition = Definition{ name, body };
+        let statement = Statement::Definition(definition);
+        let ast = vec!(statement);
+
+        let mut game = Game::new(ast);
+        game.start();
+
+        let display = game.show("game");
+
+        assert_eq!(display, "game over");
     }
 }

@@ -12,7 +12,8 @@ pub enum Expression {
     Symbol(String),
     Number(f64),
     Comparison(Box<Comparison>),
-    Bool(bool)
+    Bool(bool),
+    FunctionCall(FunctionCall)
 }
 
 impl Expression {
