@@ -128,6 +128,8 @@ fn handle_keyword(partial_token: &str, next_char: Option<&char>) -> Option<Token
         "check" => Some(TokenResult::Token(Token::Check)),
         "is" => Some(TokenResult::Token(Token::Is)),
         "if" => Some(TokenResult::Token(Token::If)),
+        "true" => Some(TokenResult::Token(Token::True)),
+        "false" => Some(TokenResult::Token(Token::False)),
         _ => None
     }
 }
@@ -401,5 +403,13 @@ this is a comment ) test2";
         let result = lexer(&src).unwrap();
         let expected = vec!(Token::Symbol("player:hand".to_owned()));
         assert_eq!(result, expected)
+    }
+
+    #[test]
+    fn it_can_recognise_true_and_false(){
+        let src = "true false";
+        let result = lexer(&src).unwrap();
+        let expected = vec!(Token::True, Token::False);
+        assert_eq!(result, expected);
     }
 }

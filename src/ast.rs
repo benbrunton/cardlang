@@ -3,13 +3,25 @@ pub enum Statement {
     Declaration(Declaration),
     Definition(Definition),
     Transfer(Transfer),
-    FunctionCall(FunctionCall)
+    FunctionCall(FunctionCall),
+    IfStatement(IfStatement)
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Expression {
     Symbol(String),
-    Number(f64)
+    Number(f64),
+    Comparison(Box<Comparison>),
+    Bool(bool)
+}
+
+impl Expression {
+    pub fn to_number(&self) -> f64 {
+        match self {
+            Self::Number(n) => *n,
+            _ => 0.0
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -30,6 +42,12 @@ pub struct Declaration {
 #[derive(Debug, PartialEq, Clone)]
 pub struct Definition {
     pub name: String,
+    pub body: Vec<Statement>
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct IfStatement {
+    pub expression: Expression,
     pub body: Vec<Statement>
 }
 
@@ -55,4 +73,10 @@ pub enum TransferCount {
 pub struct FunctionCall {
     pub name: String,
     pub arguments: Vec<Expression>
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct Comparison {
+    pub left: Expression,
+    pub right: Expression
 }

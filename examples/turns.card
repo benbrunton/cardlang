@@ -12,14 +12,13 @@ define setup(){
 define player_move(player){
     .(check player:id is current_player)
     player:hand > middle
-    end()
 
-    .(
     if(count(player:hand) is 0){
-        winner(player id)
+        winner(player:id)
         end()
     }
 
+    .(
     next_player()
     )
 }

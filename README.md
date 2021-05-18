@@ -14,9 +14,8 @@ three hearts, four diamonds, five clubs
 ```
 
 ## Todo
-- winners
+- count inbuilt func
 - if conditional flow
 - check operator
 - is comparison operator
-- object attributes (player hand / player id)
-- count, winner, next_player inbuilt functions
+- next_player inbuilt func

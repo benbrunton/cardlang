@@ -10,3 +10,7 @@ pub fn shuffle(stack: &mut Vec<Card>) {
 pub fn end(status: &mut GameState) {
     *status = GameState::GameOver;
 }
+
+pub fn winner(winners: &mut Vec<f64>, player: f64) {
+    winners.push(player);
+}

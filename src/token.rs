@@ -17,5 +17,7 @@ pub enum Token {
     Check,
     Is,
     If,
-    Newline
+    Newline,
+    True,
+    False
 }
