@@ -14,7 +14,6 @@ three hearts, four diamonds, five clubs
 ```
 
 ## Todo
-- count inbuilt func
-- if conditional flow
+- line numbers in parser error messaging
 - check operator
 - next_player inbuilt func

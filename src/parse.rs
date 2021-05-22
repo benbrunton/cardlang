@@ -1,69 +1,92 @@
-use crate::token::Token;
+use crate::token::{Token, SourceToken};
 use crate::ast::*;
 
 // use std::iter::Peekable;
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum ParseError{
+pub enum ParseErrorType{
     ExpectedSymbol,
     UnexpectedEndOfStream,
     UnexpectedToken
 }
 
-pub fn parse(tokens: Vec<Token>) -> Result<Vec<Statement>, ParseError> {
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct ParseError {
+    pub error_type: ParseErrorType,
+    pub line_number: u32
+}
+
+impl ParseError {
+    pub fn new(error_type: ParseErrorType, line_number: u32) -> ParseError {
+        ParseError {
+            error_type,
+            line_number
+        }
+    }
+}
+
+pub fn parse(tokens: &Vec<SourceToken>) -> Result<Vec<Statement>, ParseError> {
     let mut ast = vec!();
     let mut tokens_iter = tokens.iter();
 
     loop {
         let current_token = tokens_iter.next();
         match current_token {
-            Some(Token::Name) | Some(Token::Players) | Some(Token::CurrentPlayer)
-                | Some(Token::Stack) => {
+            Some(SourceToken{ token: Token::Name, .. }) 
+                | Some(SourceToken{ token: Token::Players, ..}) 
+                | Some(SourceToken{ token: Token::CurrentPlayer, ..})
+                | Some(SourceToken{ token: Token::Stack, ..}) => {
                 let unwrapped_token = current_token.expect("unable to unwrap token");
-                let key = get_key(unwrapped_token).expect("unable to find key");
+                let key = get_key(&unwrapped_token.token).expect("unable to find key");
                 let next_token = tokens_iter.next().expect("unable to find next token");
-                let value = get_value(next_token).expect("unable to find expression");
+                let value = get_value(&next_token.token).expect("unable to find expression");
                 let declaration = Declaration{ key, value };
                 let statement = Statement::Declaration(declaration);
                 ast.push(statement);
             },
-            Some(Token::Deck) => {
+            Some(SourceToken{ token: Token::Deck, line_number }) => {
                 let deck_token = current_token.expect("unable to unwrap token");
                 let next_token_result = tokens_iter.next();
                 match next_token_result {
-                    Some(Token::Symbol(_)) => {
-                        let key = get_key(deck_token).expect("unable to find key");
+                    Some(SourceToken{ token: Token::Symbol(_), ..}) => {
+                        let key = get_key(&deck_token.token).expect("unable to find key");
                         let next_token = next_token_result.expect("unable to find next token");
-                        let value = get_value(next_token).expect("unable to find expression");
+                        let value = get_value(&next_token.token).expect("unable to find expression");
                         let declaration = Declaration{ key, value };
                         let statement = Statement::Declaration(declaration);
                         ast.push(statement);
                     },
-                    Some(Token::Transfer) => {
+                    Some(SourceToken{ token: Token::Transfer, ..}) => {
                         let transfer_result = create_transfer("deck", &mut tokens_iter);
                         if transfer_result.is_err() {
                             return Err(transfer_result.unwrap_err());
                         }
                         ast.push(transfer_result.unwrap())
                     },
-                    _ => { return Err(ParseError::UnexpectedToken); }
+                    _ => {
+                        return Err(ParseError::new(ParseErrorType::UnexpectedToken, *line_number)); 
+                    }
                 }
             },
-            Some(Token::Define) => {
+            Some(SourceToken{ token: Token::Define, ..}) => {
                 let next_token = tokens_iter.next().expect("unable to find next token");
-                let name = match next_token {
+                let name = match &next_token.token {
                     Token::Symbol(s) => s.to_owned(),
                     _ => {
-                        return Err(ParseError::ExpectedSymbol)
+                        return Err(
+                            ParseError::new(
+                                ParseErrorType::ExpectedSymbol, next_token.line_number
+                            )
+                        )
                     }
                 };
 
                 // parens
                 tokens_iter.next();
-                tokens_iter.next();
 
-                // bracket
-                tokens_iter.next();
+                //panic!("extract contents of parens?");
+                let _ = build_expression(&mut tokens_iter);
 
                 let body = match build_block(&mut tokens_iter) {
                     Ok(b) => b,
@@ -74,16 +97,16 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Statement>, ParseError> {
                 let statement = Statement::Definition(definition);
                 ast.push(statement);
             },
-            Some(Token::Symbol(name)) => {
+            Some(SourceToken{token: Token::Symbol(name), line_number }) => {
                 match tokens_iter.next() {
-                    Some(Token::OpenParens) => {
+                    Some(SourceToken{ token: Token::OpenParens, ..}) => {
                         let func_result = create_function(name, &mut tokens_iter);
                         if func_result.is_err() {
                             return Err(func_result.unwrap_err());
                         }
                         ast.push(func_result.unwrap());
                     },
-                    Some(Token::Transfer) => {
+                    Some(SourceToken{ token: Token::Transfer, ..}) => {
                         let transfer_result = create_transfer(name, &mut tokens_iter);
                         if transfer_result.is_err() {
                             return Err(transfer_result.unwrap_err());
@@ -91,20 +114,18 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Statement>, ParseError> {
                         ast.push(transfer_result.unwrap())
 
                     },
-                    _ => return Err(ParseError::UnexpectedToken)
+                    _ => return Err(ParseError::new(ParseErrorType::UnexpectedToken, *line_number))
                 }
 
  
             },
-            Some(Token::If) => {
+            Some(SourceToken{ token: Token::If, ..}) => {
                 tokens_iter.next(); // assuming open parens?
 
                 let expression = match build_expression(&mut tokens_iter) {
                     Ok(ex) => ex,
                     Err(e) => return Err(e)
                 };
-
-                //tokens_iter.next();  // close parens?
 
                 let body = match build_block(&mut tokens_iter) {
                     Ok(b) => b,
@@ -123,14 +144,14 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Statement>, ParseError> {
     Ok(ast)
 }
 
-fn create_function(name: &str, tokens_iter: &mut std::slice::Iter<Token>) -> Result<Statement, ParseError> {
+fn create_function(name: &str, tokens_iter: &mut std::slice::Iter<SourceToken>) -> Result<Statement, ParseError> {
     let mut arguments = vec!();
 
     match tokens_iter.next() {
-        Some(Token::Deck) => {
+        Some(SourceToken{ token: Token::Deck, ..}) => {
             arguments.push(Expression::Symbol("deck".to_string()));
         },
-        Some(Token::Symbol(s)) => {
+        Some(SourceToken{ token: Token::Symbol(s), ..}) => {
             arguments.push(Expression::Symbol(s.to_string()));
         },
         _ => ()
@@ -144,13 +165,13 @@ fn create_function(name: &str, tokens_iter: &mut std::slice::Iter<Token>) -> Res
 }
 
 
-fn create_transfer(from: &str, tokens_iter: &mut std::slice::Iter<Token>) -> Result<Statement, ParseError> {
+fn create_transfer(from: &str, tokens_iter: &mut std::slice::Iter<SourceToken>) -> Result<Statement, ParseError> {
     let transfer_target = tokens_iter.next().expect("unable to find next token");
     let from = get_transfer_value(&Token::Symbol(from.to_string()));
-    let to = get_transfer_value(transfer_target);
+    let to = get_transfer_value(&transfer_target.token);
     let modifier = None;
     let count = match tokens_iter.next() {
-        Some(Token::Symbol(s)) => {
+        Some(SourceToken{ token: Token::Symbol(s), ..}) => {
             if s == "end" {
                 Some(TransferCount::End)
             } else {
@@ -194,40 +215,53 @@ fn get_transfer_value(token: &Token) -> String {
     }
 }
 
-fn build_block(tokens_iter: &mut std::slice::Iter<Token>) -> Result<Vec<Statement>, ParseError> {
+fn build_block(tokens_iter: &mut std::slice::Iter<SourceToken>) -> Result<Vec<Statement>, ParseError> {
     let mut body_tokens = vec!();
+    let mut line_number = 0;
+    let mut open_bracket_count = 0;
 
     loop {
         match tokens_iter.next() {
-            Some(Token::CloseBracket) => {
-                break;
+            Some(SourceToken{ token: Token::CloseBracket, line_number }) => {
+                if open_bracket_count > 1 {
+                    open_bracket_count -= 1;
+                    body_tokens.push(
+                        SourceToken{ token: Token::CloseBracket, line_number: *line_number }
+                    );
+                } else {
+                    break;
+                }
             },
             Some(t) => {
+                if t.token == Token::OpenBracket {
+                    open_bracket_count += 1;
+                }
+                line_number = t.line_number;
                 body_tokens.push(t.clone());
             },
-            None => return Err(ParseError::UnexpectedEndOfStream)
+            None => return Err(ParseError::new(ParseErrorType::UnexpectedEndOfStream, line_number))
         }
     }
 
-    return parse(body_tokens)
+    return parse(&body_tokens)
 }
 
-fn build_expression(tokens_iter: &mut std::slice::Iter<Token>) -> Result<Expression, ParseError> {
+fn build_expression(tokens_iter: &mut std::slice::Iter<SourceToken>) -> Result<Expression, ParseError> {
     let left = match tokens_iter.next() {
-        Some(Token::True) => Expression::Bool(true),
-        Some(Token::False) => Expression::Bool(false),
-        Some(Token::Symbol(s)) => Expression::Symbol(s.to_string()),
-        Some(Token::Number(n)) => Expression::Number(*n),
-        None => return Err(ParseError::UnexpectedEndOfStream),
-        _ => return Err(ParseError::UnexpectedToken)
+        Some(SourceToken{ token: Token::True, ..}) => Expression::Bool(true),
+        Some(SourceToken{ token: Token::False, ..}) => Expression::Bool(false),
+        Some(SourceToken{ token: Token::Symbol(s), ..}) => Expression::Symbol(s.to_string()),
+        Some(SourceToken{ token: Token::Number(n), ..}) => Expression::Number(*n),
+        None => return Err(ParseError::new(ParseErrorType::UnexpectedEndOfStream, 0)),
+        _ => return Err(ParseError::new(ParseErrorType::UnexpectedToken, 0))
     };
     combine_expression(tokens_iter, left)
 }
 
-fn combine_expression(tokens_iter: &mut std::slice::Iter<Token>, left: Expression) -> Result<Expression, ParseError> {
+fn combine_expression(tokens_iter: &mut std::slice::Iter<SourceToken>, left: Expression) -> Result<Expression, ParseError> {
     match tokens_iter.next() {
-        None | Some(Token::CloseParens) => Ok(left),
-        Some(Token::Is) => {
+        None | Some(SourceToken{ token: Token::CloseParens, ..}) => Ok(left),
+        Some(SourceToken{ token: Token::Is, ..}) => {
             let right = build_expression(tokens_iter).expect("bad right expression");
             let comparison = Comparison {
                 left,
@@ -235,7 +269,7 @@ fn combine_expression(tokens_iter: &mut std::slice::Iter<Token>, left: Expressio
             };
             Ok(Expression::Comparison(Box::new(comparison)))
         },
-        Some(Token::OpenParens) => {
+        Some(SourceToken{ token: Token::OpenParens, ..}) => {
             match left {
                 Expression::Symbol(s) => {
                     let arguments = vec!(build_expression(tokens_iter).expect("bad args!"));
@@ -245,10 +279,10 @@ fn combine_expression(tokens_iter: &mut std::slice::Iter<Token>, left: Expressio
                     };
                     combine_expression(tokens_iter, Expression::FunctionCall(function))
                 },
-                _ => Err(ParseError::UnexpectedToken)
+                _ => Err(ParseError::new(ParseErrorType::UnexpectedToken, 0))
             }
         },
-        _ => Err(ParseError::UnexpectedToken)
+        _ => Err(ParseError::new(ParseErrorType::UnexpectedToken, 0))
     }
 }
 
@@ -256,12 +290,16 @@ fn combine_expression(tokens_iter: &mut std::slice::Iter<Token>, left: Expressio
 mod test{
     use super::*;
 
+    fn get_source_tokens(tokens: Vec<Token>) -> Vec<SourceToken> {
+        tokens.iter().map(|t| SourceToken{ token: t.to_owned(), line_number: 0 }).collect()
+    }
+
     #[test]
     fn it_can_handle_a_single_declaration() {
-        let tokens = vec!(
+        let tokens = get_source_tokens(vec!(
             Token::Name,
             Token::Symbol("turns".to_string())
-        );
+        ));
         let mut expected = vec!();
         let key = GlobalKey::Name;
         let value = Expression::Symbol("turns".to_string());
@@ -270,17 +308,17 @@ mod test{
         let statement = Statement::Declaration(declaration);
         expected.push(statement);
 
-        let result = parse(tokens);
+        let result = parse(&tokens);
 
         assert_eq!(Ok(expected), result)
     }
 
     #[test]
     fn it_can_handle_numerical_declaration(){ 
-        let tokens = vec!(
+        let tokens = get_source_tokens(vec!(
             Token::Players,
             Token::Number(2.0)
-        );
+        ));
         let mut expected = vec!();
         let key = GlobalKey::Players;
         let value = Expression::Number(2.0);
@@ -289,20 +327,20 @@ mod test{
         let statement = Statement::Declaration(declaration);
         expected.push(statement);
 
-        let result = parse(tokens);
+        let result = parse(&tokens);
 
         assert_eq!(Ok(expected), result)
     }
 
     #[test]
     fn it_can_handle_newlines(){ 
-        let tokens = vec!(
+        let tokens = get_source_tokens(vec!(
             Token::Name,
             Token::Symbol("turns".to_string()),
             Token::Newline,
             Token::Players,
             Token::Number(2.0)
-        );
+        ));
         let mut expected = vec!();
         let key = GlobalKey::Name;
         let value = Expression::Symbol("turns".to_string());
@@ -318,14 +356,14 @@ mod test{
         let statement = Statement::Declaration(declaration);
         expected.push(statement);
 
-        let result = parse(tokens);
+        let result = parse(&tokens);
 
         assert_eq!(Ok(expected), result)
     }
 
     #[test]
     fn it_can_setup_a_simple_game() {
-        let tokens = vec!(
+        let tokens = get_source_tokens(vec!(
             Token::Name,
             Token::Symbol("turns".to_string()),
             Token::Newline,
@@ -337,7 +375,7 @@ mod test{
             Token::Number(1.0),
             Token::Stack,
             Token::Symbol("middle".to_owned())
-        );
+        ));
 
         let mut expected = vec!();
         let key = GlobalKey::Name;
@@ -374,57 +412,57 @@ mod test{
 
         let statement = Statement::Declaration(declaration);
         expected.push(statement);
-        let result = parse(tokens);
+        let result = parse(&tokens);
 
         assert_eq!(Ok(expected), result)
     }
 
     #[test]
     fn it_recognises_a_function_definition() {
-        let tokens = vec!(
+        let tokens = get_source_tokens(vec!(
             Token::Define,
             Token::Symbol("setup".to_owned()),
             Token::OpenParens,
             Token::CloseParens,
             Token::OpenBracket,
             Token::CloseBracket
-        );
+        ));
 
         let name = "setup".to_owned();
         let body = vec!();
         let definition = Definition{ name, body };
         let statement = Statement::Definition(definition);
         let expected = vec!(statement);
-        let result = parse(tokens);
+        let result = parse(&tokens);
 
         assert_eq!(Ok(expected), result);
     }
 
     #[test]
     fn it_returns_a_parse_error_when_function_not_defined_correctly() {
-        let tokens = vec!(
+        let tokens = get_source_tokens(vec!(
             Token::Define,
             Token::Number(1.0),
             Token::OpenParens,
             Token::CloseParens,
             Token::OpenBracket,
             Token::CloseBracket
-        );
+        ));
 
-        let expected = Err(ParseError::ExpectedSymbol);
-        let result = parse(tokens);
+        let expected = ParseErrorType::ExpectedSymbol;
+        let result = parse(&tokens);
 
-        assert_eq!(expected, result);
+        assert_eq!(result.unwrap_err().error_type, expected);
     }
 
     // deck > players alt end
     #[test]
     fn it_recognises_stack_transfers() {
-        let tokens = vec!(
+        let tokens = get_source_tokens(vec!(
             Token::Deck,
             Token::Transfer,
             Token::Players
-        );
+        ));
 
         let from = "deck".to_owned();
         let to = "players".to_owned();
@@ -433,14 +471,14 @@ mod test{
         let transfer = Transfer{ from, to, modifier, count };
         let statement = Statement::Transfer(transfer);
         let expected = Ok(vec!(statement));
-        let result = parse(tokens);
+        let result = parse(&tokens);
 
         assert_eq!(result, expected);
     }
 
     #[test]
     fn it_can_handle_function_body() {
-        let tokens = vec!(
+        let tokens = get_source_tokens(vec!(
             Token::Define,
             Token::Symbol("setup".to_owned()),
             Token::OpenParens,
@@ -451,7 +489,7 @@ mod test{
             Token::Players,
             Token::Newline,
             Token::CloseBracket
-        );
+        ));
 
         let from = "deck".to_owned();
         let to = "players".to_owned();
@@ -465,31 +503,31 @@ mod test{
         let definition = Definition{ name, body };
         let statement = Statement::Definition(definition);
         let expected = vec!(statement);
-        let result = parse(tokens);
+        let result = parse(&tokens);
 
         assert_eq!(Ok(expected), result);
     }
 
     #[test]
     fn it_returns_error_for_incomplete_function_body() {
-        let tokens = vec!(
+        let tokens = get_source_tokens(vec!(
             Token::Define,
             Token::Symbol("setup".to_owned()),
             Token::OpenParens,
             Token::CloseParens,
             Token::OpenBracket
-        );
+        ));
 
-        let expected = Err(ParseError::UnexpectedEndOfStream);
-        let result = parse(tokens);
+        let expected = ParseErrorType::UnexpectedEndOfStream;
+        let result = parse(&tokens);
 
-        assert_eq!(expected, result);
+        assert_eq!(result.unwrap_err().error_type, expected);
     }
 
     
     #[test]
     fn it_returns_error_for_invalid_function_body() {
-        let tokens = vec!(
+        let tokens = get_source_tokens(vec!(
             Token::Define,
             Token::Symbol("setup".to_owned()),
             Token::OpenParens,
@@ -498,33 +536,33 @@ mod test{
             Token::Define,
             Token::Newline,
             Token::CloseBracket
-        );
+        ));
 
-        let expected = Err(ParseError::ExpectedSymbol);
-        let result = parse(tokens);
+        let expected = ParseErrorType::ExpectedSymbol;
+        let result = parse(&tokens);
 
-        assert_eq!(expected, result);
+        assert_eq!(result.unwrap_err().error_type, expected);
     }
 
     #[test]
     fn deck_must_be_followed_by_a_symbol_or_transfer() {
-        let tokens = vec!(
+        let tokens = get_source_tokens(vec!(
             Token::Deck,
             Token::Players
-        );
+        ));
 
-        let expected = Err(ParseError::UnexpectedToken);
-        let result = parse(tokens);
+        let expected = ParseErrorType::UnexpectedToken;
+        let result = parse(&tokens);
 
-        assert_eq!(expected, result);
+        assert_eq!(result.unwrap_err().error_type, expected);
     }
 
     #[test]
     fn it_can_recognise_function_calls() {
-        let tokens = vec!(
+        let tokens = get_source_tokens(vec!(
             Token::Symbol("shuffle".to_string()), Token::OpenParens,
             Token::Deck, Token::CloseParens
-        );
+        ));
 
         let function_call = FunctionCall{
             name: "shuffle".to_string(),
@@ -533,18 +571,18 @@ mod test{
         let statement = Statement::FunctionCall(function_call);
         let expected = Ok(vec!(statement));
 
-        let result = parse(tokens);
+        let result = parse(&tokens);
 
         assert_eq!(result, expected);
     }
 
     #[test]
     fn it_recognises_player_hand_to_deck_transfer() {
-        let tokens = vec!(
+        let tokens = get_source_tokens(vec!(
             Token::Symbol("player:hand".to_string()),
             Token::Transfer,
             Token::Deck
-        );
+        ));
 
         let from = "player:hand".to_owned();
         let to = "deck".to_owned();
@@ -554,18 +592,18 @@ mod test{
         let statement = Statement::Transfer(transfer);
         let expected = Ok(vec!(statement));
         
-        let result = parse(tokens);
+        let result = parse(&tokens);
         assert_eq!(result, expected);
     }
 
     #[test]
     fn it_can_pass_a_count_to_transfer() {
-        let tokens = vec!(
+        let tokens = get_source_tokens(vec!(
             Token::Symbol("player:hand".to_string()),
             Token::Transfer,
             Token::Deck,
             Token::Symbol("end".to_string())
-        );
+        ));
 
         let from = "player:hand".to_owned();
         let to = "deck".to_owned();
@@ -575,17 +613,17 @@ mod test{
         let statement = Statement::Transfer(transfer);
         let expected = Ok(vec!(statement));
         
-        let result = parse(tokens);
+        let result = parse(&tokens);
         assert_eq!(result, expected);
     }
 
     #[test]
     fn it_can_recognise_function_calls_with_no_arguments() {
-        let tokens = vec!(
+        let tokens = get_source_tokens(vec!(
             Token::Symbol("end".to_string()),
             Token::OpenParens,
             Token::CloseParens
-        );
+        ));
 
         let function_call = FunctionCall{
             name: "end".to_string(),
@@ -595,19 +633,19 @@ mod test{
         let statement = Statement::FunctionCall(function_call);
         let expected = Ok(vec!(statement));
 
-        let result = parse(tokens);
+        let result = parse(&tokens);
 
         assert_eq!(result, expected);
     }
 
     #[test]
     fn does_it_recognise_win_player_id() {
-        let tokens = vec!(
+        let tokens = get_source_tokens(vec!(
             Token::Symbol("winner".to_string()),
             Token::OpenParens,
             Token::Symbol("player:id".to_string()),
             Token::CloseParens
-        );
+        ));
 
         let function_call = FunctionCall{
             name: "winner".to_string(),
@@ -617,54 +655,54 @@ mod test{
         let statement = Statement::FunctionCall(function_call);
         let expected = Ok(vec!(statement));
 
-        let result = parse(tokens);
+        let result = parse(&tokens);
 
         assert_eq!(result, expected);
     }
 
     #[test]
     fn it_can_handle_if_statements() {
-        let tokens = vec!(
+        let tokens = get_source_tokens(vec!(
             Token::If,
             Token::OpenParens,
             Token::True,
             Token::CloseParens,
             Token::OpenBracket,
             Token::CloseBracket
-        );
+        ));
         let expression = Expression::Bool(true);
         let body = vec!();
         let if_statement = IfStatement{ expression, body };
         let statement = Statement::IfStatement(if_statement);
         let expected = vec!(statement);
-        let result = parse(tokens);
+        let result = parse(&tokens);
 
         assert_eq!(Ok(expected), result);
     }
 
     #[test]
     fn it_can_handle_false_if_statements() {
-        let tokens = vec!(
+        let tokens = get_source_tokens(vec!(
             Token::If,
             Token::OpenParens,
             Token::False,
             Token::CloseParens,
             Token::OpenBracket,
             Token::CloseBracket
-        );
+        ));
         let expression = Expression::Bool(false);
         let body = vec!();
         let if_statement = IfStatement{ expression, body };
         let statement = Statement::IfStatement(if_statement);
         let expected = vec!(statement);
-        let result = parse(tokens);
+        let result = parse(&tokens);
 
         assert_eq!(Ok(expected), result);
     }
 
     #[test]
     fn it_can_handle_comparisons_in_if_statement() {
-        let tokens = vec!(
+        let tokens = get_source_tokens(vec!(
             Token::If,
             Token::OpenParens,
             Token::Symbol("player:id".to_string()),
@@ -673,7 +711,7 @@ mod test{
             Token::CloseParens,
             Token::OpenBracket,
             Token::CloseBracket
-        );
+        ));
 
         let comparison = Comparison {
             left: Expression::Symbol("player:id".to_string()),
@@ -684,14 +722,14 @@ mod test{
         let if_statement = IfStatement{ expression, body };
         let statement = Statement::IfStatement(if_statement);
         let expected = vec!(statement);
-        let result = parse(tokens);
+        let result = parse(&tokens);
 
         assert_eq!(Ok(expected), result);
     }
 
     #[test]
     fn it_assigns_statements_to_an_if_statement() {
-        let tokens = vec!(
+        let tokens = get_source_tokens(vec!(
             Token::If,
             Token::OpenParens,
             Token::True,
@@ -702,7 +740,7 @@ mod test{
             Token::Deck,
             Token::CloseParens,
             Token::CloseBracket
-        );
+        ));
         let expression = Expression::Bool(true);
         let function_call = FunctionCall{
             name: "shuffle".to_string(),
@@ -712,7 +750,7 @@ mod test{
         let if_statement = IfStatement{ expression, body };
         let statement = Statement::IfStatement(if_statement);
         let expected = vec!(statement);
-        let result = parse(tokens);
+        let result = parse(&tokens);
 
         assert_eq!(Ok(expected), result);
     }
@@ -720,7 +758,7 @@ mod test{
     // if(count(player:hand) is 0)
     #[test]
     fn it_can_handle_func_calls_in_comparisons() {
-        let tokens = vec!(
+        let tokens = get_source_tokens(vec!(
             Token::If,
             Token::OpenParens,
             Token::Symbol("count".to_string()),
@@ -732,7 +770,7 @@ mod test{
             Token::CloseParens,
             Token::OpenBracket,
             Token::CloseBracket
-        );
+        ));
 
         let function_call = FunctionCall{
             name: "count".to_string(),
@@ -750,9 +788,217 @@ mod test{
         let if_statement = IfStatement{ expression, body };
         let statement = Statement::IfStatement(if_statement);
         let expected = vec!(statement);
-        let result = parse(tokens);
+        let result = parse(&tokens);
 
         assert_eq!(Ok(expected), result);
+    }
+
+    #[test]
+    fn it_returns_a_line_number_on_errors() {
+        let tokens = vec!(
+            SourceToken{ token: Token::Define, line_number: 1 },
+            SourceToken{ token: Token::Number(1.0), line_number: 1 },
+            SourceToken{ token: Token::OpenParens, line_number: 1 },
+            SourceToken{ token: Token::CloseParens, line_number: 1 },
+            SourceToken{ token: Token::OpenBracket, line_number: 1 },
+            SourceToken{ token: Token::CloseBracket, line_number: 1 },
+        );
+
+        let expected = ParseError::new(ParseErrorType::ExpectedSymbol, 1);
+        let result = parse(&tokens);
+
+        assert_eq!(result.unwrap_err(), expected);
+    }
+
+    #[test]
+    fn it_returns_a_line_number_on_more_errors() {
+        let tokens = vec!(
+            SourceToken{ token: Token::Deck, line_number: 2 },
+            SourceToken{ token: Token::CloseBracket, line_number: 2 },
+        );
+
+        let expected = ParseError::new(ParseErrorType::UnexpectedToken, 2);
+        let result = parse(&tokens);
+
+        assert_eq!(result.unwrap_err(), expected);
+    }
+
+    #[test]
+    fn it_returns_a_line_number_on_unexpected_token_after_symbol() {
+        let tokens = vec!(
+            SourceToken{ token: Token::Symbol("foo".to_string()), line_number: 3 },
+            SourceToken{ token: Token::Symbol("bar".to_string()), line_number: 3 },
+        );
+
+        let expected = ParseError::new(ParseErrorType::UnexpectedToken, 3);
+        let result = parse(&tokens);
+
+        assert_eq!(result.unwrap_err(), expected);
+    }
+
+    #[test]
+    fn it_returns_a_line_number_on_unexpected_end_of_stream() {
+        let tokens = vec!(
+            SourceToken{ token: Token::If, line_number: 4 },
+            SourceToken{ token: Token::OpenParens, line_number: 4 },
+            SourceToken{ token: Token::Symbol("player:id".to_string()), line_number: 4 },
+            SourceToken{ token: Token::Is, line_number: 4 },
+            SourceToken{ token: Token::Number(1.0), line_number: 4 },
+            SourceToken{ token: Token::CloseParens, line_number: 4 },
+            SourceToken{ token: Token::Newline, line_number: 4 },
+            SourceToken{ token: Token::OpenBracket, line_number: 5 }
+        );
+
+        let expected = ParseError::new(ParseErrorType::UnexpectedEndOfStream, 5);
+        let result = parse(&tokens);
+
+        assert_eq!(result.unwrap_err(), expected);
+    }
+
+    #[test]
+    fn it_can_parse_a_multiline_if_block() {
+        /*
+        if(count(player:hand) is 0){
+            winner(player:id)
+            end()
+        }
+        */
+
+        let tokens = vec!(
+            SourceToken{ token: Token::If, line_number: 0 },
+            SourceToken{ token: Token::OpenParens, line_number: 0 },
+            SourceToken{ token: Token::Symbol("count".to_string()), line_number: 0 },
+            SourceToken{ token: Token::OpenParens, line_number: 0 },
+            SourceToken{ token: Token::Symbol("player:hand".to_string()), line_number: 0 },
+            SourceToken{ token: Token::CloseParens, line_number: 0 },
+            SourceToken{ token: Token::Is, line_number: 0 },
+            SourceToken{ token: Token::Number(0.0), line_number: 0 },
+            SourceToken{ token: Token::CloseParens, line_number: 0 },
+            SourceToken{ token: Token::OpenBracket, line_number: 0 },
+            SourceToken{ token: Token::Newline, line_number: 0 },
+            SourceToken{ token: Token::Symbol("winner".to_string()), line_number: 1 },
+            SourceToken{ token: Token::OpenParens, line_number: 1 },
+            SourceToken{ token: Token::Symbol("player:id".to_string()), line_number: 1 },
+            SourceToken{ token: Token::CloseParens, line_number: 1 },
+            SourceToken{ token: Token::Newline, line_number: 1 },
+            SourceToken{ token: Token::Symbol("end".to_string()), line_number: 2 },
+            SourceToken{ token: Token::OpenParens, line_number: 2 },
+            SourceToken{ token: Token::CloseParens, line_number: 2 },
+            SourceToken{ token: Token::Newline, line_number: 2 },
+            SourceToken{ token: Token::CloseBracket, line_number: 3 },
+            SourceToken{ token: Token::Newline, line_number: 3 },
+        );
+
+        let expected = vec!(
+            Statement::IfStatement(
+                IfStatement{
+                    expression: Expression::Comparison(Box::new(Comparison{
+                        left: Expression::FunctionCall(FunctionCall{
+                            name: "count".to_string(),
+                            arguments: vec!(
+                                Expression::Symbol("player:hand".to_string())
+                            )
+                        }),
+                        right: Expression::Number(0.0)
+                    })),
+                    body: vec!(
+                        Statement::FunctionCall(FunctionCall{
+                            name: "winner".to_string(),
+                            arguments: vec!(Expression::Symbol("player:id".to_string()))
+                        }),
+                        Statement::FunctionCall(FunctionCall{
+                            name: "end".to_string(),
+                            arguments: vec!()
+                        })
+                    )
+                }
+            )
+        );
+        let result = parse(&tokens);
+
+        assert_eq!(result, Ok(expected));
+    }
+
+    #[test]
+    fn it_can_parse_a_multiline_if_block_inside_a_func() {
+        /*
+        define player_move(player){
+            if(count(player:hand) is 0){
+                winner(player:id)
+                end()
+            }
+        }
+        */
+
+        let tokens = vec!(
+            SourceToken{ token: Token::Define, line_number: 1 },
+            SourceToken{ token: Token::Symbol("player_move".to_string()), line_number: 1 },
+            SourceToken{ token: Token::OpenParens, line_number: 1 },
+            SourceToken{ token: Token::Symbol("player".to_string()), line_number: 1 },
+            SourceToken{ token: Token::CloseParens, line_number: 1 },
+            SourceToken{ token: Token::OpenBracket, line_number: 1 },
+            SourceToken{ token: Token::Newline, line_number: 1 },
+            SourceToken{ token: Token::If, line_number: 2 },
+            SourceToken{ token: Token::OpenParens, line_number: 2 },
+            SourceToken{ token: Token::Symbol("count".to_string()), line_number: 2 },
+            SourceToken{ token: Token::OpenParens, line_number: 2 },
+            SourceToken{ token: Token::Symbol("player:hand".to_string()), line_number: 2 },
+            SourceToken{ token: Token::CloseParens, line_number: 2 },
+            SourceToken{ token: Token::Is, line_number: 2 },
+            SourceToken{ token: Token::Number(0.0), line_number: 2 },
+            SourceToken{ token: Token::CloseParens, line_number: 2 },
+            SourceToken{ token: Token::OpenBracket, line_number: 2 },
+            SourceToken{ token: Token::Newline, line_number: 2 },
+            SourceToken{ token: Token::Symbol("winner".to_string()), line_number: 3 },
+            SourceToken{ token: Token::OpenParens, line_number: 3 },
+            SourceToken{ token: Token::Symbol("player:id".to_string()), line_number: 3 },
+            SourceToken{ token: Token::CloseParens, line_number: 3 },
+            SourceToken{ token: Token::Newline, line_number: 3 },
+            SourceToken{ token: Token::Symbol("end".to_string()), line_number: 4 },
+            SourceToken{ token: Token::OpenParens, line_number: 4 },
+            SourceToken{ token: Token::CloseParens, line_number: 4 },
+            SourceToken{ token: Token::Newline, line_number: 4 },
+            SourceToken{ token: Token::CloseBracket, line_number: 5 },
+            SourceToken{ token: Token::Newline, line_number: 5 },
+            SourceToken{ token: Token::CloseBracket, line_number: 6 },
+            SourceToken{ token: Token::Newline, line_number: 6 },
+        );
+
+        let body = vec!(
+            Statement::IfStatement(
+                IfStatement{
+                    expression: Expression::Comparison(Box::new(Comparison{
+                        left: Expression::FunctionCall(FunctionCall{
+                            name: "count".to_string(),
+                            arguments: vec!(
+                                Expression::Symbol("player:hand".to_string())
+                            )
+                        }),
+                        right: Expression::Number(0.0)
+                    })),
+                    body: vec!(
+                        Statement::FunctionCall(FunctionCall{
+                            name: "winner".to_string(),
+                            arguments: vec!(Expression::Symbol("player:id".to_string()))
+                        }),
+                        Statement::FunctionCall(FunctionCall{
+                            name: "end".to_string(),
+                            arguments: vec!()
+                        })
+                    )
+                }
+            )
+        );
+
+        let expected = vec!(
+            Statement::Definition(Definition{
+                name: "player_move".to_string(),
+                body
+            })
+        );
+        let result = parse(&tokens);
+
+        assert_eq!(result, Ok(expected));
     }
 }
         

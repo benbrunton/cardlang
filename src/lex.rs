@@ -1,4 +1,4 @@
-use crate::token::Token;
+use crate::token::{Token, SourceToken};
 
 enum TokenResult {
     Token(Token),
@@ -15,16 +15,18 @@ pub enum LexErrorType{
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct LexError{
-    pub error_type: LexErrorType
+    pub error_type: LexErrorType,
+    pub line_number: u32
 }
 
 impl LexError{
-    pub fn new(error_type: LexErrorType) -> LexError {
-        LexError{ error_type }
+    pub fn new(error_type: LexErrorType, line_number: u32) -> LexError {
+        LexError{ error_type, line_number }
     }
 }
 
-pub fn lexer(source: &str) -> Result<Vec<Token>, LexError> {
+pub fn lexer(source: &str) -> Result<Vec<SourceToken>, LexError> {
+    let mut line_number = 1;
     let mut tokens = vec!();
     let mut chars = source.chars().peekable();
 
@@ -42,8 +44,16 @@ pub fn lexer(source: &str) -> Result<Vec<Token>, LexError> {
 
         match result {
             TokenResult::Token(t) => {
+                if t == Token::Newline {
+                    line_number += 1;
+                }
+
                 partial_token = None;
-                tokens.push(t);
+                let source_token = SourceToken{
+                    token: t,
+                    line_number
+                };
+                tokens.push(source_token);
             },
             TokenResult::PartialToken(s) => {
                 partial_token = Some(s);
@@ -52,14 +62,14 @@ pub fn lexer(source: &str) -> Result<Vec<Token>, LexError> {
                 partial_token = None;
             },
             TokenResult::Error => {
-                let lex_error = LexError::new(LexErrorType::ParseError);
+                let lex_error = LexError::new(LexErrorType::ParseError, line_number);
                 return Err(lex_error);
             }
         }
     }
 
     if tokens.len() == 0 {
-        let lex_error = LexError::new(LexErrorType::EmptySpecification);
+        let lex_error = LexError::new(LexErrorType::EmptySpecification, line_number);
         Err(lex_error)
     } else {
         Ok(tokens)
@@ -201,7 +211,7 @@ mod test{
         let src = "name";
         let result = lexer(&src).unwrap();
 
-        assert_eq!(result[0], Token::Name);
+        assert_eq!(result[0].token, Token::Name);
         assert_eq!(result.len(), 1);
     }
 
@@ -210,7 +220,7 @@ mod test{
         let src = "stack";
         let result = lexer(&src).unwrap();
 
-        assert_eq!(result[0], Token::Stack);
+        assert_eq!(result[0].token, Token::Stack);
         assert_eq!(result.len(), 1);
     }
 
@@ -219,7 +229,7 @@ mod test{
         let src = "deck";
         let result = lexer(&src).unwrap();
 
-        assert_eq!(result[0], Token::Deck);
+        assert_eq!(result[0].token, Token::Deck);
         assert_eq!(result.len(), 1);
     }
 
@@ -228,11 +238,11 @@ mod test{
         let src = "deck players stack current_player define";
         let result = lexer(&src).unwrap();
 
-        assert_eq!(result[0], Token::Deck);
-        assert_eq!(result[1], Token::Players);
-        assert_eq!(result[2], Token::Stack);
-        assert_eq!(result[3], Token::CurrentPlayer);
-        assert_eq!(result[4], Token::Define);
+        assert_eq!(result[0].token, Token::Deck);
+        assert_eq!(result[1].token, Token::Players);
+        assert_eq!(result[2].token, Token::Stack);
+        assert_eq!(result[3].token, Token::CurrentPlayer);
+        assert_eq!(result[4].token, Token::Define);
     }
 
     #[test]
@@ -240,7 +250,7 @@ mod test{
         let src = "scopa";
         let result = lexer(&src).unwrap();
 
-        assert_eq!(result[0], Token::Symbol("scopa".to_owned()));
+        assert_eq!(result[0].token, Token::Symbol("scopa".to_owned()));
     }
 
     #[test]
@@ -248,7 +258,7 @@ mod test{
         let src = "StandardDeck";
         let result = lexer(&src).unwrap();
 
-        assert_eq!(result[0], Token::Symbol("StandardDeck".to_owned()));
+        assert_eq!(result[0].token, Token::Symbol("StandardDeck".to_owned()));
     }
 
     #[test]
@@ -259,31 +269,32 @@ mod test{
             Token::Deck,
             Token::Symbol("StandardDeck".to_owned())
         );
-        assert_eq!(result, expected);
+        assert_eq!(result[0].token, expected[0]);
+        assert_eq!(result[1].token, expected[1]);
     }
 
     #[test]
     fn it_handles_open_parens() {
         let src = "(";
         let result = lexer(&src).unwrap();
-        let expected = vec!(Token::OpenParens);
-        assert_eq!(result, expected);
+        let expected = Token::OpenParens;
+        assert_eq!(result[0].token, expected);
     }
 
     #[test]
     fn it_handles_close_parens() {
         let src = ")";
         let result = lexer(&src).unwrap();
-        let expected = vec!(Token::CloseParens);
-        assert_eq!(result, expected);
+        let expected = Token::CloseParens;
+        assert_eq!(result[0].token, expected);
     }
 
     #[test]
     fn it_handles_comma() {
         let src = ",";
         let result = lexer(&src).unwrap();
-        let expected = vec!(Token::Comma);
-        assert_eq!(result, expected);
+        let expected = Token::Comma;
+        assert_eq!(result[0].token, expected);
     }
 
     #[test]
@@ -291,15 +302,16 @@ mod test{
         let src = "{}";
         let result = lexer(&src).unwrap();
         let expected = vec!(Token::OpenBracket, Token::CloseBracket);
-        assert_eq!(result, expected);
+        assert_eq!(result[0].token, expected[0]);
+        assert_eq!(result[1].token, expected[1]);
     }
 
     #[test]
     fn it_handles_transfer() {
         let src = ">";
         let result = lexer(&src).unwrap();
-        let expected = vec!(Token::Transfer);
-        assert_eq!(result, expected);
+        let expected = Token::Transfer;
+        assert_eq!(result[0].token, expected);
     }
 
     #[test]
@@ -310,23 +322,24 @@ mod test{
             Token::Check, Token::Symbol("cards".to_owned()),
             Token::Is, Token::Symbol("fun".to_owned())
         );
-        assert_eq!(result, expected);
+        assert_eq!(result[0].token, expected[0]);
+        assert_eq!(result[1].token, expected[1]);
     }
 
     #[test]
     fn it_handles_if(){
         let src ="if";
         let result = lexer(&src).unwrap();
-        let expected = vec!(Token::If);
-        assert_eq!(result, expected);
+        let expected = Token::If;
+        assert_eq!(result[0].token, expected);
     }
 
     #[test]
     fn it_handles_numbers(){
         let src ="1";
         let result = lexer(&src).unwrap();
-        let expected = vec!(Token::Number(1.0));
-        assert_eq!(result, expected);
+        let expected = Token::Number(1.0);
+        assert_eq!(result[0].token, expected);
     }
 
     #[test]
@@ -342,7 +355,7 @@ mod test{
         let src = "foo1";
         let result = lexer(&src).unwrap();
 
-        assert_eq!(result[0], Token::Symbol("foo1".to_owned()));
+        assert_eq!(result[0].token, Token::Symbol("foo1".to_owned()));
     }
 
     #[test]
@@ -350,7 +363,7 @@ mod test{
         let src = "\n";
         let result = lexer(&src).unwrap();
 
-        assert_eq!(result[0], Token::Newline);
+        assert_eq!(result[0].token, Token::Newline);
     }
 
     #[test]
@@ -358,7 +371,8 @@ mod test{
         let src = "name .( this is a comment ) test1";
         let result = lexer(&src).unwrap();
         let expected = vec!(Token::Name, Token::Symbol("test1".to_owned()));
-        assert_eq!(result, expected);
+        assert_eq!(result[0].token, expected[0]);
+        assert_eq!(result[1].token, expected[1]);
     }
 
     #[test]
@@ -367,7 +381,8 @@ mod test{
 this is a comment ) test2";
         let result = lexer(&src).unwrap();
         let expected = vec!(Token::Name, Token::Symbol("test2".to_owned()));
-        assert_eq!(result, expected);
+        assert_eq!(result[0].token, expected[0]);
+        assert_eq!(result[1].token, expected[1]);
     }
 
     #[test]
@@ -375,7 +390,8 @@ this is a comment ) test2";
         let src = "name .(()) test2";
         let result = lexer(&src).unwrap();
         let expected = vec!(Token::Name, Token::Symbol("test2".to_owned()));
-        assert_eq!(result, expected);
+        assert_eq!(result[0].token, expected[0]);
+        assert_eq!(result[1].token, expected[1]);
     }
 
     #[test]
@@ -383,7 +399,7 @@ this is a comment ) test2";
         let src = "hello_world";
         let result = lexer(&src).unwrap();
 
-        assert_eq!(result[0], Token::Symbol("hello_world".to_owned()));
+        assert_eq!(result[0].token, Token::Symbol("hello_world".to_owned()));
     }
 
     #[test]
@@ -394,15 +410,18 @@ this is a comment ) test2";
             Token::Symbol("shuffle".to_string()), Token::OpenParens,
             Token::Deck, Token::CloseParens
         );
-        assert_eq!(result, expected);
+        assert_eq!(result[0].token, expected[0]);
+        assert_eq!(result[1].token, expected[1]);
+        assert_eq!(result[2].token, expected[2]);
+        assert_eq!(result[3].token, expected[3]);
     }
 
     #[test]
     fn a_symbol_can_contain_an_attribute() {
         let src = "player:hand";
         let result = lexer(&src).unwrap();
-        let expected = vec!(Token::Symbol("player:hand".to_owned()));
-        assert_eq!(result, expected)
+        let expected = Token::Symbol("player:hand".to_owned());
+        assert_eq!(result[0].token, expected)
     }
 
     #[test]
@@ -410,6 +429,23 @@ this is a comment ) test2";
         let src = "true false";
         let result = lexer(&src).unwrap();
         let expected = vec!(Token::True, Token::False);
-        assert_eq!(result, expected);
+        assert_eq!(result[0].token, expected[0]);
+        assert_eq!(result[1].token, expected[1]);
+    }
+
+    #[test]
+    fn lex_errors_report_line_numbers() {
+        let src = "";
+        let result = lexer(&src).unwrap_err();
+
+        assert_eq!(result.line_number, 1);
+    }
+
+    #[test]
+    fn lex_errors_report_line_numbers_accurately() {
+        let src = "true\n1foo";
+        let result = lexer(&src).unwrap_err();
+
+        assert_eq!(result.line_number, 2);
     }
 }

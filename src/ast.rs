@@ -16,15 +16,6 @@ pub enum Expression {
     FunctionCall(FunctionCall)
 }
 
-impl Expression {
-    pub fn to_number(&self) -> f64 {
-        match self {
-            Self::Number(n) => *n,
-            _ => 0.0
-        }
-    }
-}
-
 #[derive(Debug, PartialEq, Clone)]
 pub enum GlobalKey {
     Name,

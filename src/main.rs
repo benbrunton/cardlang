@@ -54,7 +54,14 @@ fn translate_command(command: Vec<&str>) -> CommandResult {
             CommandResult::Show(display_list.join(" "))
         },
         "start" => CommandResult::Start,
-        "move" => CommandResult::Move(command[1].parse().unwrap_or(1)),
+        "move" => {
+            if command.len() < 2 {
+                println!("expected argument!");
+                CommandResult::CommandFailed
+            } else {
+                CommandResult::Move(command[1].parse().unwrap_or(1))
+            }
+        },
         _ => unrecognised_command()
     }
 }
@@ -100,10 +107,12 @@ fn parse_game(source: String) -> Option<Game> {
 
     let tokens = lex_result.expect("unable to unwrap tokens");
 
-    let parse_result = parse::parse(tokens);
+    let parse_result = parse::parse(&tokens);
 
     if parse_result.is_err() {
         println!("parse error: {:?}", parse_result.unwrap_err());
+        // maybe this should be an additional debug flag?
+        //println!("{:?}", &tokens);
         return None;
     }
 

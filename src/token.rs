@@ -21,3 +21,9 @@ pub enum Token {
     True,
     False
 }
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct SourceToken {
+    pub token: Token,
+    pub line_number: u32
+}

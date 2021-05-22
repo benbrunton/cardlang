@@ -287,7 +287,7 @@ impl Game {
     fn find_custom_item(&self, key: &str) -> String {
         match self.card_stacks.get(key) {
             Some(v) => Self::display_list(v),
-            _ => "".to_string()
+            _ => format!("{} not found", key)
         }
     }
     fn find_in_call_stack(&self, key: &str) -> Option<ArgumentValue> {
