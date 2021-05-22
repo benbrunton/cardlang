@@ -12,3 +12,12 @@ ace spades, two spades, three spades...
 > show player 1 hand
 three hearts, four diamonds, five clubs
 ```
+
+## Todo
+- card:rank
+- filter deck in declaration
+- limit on stack transfer
+- user defined functions
+- switch statements
+- specify cards on transfer
+- cards_in_stack inbuilt function

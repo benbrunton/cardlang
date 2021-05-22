@@ -10,27 +10,34 @@ def setup(){
 }
 
 def player_move(player, move){
-    check player id is current_player
-    switch move type {
-        "take": take(player, move),
-        "place": place(player, move),
-        _: error "unrecognised move type"
-    }
+    check(player:id is current_player)
+    valid_moves(take, drop)
+
+    .(end game conditions...)
 }
 
-def take(move, player, move) {
+def take(player, move) {
     .(each card in players hand)
-    check cards_in_stack(move cards, player hand)
+    check(cards_in_stack(move:cards, player:hand))
+
     .(target is single card)
-    check count(move target) is 1
+    check(count(move:target) is 1)
+
     .(target is in middle)
-    check cards_in_stack(move target, middle)
+    check(cards_in_stack(move:target, middle))
+
     .(move matches target value)
-    check get_value(move cards) is get_value(move target)
+    check(get_value(move:cards) is get_value(move:target))
+
+    .(make the transfer)
+    middle > player:collection - move:target
+    player:hand > player:collection - move:cards
 }
 
-def place(move, player) {
- 
+def drop(move, player) {
+    check(count(move:cards) is 1)
+    check(cards_in_stack(move:cards, player:hand))
+    player:hand > middle - move:cards
 }
 
 def get_value(cards) {
@@ -38,7 +45,7 @@ def get_value(cards) {
 }
 
 def not_royal(card){
-   card rank is not King
-   & card rank is not Queen
-   & card rank is not Jack 
+   card:rank is not King
+   & card:rank is not Queen
+   & card:rank is not Jack 
 }
