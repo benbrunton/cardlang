@@ -34,7 +34,8 @@ pub struct Game {
     call_stack: Vec<HashMap<String, ArgumentValue>>,
     card_stacks: HashMap<String, Vec<Card>>,
     status: GameState,
-    winners: Vec<f64>
+    winners: Vec<f64>,
+    current_player: usize
 }
 
 impl Game {
@@ -48,6 +49,7 @@ impl Game {
         let card_stacks = HashMap::new();
         let status = GameState::Pending;
         let winners = vec!();
+        let current_player = 1;
 
         for statement in ast.iter() {
             match statement {
@@ -76,7 +78,8 @@ impl Game {
             call_stack,
             card_stacks,
             status,
-            winners
+            winners,
+            current_player
         };
         game.initialise_declarations();
         game
@@ -99,6 +102,12 @@ impl Game {
                     value: Expression::Number(n)
                 }) => {
                     self.players = Self::generate_players(*n as i32);
+                },
+                Statement::Declaration(Declaration{
+                    key: GlobalKey::CurrentPlayer,
+                    value: Expression::Number(n)
+                }) => {
+                    self.current_player = *n as usize;
                 },
                 Statement::Declaration(Declaration{
                     key: GlobalKey::Stack,
@@ -129,6 +138,9 @@ impl Game {
                     GameState::GameOver => "game over"
                 };
                 format!("{}{}", status, winners)
+            },
+            "current_player" => {
+                format!("{}", self.current_player)
             },
             _ => self.check_exploded_show(key)
         }
@@ -173,16 +185,21 @@ impl Game {
     }
     
     fn handle_statements(&mut self, statements: &Vec<Statement>){
-        statements.iter().for_each(|statement|{
+        for statement in statements.iter() {
             match statement {
                 Statement::Transfer(t) => self.handle_transfer(t),
                 Statement::FunctionCall(f) => {
                     let _ = self.handle_function_call(f);
                 },
                 Statement::IfStatement(i) => self.handle_if_statement(i),
+                Statement::CheckStatement(c) => {
+                    if !self.resolve_to_bool(&c.expression) {
+                        return;
+                    }
+                },
                 _ => ()
             }
-        })
+        }
     }
 
     // todo - handle failures
@@ -224,20 +241,30 @@ impl Game {
                 let stack_to_count = self.resolve_expression(&f.arguments[0]);
                 let c = count(stack_to_count);
                 Some(PrimitiveValue::Number(c as f64))
-            }
+            },
+            "next_player" => {
+                self.current_player = if self.current_player < self.players.len() {
+                    self.current_player + 1
+                } else {
+                    1
+                };
+                None
+            },
             _ => None
         }        
     }
 
     fn handle_if_statement(&mut self, i: &IfStatement) {
-        let should_execute = match &i.expression {
+        if self.resolve_to_bool(&i.expression) {
+            self.handle_statements(&i.body.clone());
+        }
+    }
+
+    fn resolve_to_bool(&mut self, expression: &Expression) -> bool {
+        match expression {
             Expression::Bool(b) => *b,
             Expression::Comparison(c) => self.resolve_expression(&c.left) == self.resolve_expression(&c.right),
             _ => false
-        };
-
-        if should_execute {
-            self.handle_statements(&i.body.clone());
         }
     }
 
@@ -305,6 +332,9 @@ impl Game {
     fn resolve_expression(&mut self, expression: &Expression) -> PrimitiveValue {
         match expression {
             Expression::Symbol(s) => {
+                if s == "current_player" {
+                    return PrimitiveValue::Number(self.current_player as f64);
+                }
                 let components: Vec<&str> = s.split(&[':'][..]).collect();
                 match self.find_in_call_stack("player") {
                     Some(ArgumentValue::Number(n)) => {
@@ -1180,5 +1210,179 @@ mod test{
         let display = game.show("game");
 
         assert_eq!(display, "game over");
+    }
+
+    #[test]
+    fn check_stops_a_function_executing_when_expression_is_false() {
+        let body = vec!(
+            Statement::CheckStatement(CheckStatement{
+                expression: Expression::Bool(false)
+            }),
+            Statement::FunctionCall(
+                FunctionCall{
+                    name: "winner".to_string(),
+                    arguments: vec!(Expression::Number(1.0))
+                }
+            ),
+            Statement::FunctionCall(
+                FunctionCall{
+                    name: "end".to_string(),
+                    arguments: vec!()
+                }
+            )
+        );
+
+        let name = "setup".to_owned();
+        let definition = Definition{ name, body };
+        let statement = Statement::Definition(definition);
+        let ast = vec!(statement);
+
+        let mut game = Game::new(ast);
+        game.start();
+
+        let display = game.show("game");
+
+        assert_eq!(display, "active");
+    }
+
+    #[test]
+    fn check_passes_through_when_expression_is_true() {
+        let body = vec!(
+            Statement::CheckStatement(CheckStatement{
+                expression: Expression::Bool(true)
+            }),
+            Statement::FunctionCall(
+                FunctionCall{
+                    name: "winner".to_string(),
+                    arguments: vec!(Expression::Number(1.0))
+                }
+            ),
+            Statement::FunctionCall(
+                FunctionCall{
+                    name: "end".to_string(),
+                    arguments: vec!()
+                }
+            )
+        );
+
+        let name = "setup".to_owned();
+        let definition = Definition{ name, body };
+        let statement = Statement::Definition(definition);
+        let ast = vec!(statement);
+
+        let mut game = Game::new(ast);
+        game.start();
+
+        let display = game.show("game");
+
+        assert_eq!(display, "game over\nwinners: 1");
+    }
+
+    #[test]
+    fn it_shows_current_player() {
+        let ast = vec!(
+            Statement::Declaration(
+                Declaration {
+                    key: GlobalKey::CurrentPlayer,
+                    value: Expression::Number(1.0)
+                }
+            )
+        );
+
+        let game = Game::new(ast);
+        let current_player = game.show("current_player");
+
+        assert_eq!(current_player, "1");
+    }
+
+    #[test]
+    fn it_shows_current_player_as_set() {
+        let ast = vec!(
+            Statement::Declaration(
+                Declaration {
+                    key: GlobalKey::CurrentPlayer,
+                    value: Expression::Number(2.0)
+                }
+            )
+        );
+
+        let game = Game::new(ast);
+        let current_player = game.show("current_player");
+
+        assert_eq!(current_player, "2");
+    }
+
+    #[test]
+    fn it_can_rotate_current_player() {
+        let body = vec!(
+            Statement::FunctionCall(
+                FunctionCall{
+                    name: "next_player".to_string(),
+                    arguments: vec!()
+                }
+            )
+        );
+
+        let name = "setup".to_owned();
+        let definition = Definition{ name, body };
+        let statement = Statement::Definition(definition);
+        let ast = vec!(
+            Statement::Declaration(
+                Declaration {
+                    key: GlobalKey::Players,
+                    value: Expression::Number(3.0)
+                },
+            ),
+            Statement::Declaration(
+                Declaration {
+                    key: GlobalKey::CurrentPlayer,
+                    value: Expression::Number(1.0)
+                }
+            ),
+            statement
+        );
+
+        let mut game = Game::new(ast);
+        game.start();
+
+        let current_player = game.show("current_player");
+        assert_eq!(current_player, "2");
+    }
+
+    #[test]
+    fn it_can_rotate_current_player_back_to_first() {
+        let body = vec!(
+            Statement::FunctionCall(
+                FunctionCall{
+                    name: "next_player".to_string(),
+                    arguments: vec!()
+                }
+            )
+        );
+
+        let name = "setup".to_owned();
+        let definition = Definition{ name, body };
+        let statement = Statement::Definition(definition);
+        let ast = vec!(
+            Statement::Declaration(
+                Declaration {
+                    key: GlobalKey::Players,
+                    value: Expression::Number(2.0)
+                },
+            ),
+            Statement::Declaration(
+                Declaration {
+                    key: GlobalKey::CurrentPlayer,
+                    value: Expression::Number(2.0)
+                }
+            ),
+            statement
+        );
+
+        let mut game = Game::new(ast);
+        game.start();
+
+        let current_player = game.show("current_player");
+        assert_eq!(current_player, "1");
     }
 }

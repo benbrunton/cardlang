@@ -4,7 +4,8 @@ pub enum Statement {
     Definition(Definition),
     Transfer(Transfer),
     FunctionCall(FunctionCall),
-    IfStatement(IfStatement)
+    IfStatement(IfStatement),
+    CheckStatement(CheckStatement)
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -71,4 +72,9 @@ pub struct FunctionCall {
 pub struct Comparison {
     pub left: Expression,
     pub right: Expression
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct CheckStatement {
+    pub expression: Expression
 }

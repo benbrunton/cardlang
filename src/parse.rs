@@ -136,6 +136,24 @@ pub fn parse(tokens: &Vec<SourceToken>) -> Result<Vec<Statement>, ParseError> {
                 let statement = Statement::IfStatement(if_statement);
                 ast.push(statement);
             },
+            Some(SourceToken{ token: Token::Check, line_number}) => {
+                match tokens_iter.next() {
+                    Some(SourceToken{ token: Token::OpenParens, ..}) => (),
+                    _ => return Err(ParseError{
+                        error_type: ParseErrorType::UnexpectedToken,
+                        line_number: *line_number
+                    })
+                }
+
+                let expression = match build_expression(&mut tokens_iter) {
+                    Ok(ex) => ex,
+                    Err(e) => return Err(e)
+                };
+
+                let check_statement = CheckStatement{ expression };
+                let statement = Statement::CheckStatement(check_statement);
+                ast.push(statement);
+            },
             None => { break; },
             _ => (),
         }
@@ -252,6 +270,7 @@ fn build_expression(tokens_iter: &mut std::slice::Iter<SourceToken>) -> Result<E
         Some(SourceToken{ token: Token::False, ..}) => Expression::Bool(false),
         Some(SourceToken{ token: Token::Symbol(s), ..}) => Expression::Symbol(s.to_string()),
         Some(SourceToken{ token: Token::Number(n), ..}) => Expression::Number(*n),
+        Some(SourceToken{ token: Token::CurrentPlayer, ..}) => Expression::Symbol("current_player".to_string()),
         None => return Err(ParseError::new(ParseErrorType::UnexpectedEndOfStream, 0)),
         _ => return Err(ParseError::new(ParseErrorType::UnexpectedToken, 0))
     };
@@ -996,6 +1015,68 @@ mod test{
                 body
             })
         );
+        let result = parse(&tokens);
+
+        assert_eq!(result, Ok(expected));
+    }
+
+    #[test]
+    fn it_can_parse_a_check_statement() {
+        let tokens = vec!(
+            SourceToken{ token: Token::Check, line_number: 1 },
+            SourceToken{ token: Token::OpenParens, line_number: 1 },
+            SourceToken{ token: Token::True, line_number: 1 },
+            SourceToken{ token: Token::CloseParens, line_number: 1 },
+        );
+
+        let expected = vec!(
+            Statement::CheckStatement(CheckStatement{
+                expression: Expression::Bool(true)
+            })
+        );
+
+        let result = parse(&tokens);
+
+        assert_eq!(result, Ok(expected));
+    }
+
+    #[test]
+    fn it_insists_on_an_open_parens_for_check_condition() {
+        let tokens = vec!(
+            SourceToken{ token: Token::Check, line_number: 1 },
+            SourceToken{ token: Token::True, line_number: 1 }
+        );
+
+        let expected = ParseError{
+            error_type: ParseErrorType::UnexpectedToken,
+            line_number: 1
+        };
+
+        let result = parse(&tokens);
+
+        assert_eq!(result, Err(expected));
+    }
+
+    #[test]
+    fn it_can_parse_a_check_statement_with_current_player() {
+        let tokens = vec!(
+            SourceToken{ token: Token::Check, line_number: 1 },
+            SourceToken{ token: Token::OpenParens, line_number: 1 },
+            SourceToken{ token: Token::CurrentPlayer, line_number: 1 },
+            SourceToken{ token: Token::Is, line_number: 1 },
+            SourceToken{ token: Token::Symbol("player:id".to_string()), line_number: 1 },
+            SourceToken{ token: Token::CloseParens, line_number: 1 },
+        );
+
+        let expression = Expression::Comparison(Box::new(Comparison{
+            left: Expression::Symbol("current_player".to_string()),
+            right: Expression::Symbol("player:id".to_string())
+        }));
+
+        let expected = vec!(
+            Statement::CheckStatement(CheckStatement{ expression })
+        );
+
         let result = parse(&tokens);
 
         assert_eq!(result, Ok(expected));

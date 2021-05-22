@@ -12,8 +12,3 @@ ace spades, two spades, three spades...
 > show player 1 hand
 three hearts, four diamonds, five clubs
 ```
-
-## Todo
-- line numbers in parser error messaging
-- check operator
-- next_player inbuilt func
