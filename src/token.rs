@@ -19,7 +19,9 @@ pub enum Token {
     If,
     Newline,
     True,
-    False
+    False,
+    Ampersand,
+    Return
 }
 
 #[derive(Debug, PartialEq, Clone)]

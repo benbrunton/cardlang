@@ -9,14 +9,14 @@ def setup(){
     deck > players 3
 }
 
-def player_move(player, move){
+def player_move(player move){
     check(player:id is current_player)
     valid_moves(take, drop)
 
     .(end game conditions...)
 }
 
-def take(player, move) {
+def take(player move) {
     .(each card in players hand)
     check(cards_in_stack(move:cards, player:hand))
 
@@ -34,7 +34,7 @@ def take(player, move) {
     player:hand > player:collection - move:cards
 }
 
-def drop(move, player) {
+def drop(move player) {
     check(count(move:cards) is 1)
     check(cards_in_stack(move:cards, player:hand))
     player:hand > middle - move:cards
@@ -45,7 +45,5 @@ def get_value(cards) {
 }
 
 def not_royal(card){
-   card:rank is not King
-   & card:rank is not Queen
-   & card:rank is not Jack 
+   return(card:rank is not King & card:rank is not Queen & card:rank is not Jack)
 }

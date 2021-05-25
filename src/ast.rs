@@ -5,7 +5,8 @@ pub enum Statement {
     Transfer(Transfer),
     FunctionCall(FunctionCall),
     IfStatement(IfStatement),
-    CheckStatement(CheckStatement)
+    CheckStatement(CheckStatement),
+    ReturnStatement(ReturnStatement),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -14,7 +15,8 @@ pub enum Expression {
     Number(f64),
     Comparison(Box<Comparison>),
     Bool(bool),
-    FunctionCall(FunctionCall)
+    FunctionCall(FunctionCall),
+    And(Box<And>)
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -35,6 +37,7 @@ pub struct Declaration {
 #[derive(Debug, PartialEq, Clone)]
 pub struct Definition {
     pub name: String,
+    pub arguments: Vec<String>,
     pub body: Vec<Statement>
 }
 
@@ -77,4 +80,15 @@ pub struct Comparison {
 #[derive(Debug, PartialEq, Clone)]
 pub struct CheckStatement {
     pub expression: Expression
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct ReturnStatement {
+    pub expression: Expression
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct And {
+    pub left: Expression,
+    pub right: Expression
 }

@@ -6,7 +6,8 @@ use std::collections::HashMap;
 
 #[derive(Clone)]
 enum ArgumentValue {
-    Number(usize)
+    Number(usize),
+    Obj(HashMap<String, PrimitiveValue>)
 }
 
 #[derive(Clone, PartialEq)]
@@ -29,7 +30,7 @@ pub struct Game {
     deck: Vec<Card>,
     players: Vec<Player>,
     setup: Vec<Statement>,
-    player_move: Vec<Statement>,
+    player_move: Definition,
     ast: Vec<Statement>,
     call_stack: Vec<HashMap<String, ArgumentValue>>,
     card_stacks: HashMap<String, Vec<Card>>,
@@ -44,7 +45,7 @@ impl Game {
         let name = None;
         let players = vec!();
         let mut setup = vec!();
-        let mut player_move = vec!();
+        let mut player_move = Definition{name: "player_move".to_string(), body: vec!(), arguments: vec!()};
         let call_stack = vec!();
         let card_stacks = HashMap::new();
         let status = GameState::Pending;
@@ -54,14 +55,11 @@ impl Game {
         for statement in ast.iter() {
             match statement {
                 Statement::Definition(
-                    Definition{
-                        name,
-                        body: b
-                    }
+                    d
                 ) => {
-                    match name.as_str() {
-                        "setup" => {setup = b.to_vec();},
-                        "player_move" => { player_move = b.to_vec(); },
+                    match d.name.as_str() {
+                        "setup" => {setup = d.body.to_vec();},
+                        "player_move" => player_move = d.clone(),
                         _ => ()
                     }
                 },
@@ -158,9 +156,14 @@ impl Game {
         }
 
         let mut call_stack_frame = HashMap::new();
-        call_stack_frame.insert("player".to_string(), ArgumentValue::Number(player));
+        match self.player_move.arguments.get(0) {
+            Some(arg) => {
+                call_stack_frame.insert("player".to_string(), self.build_player_object(player));
+            },
+            None => ()
+        }
         self.call_stack.push(call_stack_frame);
-        self.handle_statements(&self.player_move.clone());
+        self.handle_statements(&self.player_move.body.clone());
         self.call_stack.pop();
     }
 
@@ -264,6 +267,7 @@ impl Game {
         match expression {
             Expression::Bool(b) => *b,
             Expression::Comparison(c) => self.resolve_expression(&c.left) == self.resolve_expression(&c.right),
+            Expression::And(c) => self.resolve_to_bool(&c.left) && self.resolve_to_bool(&c.right),
             _ => false
         }
     }
@@ -277,6 +281,12 @@ impl Game {
                 let player = self.find_in_call_stack("player");
                 match player {
                     Some(ArgumentValue::Number(n)) => Some(TransferTarget::Stack(self.players[n - 1].get_hand())),
+                    Some(ArgumentValue::Obj(p)) => {
+                        match p.get("hand") {
+                            Some(PrimitiveValue::Stack(s)) => Some(TransferTarget::Stack(s.to_vec())),
+                            _ => None
+                        }
+                    },
                     _ => None
                 }
             },
@@ -296,6 +306,12 @@ impl Game {
                 let player = self.find_in_call_stack("player");
                 match player {
                     Some(ArgumentValue::Number(n)) => self.players[n - 1].set_hand(stack.get_stack(0)),
+                    Some(ArgumentValue::Obj(p)) => {
+                        match p.get("id") {
+                            Some(PrimitiveValue::Number(n)) => self.players[(*n as usize) - 1].set_hand(stack.get_stack(0)),
+                            _ => ()
+                        }
+                    },
                     _ => ()
                 }
             },
@@ -331,20 +347,18 @@ impl Game {
 
     fn resolve_expression(&mut self, expression: &Expression) -> PrimitiveValue {
         match expression {
+            // todo - could push globals into top of call stack
             Expression::Symbol(s) => {
                 if s == "current_player" {
                     return PrimitiveValue::Number(self.current_player as f64);
                 }
                 let components: Vec<&str> = s.split(&[':'][..]).collect();
-                match self.find_in_call_stack("player") {
-                    Some(ArgumentValue::Number(n)) => {
-                        if components.len() > 1 {
-                            match components[1] {
-                                "hand" => PrimitiveValue::Stack(self.players[(n as usize) - 1 ].get_hand()),
-                                _ => PrimitiveValue::Number(n as f64)
-                            }
-                        } else {
-                            PrimitiveValue::Number(n as f64)
+                match self.find_in_call_stack(components[0]) {
+                    Some(ArgumentValue::Number(n)) => PrimitiveValue::Number(n as f64),
+                    Some(ArgumentValue::Obj(o)) if components.len() > 1 => {
+                        match o.get(components[1]){
+                            Some(v) => v.clone(),
+                            None => PrimitiveValue::Bool(false)
                         }
                     },
                     _ => PrimitiveValue::Bool(false)
@@ -354,8 +368,16 @@ impl Game {
                 self.handle_function_call(&f).unwrap_or(PrimitiveValue::Bool(false))
             },
             Expression::Number(n) => PrimitiveValue::Number(*n),
-            _ => PrimitiveValue::Bool(false) // expression.to_owned()
+            _ => PrimitiveValue::Bool(false)
         }
+    }
+
+    fn build_player_object(&self, n: usize) -> ArgumentValue {
+        let player = self.players[n - 1].clone();
+        let mut player_object = HashMap::new();
+        player_object.insert("id".to_string(), PrimitiveValue::Number(n as f64));
+        player_object.insert("hand".to_string(), PrimitiveValue::Stack(player.get_hand()));
+        ArgumentValue::Obj(player_object)
     }
 
     fn display_list<D: Display>(list: &Vec<D>) -> String {
@@ -466,7 +488,7 @@ mod test{
 
         let name = "setup".to_owned();
         let body = vec!(transfer_statement);
-        let definition = Definition{ name, body };
+        let definition = Definition{ arguments: vec!(), name, body };
         let statement = Statement::Definition(definition);
 
         ast.push(statement);
@@ -499,7 +521,7 @@ mod test{
 
         let name = "setup".to_owned();
         let body = vec!(transfer_statement);
-        let definition = Definition{ name, body };
+        let definition = Definition{ arguments: vec!(), name, body };
         let statement = Statement::Definition(definition);
 
         ast.push(statement);
@@ -533,7 +555,7 @@ mod test{
 
         let name = "setup".to_owned();
         let body = vec!(transfer_statement);
-        let definition = Definition{ name, body };
+        let definition = Definition{ arguments: vec!(), name, body };
         let statement = Statement::Definition(definition);
 
         ast.push(statement);
@@ -564,7 +586,7 @@ mod test{
 
         let name = "setup".to_owned();
         let body = vec!(transfer_statement);
-        let definition = Definition{ name, body };
+        let definition = Definition{ arguments: vec!(), name, body };
         let statement = Statement::Definition(definition);
 
         ast.push(statement);
@@ -595,7 +617,7 @@ mod test{
 
         let name = "setup".to_owned();
         let body = vec!(transfer_statement);
-        let definition = Definition{ name, body };
+        let definition = Definition{ arguments: vec!(), name, body };
         let statement = Statement::Definition(definition);
 
         ast.push(statement);
@@ -622,7 +644,7 @@ mod test{
         );
 
         let name = "setup".to_owned();
-        let definition = Definition{ name, body };
+        let definition = Definition{ arguments: vec!(), name, body };
         let statement = Statement::Definition(definition);
         let ast = vec!(statement);
 
@@ -647,7 +669,7 @@ mod test{
         );
 
         let name = "player_move".to_owned();
-        let definition = Definition{ name, body };
+        let definition = Definition{ arguments: vec!(), name, body };
         let statement = Statement::Definition(definition);
 
         let ast = vec!(statement);
@@ -675,7 +697,7 @@ mod test{
             Statement::Transfer(
                 Transfer{
                     from: "deck".to_string(),
-                    to: "player hand".to_string(),
+                    to: "player:hand".to_string(),
                     modifier: None,
                     count: None
                 }
@@ -683,7 +705,7 @@ mod test{
         );
 
         let name = "player_move".to_owned();
-        let definition = Definition{ name, body };
+        let definition = Definition{ arguments: vec!("player".to_string()), name, body };
         let statement = Statement::Definition(definition);
 
         let ast = vec!(
@@ -721,7 +743,7 @@ mod test{
         );
 
         let name = "player_move".to_owned();
-        let definition = Definition{ name, body };
+        let definition = Definition{ arguments: vec!("player".to_string()), name, body };
         let statement = Statement::Definition(definition);
 
         let ast = vec!(
@@ -765,7 +787,7 @@ mod test{
 
         let name = "setup".to_owned();
         let body = vec!(transfer_statement);
-        let definition = Definition{ name, body };
+        let definition = Definition{ arguments: vec!(), name, body };
         let statement = Statement::Definition(definition);
 
         ast.push(statement);
@@ -807,7 +829,7 @@ mod test{
         );
 
         let name = "setup".to_owned();
-        let definition = Definition{ name, body };
+        let definition = Definition{ arguments: vec!(), name, body };
         let statement = Statement::Definition(definition);
         let ast = vec!(statement);
 
@@ -840,7 +862,7 @@ mod test{
         );
 
         let name = "player_move".to_owned();
-        let definition = Definition{ name, body };
+        let definition = Definition{ arguments: vec!(), name, body };
         let statement = Statement::Definition(definition);
 
         let ast = vec!(
@@ -877,7 +899,7 @@ mod test{
         );
 
         let name = "player_move".to_owned();
-        let definition = Definition{ name, body };
+        let definition = Definition{ arguments: vec!(), name, body };
         let statement = Statement::Definition(definition);
 
         let body = vec!(
@@ -889,7 +911,7 @@ mod test{
             )
         );
         let name = "setup".to_owned();
-        let definition = Definition{ name, body };
+        let definition = Definition{ arguments: vec!(), name, body };
         let setup = Statement::Definition(definition);
 
         let ast = vec!(
@@ -919,7 +941,7 @@ mod test{
         );
 
         let name = "setup".to_owned();
-        let definition = Definition{ name, body };
+        let definition = Definition{ arguments: vec!(), name, body };
         let statement = Statement::Definition(definition);
         let ast = vec!(statement);
 
@@ -933,6 +955,12 @@ mod test{
 
     #[test]
     fn it_can_apply_a_winner_by_id() {
+        let declaration = Statement::Declaration(
+            Declaration {
+                key: GlobalKey::Players,
+                value: Expression::Number(1.0)
+            }
+        );
         let body = vec!(
             Statement::FunctionCall(
                 FunctionCall{
@@ -943,9 +971,9 @@ mod test{
         );
 
         let name = "player_move".to_owned();
-        let definition = Definition{ name, body };
+        let definition = Definition{ arguments: vec!("player".to_string()), name, body };
         let statement = Statement::Definition(definition);
-        let ast = vec!(statement);
+        let ast = vec!(declaration, statement);
 
         let mut game = Game::new(ast);
         game.start();
@@ -974,7 +1002,7 @@ mod test{
         );
 
         let name = "setup".to_owned();
-        let definition = Definition{ name, body };
+        let definition = Definition{ arguments: vec!(), name, body };
         let statement = Statement::Definition(definition);
         let ast = vec!(statement);
 
@@ -1007,7 +1035,7 @@ mod test{
         );
 
         let name = "setup".to_owned();
-        let definition = Definition{ name, body };
+        let definition = Definition{ arguments: vec!(), name, body };
         let statement = Statement::Definition(definition);
         let ast = vec!(statement);
 
@@ -1040,7 +1068,7 @@ mod test{
         );
 
         let name = "setup".to_owned();
-        let definition = Definition{ name, body };
+        let definition = Definition{ arguments: vec!(), name, body };
         let statement = Statement::Definition(definition);
         let ast = vec!(statement);
 
@@ -1078,7 +1106,7 @@ mod test{
         );
 
         let name = "setup".to_owned();
-        let definition = Definition{ name, body };
+        let definition = Definition{ name, body, arguments: vec!() };
         let statement = Statement::Definition(definition);
         let ast = vec!(statement);
 
@@ -1131,7 +1159,7 @@ mod test{
         );
 
         let name = "player_move".to_owned();
-        let definition = Definition{ name, body };
+        let definition = Definition{ name, body, arguments: vec!() };
         let statement = Statement::Definition(definition);
         ast.push(statement);
 
@@ -1163,7 +1191,7 @@ mod test{
 
         let name = "setup".to_owned();
         let body = vec!(transfer_statement);
-        let definition = Definition{ name, body };
+        let definition = Definition{ name, body, arguments: vec!() };
         let statement = Statement::Definition(definition);
 
         ast.push(statement);
@@ -1199,7 +1227,7 @@ mod test{
         );
 
         let name = "player_move".to_owned();
-        let definition = Definition{ name, body };
+        let definition = Definition{ name, body, arguments: vec!("player".to_string()) };
         let statement = Statement::Definition(definition);
         ast.push(statement);
 
@@ -1233,7 +1261,7 @@ mod test{
         );
 
         let name = "setup".to_owned();
-        let definition = Definition{ name, body };
+        let definition = Definition{ name, body, arguments: vec!() };
         let statement = Statement::Definition(definition);
         let ast = vec!(statement);
 
@@ -1266,7 +1294,7 @@ mod test{
         );
 
         let name = "setup".to_owned();
-        let definition = Definition{ name, body };
+        let definition = Definition{ name, body, arguments: vec!() };
         let statement = Statement::Definition(definition);
         let ast = vec!(statement);
 
@@ -1324,7 +1352,7 @@ mod test{
         );
 
         let name = "setup".to_owned();
-        let definition = Definition{ name, body };
+        let definition = Definition{ name, body,  arguments: vec!(), };
         let statement = Statement::Definition(definition);
         let ast = vec!(
             Statement::Declaration(
@@ -1361,7 +1389,7 @@ mod test{
         );
 
         let name = "setup".to_owned();
-        let definition = Definition{ name, body };
+        let definition = Definition{ name, body, arguments: vec!() };
         let statement = Statement::Definition(definition);
         let ast = vec!(
             Statement::Declaration(
@@ -1384,5 +1412,43 @@ mod test{
 
         let current_player = game.show("current_player");
         assert_eq!(current_player, "1");
+    }
+
+    #[test]
+    fn it_executes_if_statement_when_expression_is_true_and_true() {
+        let if_body = vec!(
+            Statement::FunctionCall(
+                FunctionCall{
+                    name: "end".to_string(),
+                    arguments: vec!()
+                }
+            )
+        );
+
+        let and = And{
+            left: Expression::Bool(true),
+            right: Expression::Bool(true)
+        };
+
+        let if_statement = IfStatement{
+            expression: Expression::And(Box::new(and)),
+            body: if_body
+        };
+
+        let body = vec!(
+            Statement::IfStatement(if_statement)
+        );
+
+        let name = "setup".to_owned();
+        let definition = Definition{ name, body, arguments: vec!() };
+        let statement = Statement::Definition(definition);
+        let ast = vec!(statement);
+
+        let mut game = Game::new(ast);
+        game.start();
+
+        let display = game.show("game");
+
+        assert_eq!(display, "game over");
     }
 }

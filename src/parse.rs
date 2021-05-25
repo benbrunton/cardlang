@@ -85,15 +85,17 @@ pub fn parse(tokens: &Vec<SourceToken>) -> Result<Vec<Statement>, ParseError> {
                 // parens
                 tokens_iter.next();
 
-                //panic!("extract contents of parens?");
-                let _ = build_expression(&mut tokens_iter);
+                let arguments = match build_args_list(&mut tokens_iter){
+                    Ok(args) => args,
+                    Err(e) => return Err(e)
+                };
 
                 let body = match build_block(&mut tokens_iter) {
                     Ok(b) => b,
                     Err(e) => return Err(e)
                 };
 
-                let definition = Definition{ name, body };
+                let definition = Definition{ arguments, name, body };
                 let statement = Statement::Definition(definition);
                 ast.push(statement);
             },
@@ -152,6 +154,24 @@ pub fn parse(tokens: &Vec<SourceToken>) -> Result<Vec<Statement>, ParseError> {
 
                 let check_statement = CheckStatement{ expression };
                 let statement = Statement::CheckStatement(check_statement);
+                ast.push(statement);
+            },
+            Some(SourceToken{ token: Token::Return, line_number}) => {
+                match tokens_iter.next() {
+                    Some(SourceToken{ token: Token::OpenParens, ..}) => (),
+                    _ => return Err(ParseError{
+                        error_type: ParseErrorType::UnexpectedToken,
+                        line_number: *line_number
+                    })
+                }
+
+                let expression = match build_expression(&mut tokens_iter) {
+                    Ok(ex) => ex,
+                    Err(e) => return Err(e)
+                };
+
+                let check_statement = ReturnStatement{ expression };
+                let statement = Statement::ReturnStatement(check_statement);
                 ast.push(statement);
             },
             None => { break; },
@@ -288,6 +308,14 @@ fn combine_expression(tokens_iter: &mut std::slice::Iter<SourceToken>, left: Exp
             };
             Ok(Expression::Comparison(Box::new(comparison)))
         },
+        Some(SourceToken{ token: Token::Ampersand, ..}) => {
+            let right = build_expression(tokens_iter).expect("bad right expression");
+            let and = And {
+                left,
+                right
+            };
+            Ok(Expression::And(Box::new(and)))
+        },
         Some(SourceToken{ token: Token::OpenParens, ..}) => {
             match left {
                 Expression::Symbol(s) => {
@@ -303,6 +331,23 @@ fn combine_expression(tokens_iter: &mut std::slice::Iter<SourceToken>, left: Exp
         },
         _ => Err(ParseError::new(ParseErrorType::UnexpectedToken, 0))
     }
+}
+    
+
+fn build_args_list(tokens_iter: &mut std::slice::Iter<SourceToken>) -> Result<Vec<String>, ParseError> {
+    let mut args_list = vec!();
+    loop {
+        match tokens_iter.next() {
+            Some(SourceToken{ token: Token::Symbol(s), ..}) => args_list.push(s.to_string()),
+            Some(SourceToken{ token: Token::CloseParens, ..}) => break,
+            Some(SourceToken{ line_number, .. }) => {
+                return Err(ParseError::new(ParseErrorType::ExpectedSymbol, *line_number))
+            },
+            None => return Err(ParseError::new(ParseErrorType::UnexpectedEndOfStream, 0))
+        }
+    }
+
+    Ok(args_list)
 }
 
 #[cfg(test)]
@@ -449,7 +494,7 @@ mod test{
 
         let name = "setup".to_owned();
         let body = vec!();
-        let definition = Definition{ name, body };
+        let definition = Definition{ arguments: vec!(), name, body };
         let statement = Statement::Definition(definition);
         let expected = vec!(statement);
         let result = parse(&tokens);
@@ -519,7 +564,7 @@ mod test{
 
         let name = "setup".to_owned();
         let body = vec!(transfer_statement);
-        let definition = Definition{ name, body };
+        let definition = Definition{ arguments: vec!(), name, body };
         let statement = Statement::Definition(definition);
         let expected = vec!(statement);
         let result = parse(&tokens);
@@ -1012,7 +1057,8 @@ mod test{
         let expected = vec!(
             Statement::Definition(Definition{
                 name: "player_move".to_string(),
-                body
+                body,
+                arguments: vec!("player".to_string()),
             })
         );
         let result = parse(&tokens);
@@ -1080,6 +1126,74 @@ mod test{
         let result = parse(&tokens);
 
         assert_eq!(result, Ok(expected));
+    }
+
+    #[test]
+    fn it_can_parse_a_return_statement() {
+        let tokens = vec!(
+            SourceToken{ token: Token::Return, line_number: 1 },
+            SourceToken{ token: Token::OpenParens, line_number: 1 },
+            SourceToken{ token: Token::True, line_number: 1 },
+            SourceToken{ token: Token::CloseParens, line_number: 1 },
+        );
+
+        let expected = vec!(
+            Statement::ReturnStatement(ReturnStatement{
+                expression: Expression::Bool(true)
+            })
+        );
+
+        let result = parse(&tokens);
+
+        assert_eq!(result, Ok(expected));
+    }
+
+    #[test]
+    fn it_can_parse_an_and_statement() {
+        let tokens = vec!(
+            SourceToken{ token: Token::Return, line_number: 1 },
+            SourceToken{ token: Token::OpenParens, line_number: 1 },
+            SourceToken{ token: Token::True, line_number: 1 },
+            SourceToken{ token: Token::Ampersand, line_number: 1 },
+            SourceToken{ token: Token::True, line_number: 1 },
+            SourceToken{ token: Token::CloseParens, line_number: 1 },
+        );
+
+        let expected = vec!(
+            Statement::ReturnStatement(ReturnStatement{
+                expression: Expression::And(Box::new(And{
+                    left: Expression::Bool(true),
+                    right: Expression::Bool(true)
+                }))
+            })
+        );
+
+        let result = parse(&tokens);
+
+        assert_eq!(result, Ok(expected));
+
+    }
+
+    #[test]
+    fn it_parses_the_argument_of_a_function() {
+        let tokens = get_source_tokens(vec!(
+            Token::Define,
+            Token::Symbol("not_royal".to_owned()),
+            Token::OpenParens,
+            Token::Symbol("card".to_string()),
+            Token::CloseParens,
+            Token::OpenBracket,
+            Token::CloseBracket
+        ));
+
+        let name = "not_royal".to_owned();
+        let body = vec!();
+        let definition = Definition{ arguments: vec!("card".to_string()), name, body };
+        let statement = Statement::Definition(definition);
+        let expected = vec!(statement);
+        let result = parse(&tokens);
+
+        assert_eq!(Ok(expected), result);
     }
 }
         

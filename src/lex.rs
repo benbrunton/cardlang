@@ -105,6 +105,7 @@ fn handle_single_chars(current_char: char) -> Option<TokenResult> {
         '>' => Some(TokenResult::Token(Token::Transfer)),
         '\n' => Some(TokenResult::Token(Token::Newline)),
         '.' => Some(TokenResult::PartialToken(current_char.to_string())),
+        '&' => Some(TokenResult::Token(Token::Ampersand)),
         _ => None
     }
 }
@@ -140,6 +141,7 @@ fn handle_keyword(partial_token: &str, next_char: Option<&char>) -> Option<Token
         "if" => Some(TokenResult::Token(Token::If)),
         "true" => Some(TokenResult::Token(Token::True)),
         "false" => Some(TokenResult::Token(Token::False)),
+        "return" => Some(TokenResult::Token(Token::Return)),
         _ => None
     }
 }
@@ -448,4 +450,21 @@ this is a comment ) test2";
 
         assert_eq!(result.line_number, 2);
     }
+
+    #[test]
+    fn it_recognises_the_ampersand() {
+        let src = "&";
+        let result = lexer(&src).unwrap();
+
+        assert_eq!(result[0].token, Token::Ampersand);
+    }
+
+    #[test]
+    fn it_recognises_the_return_keyword() {
+        let src = "return";
+        let result = lexer(&src).unwrap();
+
+        assert_eq!(result[0].token, Token::Return);
+    }
+
 }
