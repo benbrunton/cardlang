@@ -1,7 +1,7 @@
 use crate::cards::Card;
-use crate::interpreter::{GameState, PrimitiveValue};
-use crate::ast::Definition;
+use crate::ast::*;
 use rand::seq::SliceRandom;
+use super::{PrimitiveValue, GameState};
 
 pub fn shuffle(stack: &mut Vec<Card>) {
     let mut rng = rand::thread_rng();
@@ -23,8 +23,8 @@ pub fn count(stack: PrimitiveValue) -> usize {
     }
 }
 
-pub fn filter(stack: Vec<Card>, function: Definition) {
-    unimplemented!()
+pub fn filter(stack: Vec<Card>, _function: Definition) -> Vec<Card> {
+    return stack;
 }
 
 #[cfg(test)]
@@ -32,15 +32,37 @@ mod test{
     use super::*;
     use crate::cards::standard_deck;
 
-    //#[test]
+    #[test]
     fn filter_executes_a_function_against_a_stack_and_keeps_cards_when_true() {
         let cards = standard_deck();
+        let returnStatement = Statement::ReturnStatement(ReturnStatement{
+            expression: Expression::Bool(true)
+        });
         let func = Definition{
             name: "_".to_string(),
-            arguments: vec!(),
-            body: vec!()
+            arguments: vec!("card".to_string()),
+            body: vec!(returnStatement)
         };
 
         let filtered_cards = filter(cards, func);
+
+        assert_eq!(filtered_cards.len(), 52);
+    }
+
+    #[test]
+    fn filter_executes_a_function_against_a_stack_and_keeps_cards_when_false() {
+        let cards = standard_deck();
+        let returnStatement = Statement::ReturnStatement(ReturnStatement{
+            expression: Expression::Bool(false)
+        });
+        let func = Definition{
+            name: "_".to_string(),
+            arguments: vec!("card".to_string()),
+            body: vec!(returnStatement)
+        };
+
+        let filtered_cards = filter(cards, func);
+
+        assert_eq!(filtered_cards.len(), 0);
     }
 }

@@ -76,7 +76,13 @@ pub fn transfer(
         count -= 1;
     }
 
-    Some((from.unwrap(), to.unwrap()))
+    match from {
+        Some(f) => match to {
+            Some(t) => Some((f, t)),
+            _  => None
+        },
+        _ => None
+    }
 }
 
 #[cfg(test)]
