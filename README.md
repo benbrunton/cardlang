@@ -2,9 +2,10 @@
 
 A DSL for specifying card games
 
-## CLI usage (interactive mode)
+## CLI usage
+### (interactive mode)
 ```
-cardlang (or cargo run)
+cardlang # (or cargo run)
 > build ./gamedef.card
 > show deck
 ace spades, two spades, three spades...
@@ -13,7 +14,13 @@ ace spades, two spades, three spades...
 three hearts, four diamonds, five clubs
 ```
 
+## run spec tests
+```
+cardlang test ./gamedef.card
+```
+
 ## Todo
+- spec test
 - card:rank
 - filter deck in declaration
 - limit on stack transfer

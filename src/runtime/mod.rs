@@ -4,17 +4,27 @@ pub mod std;
 use self::std::*;
 use crate::ast::*;
 use crate::cards::{standard_deck, Card, Player};
-use ::std::collections::HashMap;
+use ::std::{fmt, collections::HashMap};
 use transfer::{transfer, TransferTarget};
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum GameState {
     Pending,
     Active,
     GameOver
 }
 
-#[derive(Clone, PartialEq)]
+impl fmt::Display for GameState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match *self {
+            GameState::Pending => write!(f, "pending"),
+            GameState::Active => write!(f, "active"),
+            GameState::GameOver => write!(f, "game over"),
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Debug)]
 pub enum PrimitiveValue {
     Bool(bool),
     Number(f64),
@@ -22,20 +32,19 @@ pub enum PrimitiveValue {
     String(String)
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum ArgumentValue {
-    Number(usize),
     Obj(HashMap<String, PrimitiveValue>)
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct InitialValues {
     pub players: u32,
     pub card_stacks: Vec<String>,
     pub current_player: usize,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Callbacks {
     pub player_move: Option<Definition>,
     pub setup: Option<Definition>
@@ -43,7 +52,7 @@ pub struct Callbacks {
 
 const INTERNAL_REF: &str = "_ref";
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Runtime {
     callbacks: Callbacks,
     status: GameState,
@@ -111,12 +120,8 @@ impl Runtime {
         }        
     }
 
-    pub fn get_status(&self) -> &str {
-        match self.status {
-            GameState::Pending => "pending", 
-            GameState::Active => "active",
-            GameState::GameOver => "game over"
-        }
+    pub fn get_status(&self) -> String {
+        format!("{}", self.status)
     }
 
     pub fn get_current_player(&self) -> usize {
@@ -139,17 +144,18 @@ impl Runtime {
         self.winners.clone()
     }
 
-    pub fn player_move(&mut self, player: usize) {
+    pub fn player_move(&mut self, n: usize) {
         if self.status != GameState::Active {
             return;
         }
 
-        let p_move = self.callbacks.player_move.as_ref().unwrap();
+        let p_move = self.callbacks.player_move.clone().unwrap();
 
         let mut call_stack_frame = HashMap::new();
         match p_move.arguments.get(0) {
             Some(arg) => {
-                call_stack_frame.insert(arg.clone(), self.build_player_object(player));
+                let player = self.players[n - 1].clone();
+                call_stack_frame.insert(arg.clone(), Self::build_player_object(player));
             },
             None => ()
         }
@@ -160,7 +166,8 @@ impl Runtime {
 
     pub fn setup(&mut self) {
         self.status = GameState::Active;
-        match &self.callbacks.setup {
+        let setup = self.callbacks.setup.clone();
+        match setup {
             Some(setup) => self.handle_statements(&setup.body.clone()),
             _ => ()
         }
@@ -193,7 +200,6 @@ impl Runtime {
                 }
                 let components: Vec<&str> = s.split(&[':'][..]).collect();
                 match self.find_in_call_stack(components[0]) {
-                    Some(ArgumentValue::Number(n)) => PrimitiveValue::Number(n as f64),
                     Some(ArgumentValue::Obj(o)) if components.len() > 1 => {
                         match o.get(components[1]){
                             Some(v) => v.clone(),
@@ -220,12 +226,12 @@ impl Runtime {
         players
     }
 
-    fn build_player_object(&self, n: usize) -> ArgumentValue {
-        let player = self.players[n - 1].clone();
+    fn build_player_object(player: Player) -> ArgumentValue {
+        let id = player.get_id();
         let mut player_object = HashMap::new();
-        let internal_ref = format!("players:{}", n - 1);
+        let internal_ref = format!("players:{}", id as usize - 1);
         player_object.insert(INTERNAL_REF.to_string(), PrimitiveValue::String(internal_ref));
-        player_object.insert("id".to_string(), PrimitiveValue::Number(n as f64));
+        player_object.insert("id".to_string(), PrimitiveValue::Number(id as f64));
         player_object.insert("hand".to_string(), PrimitiveValue::Stack(player.get_hand()));
         ArgumentValue::Obj(player_object)
     }

@@ -1,5 +1,4 @@
-use std::io::{stdin, stdout, Write};
-use std::fs;
+use std::{fs, env, io::{stdin, stdout, Write}};
 
 mod lex;
 mod parse;
@@ -21,9 +20,39 @@ enum CommandResult {
 }
 
 fn main() {
+
+    let default_command = "".to_string();
+    let args: Vec<String> = env::args().collect();
+    let command = args.get(1).unwrap_or(&default_command);
+    match command as &str {
+        "test"    => test(args.get(2)),
+        _         => interactive()
+    }
+}
+
+fn test(cmd: Option<&String>) {
+    match cmd {
+        Some(path) => {
+            let file_result = fs::read_to_string(path);
+
+            if file_result.is_err() {
+                println!("unable to read '{}'", path);
+                return;
+            }
+
+            let game = parse_game(file_result.expect("unable to read file"));
+            match game {
+                Some(g) => println!("success!"),
+                _       => println!("failed to parse!")
+            }
+        },
+        _ => println!("no file specified!")
+    }
+}
+
+fn interactive() {
     println!("Cardlang interpreter");
     let mut game: Option<Game> = None;
-
     loop {
         print!("> ");
         let _ = stdout().flush();

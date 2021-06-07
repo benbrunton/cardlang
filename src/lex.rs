@@ -142,6 +142,7 @@ fn handle_keyword(partial_token: &str, next_char: Option<&char>) -> Option<Token
         "true" => Some(TokenResult::Token(Token::True)),
         "false" => Some(TokenResult::Token(Token::False)),
         "return" => Some(TokenResult::Token(Token::Return)),
+        ".test" => Some(TokenResult::Token(Token::Test)),
         _ => None
     }
 }
@@ -465,6 +466,22 @@ this is a comment ) test2";
         let result = lexer(&src).unwrap();
 
         assert_eq!(result[0].token, Token::Return);
+    }
+
+
+    #[test]
+    fn it_recognises_tests() {
+        let src = ".test()";
+        let result = lexer(&src).unwrap();
+        let expected = vec!(
+            Token::Test,
+            Token::OpenParens,
+            Token::CloseParens
+        );
+
+        assert_eq!(result[0].token, expected[0]);
+        assert_eq!(result[0].token, expected[0]);
+        assert_eq!(result[0].token, expected[0]);
     }
 
 }

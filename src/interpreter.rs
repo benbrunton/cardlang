@@ -6,7 +6,7 @@ use crate::runtime::{
     Callbacks
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Game {
     name: Option<String>,
     ast: Vec<Statement>,
@@ -89,7 +89,7 @@ impl Game {
             "game" => {
                 let winner_list = self.runtime.get_winners();
                 let winners = if winner_list.len() > 0 {
-                    let w = winner_list.iter().map(|n|{n.to_string()}).collect::<Vec<String>>().join(", ");
+                    let w = Self::display_list(&winner_list);
                     format!("\nwinners: {}", w)
                 } else {
                     "".to_string()
@@ -106,7 +106,6 @@ impl Game {
 
     pub fn start(&mut self) {
         self.runtime = Runtime::new(self.initial_values.clone(), self.callbacks.clone());
-        //self.handle_statements(&self.setup.clone());
         self.runtime.setup();
     }
 

@@ -19,3 +19,13 @@ define player_move(player){
     }
     next_player()
 }
+
+.test(
+    .(
+    test game_can_start(game) {
+        game:start()
+
+        check(game:show("game") is "active")
+    }
+    )
+)

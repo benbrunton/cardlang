@@ -19,6 +19,10 @@ impl Player{
     pub fn set_hand(&mut self, hand: Vec<Card>) {
         self.hand = hand;
     }
+
+    pub fn get_id(&self) -> u32 {
+        self.id
+    }
 }
 
 impl fmt::Display for Player {
