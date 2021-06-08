@@ -1,7 +1,7 @@
 use crate::token::{Token, SourceToken};
 use crate::ast::*;
 
-// use std::iter::Peekable;
+use std::iter::Peekable;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum ParseErrorType{
@@ -301,11 +301,19 @@ fn combine_expression(tokens_iter: &mut std::slice::Iter<SourceToken>, left: Exp
     match tokens_iter.next() {
         None | Some(SourceToken{ token: Token::CloseParens, ..}) => Ok(left),
         Some(SourceToken{ token: Token::Is, ..}) => {
-            let right = build_expression(tokens_iter).expect("bad right expression");
+            let mut peekable = tokens_iter.clone().peekable();
+            let negative = match peekable.peek() {
+                Some(SourceToken{ token: Token::Not, .. }) => {
+                    tokens_iter.next();
+                    true
+                },
+                _ => false
+            };
+            let right = build_expression(tokens_iter).expect("bad right expression for comparison");
             let comparison = Comparison {
                 left,
                 right,
-                negative: false
+                negative
             };
             Ok(Expression::Comparison(Box::new(comparison)))
         },
