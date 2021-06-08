@@ -859,7 +859,8 @@ mod test{
 
         let comparison = Comparison{
             left: Expression::Number(1.0),
-            right: Expression::Number(1.0)
+            right: Expression::Number(1.0),
+            negative: false
         };
 
         let if_statement = IfStatement{
@@ -912,7 +913,8 @@ mod test{
 
         let comparison = Comparison{
             left: Expression::FunctionCall(count_call),
-            right: Expression::Number(0.0)
+            right: Expression::Number(0.0),
+            negative: false
         };
 
         let if_statement = IfStatement{
@@ -980,7 +982,8 @@ mod test{
 
         let comparison = Comparison{
             left: Expression::FunctionCall(count_call),
-            right: Expression::Number(26.0)
+            right: Expression::Number(26.0),
+            negative: false
         };
 
         let if_statement = IfStatement{

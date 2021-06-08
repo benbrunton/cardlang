@@ -304,7 +304,8 @@ fn combine_expression(tokens_iter: &mut std::slice::Iter<SourceToken>, left: Exp
             let right = build_expression(tokens_iter).expect("bad right expression");
             let comparison = Comparison {
                 left,
-                right
+                right,
+                negative: false
             };
             Ok(Expression::Comparison(Box::new(comparison)))
         },
@@ -779,7 +780,8 @@ mod test{
 
         let comparison = Comparison {
             left: Expression::Symbol("player:id".to_string()),
-            right: Expression::Number(1.0)
+            right: Expression::Number(1.0),
+            negative: false
         };
         let expression = Expression::Comparison(Box::new(comparison));
         let body = vec!();
@@ -845,7 +847,8 @@ mod test{
 
         let comparison = Comparison {
             left: Expression::FunctionCall(function_call),
-            right: Expression::Number(0.0)
+            right: Expression::Number(0.0),
+            negative: false
         };
         let expression = Expression::Comparison(Box::new(comparison));
         let body = vec!();
@@ -963,7 +966,8 @@ mod test{
                                 Expression::Symbol("player:hand".to_string())
                             )
                         }),
-                        right: Expression::Number(0.0)
+                        right: Expression::Number(0.0),
+                        negative:false
                     })),
                     body: vec!(
                         Statement::FunctionCall(FunctionCall{
@@ -1038,7 +1042,8 @@ mod test{
                                 Expression::Symbol("player:hand".to_string())
                             )
                         }),
-                        right: Expression::Number(0.0)
+                        right: Expression::Number(0.0),
+                        negative: false
                     })),
                     body: vec!(
                         Statement::FunctionCall(FunctionCall{
@@ -1116,7 +1121,8 @@ mod test{
 
         let expression = Expression::Comparison(Box::new(Comparison{
             left: Expression::Symbol("current_player".to_string()),
-            right: Expression::Symbol("player:id".to_string())
+            right: Expression::Symbol("player:id".to_string()),
+            negative: false
         }));
 
         let expected = vec!(
@@ -1190,6 +1196,35 @@ mod test{
         let body = vec!();
         let definition = Definition{ arguments: vec!("card".to_string()), name, body };
         let statement = Statement::Definition(definition);
+        let expected = vec!(statement);
+        let result = parse(&tokens);
+
+        assert_eq!(Ok(expected), result);
+    }
+
+    #[test]
+    fn it_can_handle_negative_comparisons() {
+        let tokens = get_source_tokens(vec!(
+            Token::If,
+            Token::OpenParens,
+            Token::Symbol("player:id".to_string()),
+            Token::Is,
+            Token::Not,
+            Token::Number(1.0),
+            Token::CloseParens,
+            Token::OpenBracket,
+            Token::CloseBracket
+        ));
+
+        let comparison = Comparison {
+            left: Expression::Symbol("player:id".to_string()),
+            right: Expression::Number(1.0),
+            negative: true
+        };
+        let expression = Expression::Comparison(Box::new(comparison));
+        let body = vec!();
+        let if_statement = IfStatement{ expression, body };
+        let statement = Statement::IfStatement(if_statement);
         let expected = vec!(statement);
         let result = parse(&tokens);
 

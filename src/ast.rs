@@ -74,7 +74,8 @@ pub struct FunctionCall {
 #[derive(Debug, PartialEq, Clone)]
 pub struct Comparison {
     pub left: Expression,
-    pub right: Expression
+    pub right: Expression,
+    pub negative: bool
 }
 
 #[derive(Debug, PartialEq, Clone)]

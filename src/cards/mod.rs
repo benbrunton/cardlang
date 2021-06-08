@@ -34,6 +34,16 @@ pub struct Card {
     rank: Rank
 }
 
+impl Card {
+    pub fn get_suit_str(&self) -> String {
+        format!("{:?}", self.suit)
+    }
+
+    pub fn get_rank_str(&self) -> String {
+        format!("{:?}", self.rank)
+    }
+}
+
 impl fmt::Display for Card {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let debug_str = format!("{:?} {:?}", self.rank, self.suit).to_lowercase();

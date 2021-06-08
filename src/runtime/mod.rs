@@ -84,7 +84,7 @@ impl Runtime {
         }
     }
 
-    pub fn handle_function_call(&mut self, f: &FunctionCall) -> Option<PrimitiveValue>{
+    fn handle_function_call(&mut self, f: &FunctionCall) -> Option<PrimitiveValue>{
         match f.name.as_str() {
             "end" => {
                 end(&mut self.status);
@@ -168,12 +168,13 @@ impl Runtime {
         self.status = GameState::Active;
         let setup = self.callbacks.setup.clone();
         match setup {
-            Some(setup) => self.handle_statements(&setup.body.clone()),
+            Some(setup) => { self.handle_statements(&setup.body.clone()); },
             _ => ()
         }
     }
 
-    fn handle_statements(&mut self, statements: &Vec<Statement>){
+    fn handle_statements(&mut self, statements: &Vec<Statement>) -> PrimitiveValue {
+        let default_return = PrimitiveValue::Bool(false);
         for statement in statements.iter() {
             match statement {
                 Statement::Transfer(t) => self.handle_transfer(t),
@@ -183,12 +184,17 @@ impl Runtime {
                 Statement::IfStatement(i) => self.handle_if_statement(i),
                 Statement::CheckStatement(c) => {
                     if !self.resolve_to_bool(&c.expression) {
-                        return;
+                        return default_return;
                     }
                 },
+                Statement::ReturnStatement(r) => {
+                    return self.resolve_expression(&r.expression);
+                }
                 _ => ()
             }
         }
+
+        default_return
     }
 
     fn resolve_expression(&mut self, expression: &Expression) -> PrimitiveValue {
@@ -206,16 +212,16 @@ impl Runtime {
                             None => PrimitiveValue::Bool(false)
                         }
                     },
-                    _ => PrimitiveValue::Bool(false)
+                    _ => PrimitiveValue::String(s.to_string())
                 }
             },
-            Expression::FunctionCall(f) => {
-                self.handle_function_call(&f).unwrap_or(PrimitiveValue::Bool(false))
-            },
+            Expression::FunctionCall(f) => self.handle_function_call(&f).unwrap_or(PrimitiveValue::Bool(false)),
             Expression::Number(n) => PrimitiveValue::Number(*n),
+            Expression::Bool(_) | Expression::Comparison(_) => PrimitiveValue::Bool(self.resolve_to_bool(expression)),
             _ => PrimitiveValue::Bool(false)
         }
     }
+
     fn generate_players(n: u32) -> Vec<Player>{
         let mut players = vec!();
         for i in 0..n {
@@ -234,6 +240,13 @@ impl Runtime {
         player_object.insert("id".to_string(), PrimitiveValue::Number(id as f64));
         player_object.insert("hand".to_string(), PrimitiveValue::Stack(player.get_hand()));
         ArgumentValue::Obj(player_object)
+    }
+
+    fn build_card_object(card: Card) -> ArgumentValue {
+        let mut card_object = HashMap::new();
+        card_object.insert("rank".to_string(), PrimitiveValue::String(card.get_rank_str()));
+        card_object.insert("suit".to_string(), PrimitiveValue::String(card.get_suit_str()));
+        ArgumentValue::Obj(card_object)
     }
 
     fn handle_transfer(&mut self, t: &Transfer) {
@@ -376,5 +389,130 @@ impl Runtime {
             }
         }
         None
+    }
+
+    pub fn filter(&mut self, stack: Vec<Card>, function: Definition) -> Vec<Card> {
+        let card_arg = match function.arguments.get(0) {
+            Some(arg) => arg,
+            None => "card"
+        }.to_string();
+
+        return stack.iter().filter(|&card|{
+            let mut call_stack_frame = HashMap::new();
+            let card_obj = Self::build_card_object(*card);
+            call_stack_frame.insert(card_arg.clone(), card_obj);
+            self.call_stack.push(call_stack_frame);
+            let keep_card = self.handle_statements(&function.body.clone());
+            self.call_stack.pop();
+            match keep_card {
+                PrimitiveValue::Bool(b) => b,
+                _ => false
+            }
+        }).map(|&card| card.clone()).collect()
+    }
+}
+
+#[cfg(test)]
+mod test{
+    use super::*;
+    use crate::cards::standard_deck;
+
+    #[test]
+    fn primitive_strings_can_be_compared() {
+        assert_eq!(PrimitiveValue::String("Ace".to_string()), PrimitiveValue::String("Ace".to_string()))
+    }
+
+    #[test]
+    fn filter_executes_a_function_against_a_stack_and_keeps_cards_when_true() {
+        let cards = standard_deck();
+        let return_statement = Statement::ReturnStatement(ReturnStatement{
+            expression: Expression::Bool(true)
+        });
+        let func = Definition{
+            name: "_".to_string(),
+            arguments: vec!("card".to_string()),
+            body: vec!(return_statement)
+        };
+
+        let initial_values = InitialValues{
+            players: 1,
+            card_stacks: vec!(),
+            current_player: 1,
+        };
+
+        let callbacks = Callbacks{
+            player_move: None,
+            setup: None
+        };
+
+        let mut runtime = Runtime::new(initial_values, callbacks);
+
+        let filtered_cards = runtime.filter(cards, func);
+
+        assert_eq!(filtered_cards.len(), 52);
+    }
+
+    #[test]
+    fn filter_executes_a_function_against_a_stack_and_keeps_cards_when_false() {
+        let cards = standard_deck();
+        let return_statement = Statement::ReturnStatement(ReturnStatement{
+            expression: Expression::Bool(false)
+        });
+        let func = Definition{
+            name: "_".to_string(),
+            arguments: vec!("card".to_string()),
+            body: vec!(return_statement)
+        };
+
+        let initial_values = InitialValues{
+            players: 1,
+            card_stacks: vec!(),
+            current_player: 1,
+        };
+
+        let callbacks = Callbacks{
+            player_move: None,
+            setup: None
+        };
+
+        let mut runtime = Runtime::new(initial_values, callbacks);
+
+        let filtered_cards = runtime.filter(cards, func);
+
+        assert_eq!(filtered_cards.len(), 0);
+    }
+
+    #[test]
+    fn filter_executes_a_function_against_a_stack_and_passes_card_to_function() {
+        let cards = standard_deck();
+        let expression = Expression::Comparison(Box::new(Comparison{
+            left: Expression::Symbol("card:rank".to_string()),
+            right: Expression::Symbol("Ace".to_string()),
+            negative: false
+        }));
+
+        let return_statement = Statement::ReturnStatement(ReturnStatement{ expression });
+        let func = Definition{
+            name: "_".to_string(),
+            arguments: vec!("card".to_string()),
+            body: vec!(return_statement)
+        };
+
+        let initial_values = InitialValues{
+            players: 1,
+            card_stacks: vec!(),
+            current_player: 1,
+        };
+
+        let callbacks = Callbacks{
+            player_move: None,
+            setup: None
+        };
+
+        let mut runtime = Runtime::new(initial_values, callbacks);
+
+        let filtered_cards = runtime.filter(cards, func);
+
+        assert_eq!(filtered_cards.len(), 4);
     }
 }

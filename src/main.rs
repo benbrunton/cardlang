@@ -42,7 +42,7 @@ fn test(cmd: Option<&String>) {
 
             let game = parse_game(file_result.expect("unable to read file"));
             match game {
-                Some(g) => println!("success!"),
+                Some(_g) => println!("success!"),
                 _       => println!("failed to parse!")
             }
         },

@@ -20,11 +20,11 @@ cardlang test ./gamedef.card
 ```
 
 ## Todo
-- spec test
-- card:rank
+- is not comparison modifier
 - filter deck in declaration
 - limit on stack transfer
 - user defined functions
 - switch statements
 - specify cards on transfer
 - cards_in_stack inbuilt function
+- spec test

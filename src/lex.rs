@@ -143,6 +143,7 @@ fn handle_keyword(partial_token: &str, next_char: Option<&char>) -> Option<Token
         "false" => Some(TokenResult::Token(Token::False)),
         "return" => Some(TokenResult::Token(Token::Return)),
         ".test" => Some(TokenResult::Token(Token::Test)),
+        "not" => Some(TokenResult::Token(Token::Not)),
         _ => None
     }
 }
@@ -480,8 +481,18 @@ this is a comment ) test2";
         );
 
         assert_eq!(result[0].token, expected[0]);
-        assert_eq!(result[0].token, expected[0]);
-        assert_eq!(result[0].token, expected[0]);
+        assert_eq!(result[1].token, expected[1]);
+        assert_eq!(result[2].token, expected[2]);
     }
 
+    #[test]
+    fn it_recognises_not() {
+        let src = "not";
+        let result = lexer(&src).unwrap();
+        let expected = vec!(
+            Token::Not,
+        );
+
+        assert_eq!(result[0].token, expected[0]);
+    }
 }
