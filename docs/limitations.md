@@ -12,7 +12,7 @@ parse error: ParseError { error_type: UnexpectedToken, line_number: 2 }
 ```
 
 - **`LexError`**: the file contains a character cardlang doesn't understand. Common causes: a tab, a Windows (`\r\n`) line ending, `-`, `"`, or a decimal number.
-- **`ParseError`**: the words are valid but in an order the parser doesn't expect. Common causes: a multi-word `name`, a missing `(` after `check`, `return` or `if`, an unclosed `{`, or a trailing comma in a call.
+- **`ParseError`**: the words are valid but in an order the parser doesn't expect. Common causes: a multi-word `name`, a declaration with the wrong kind of value (`players two`, `name 5`), a missing `(` after `check`, `return` or `if`, an unclosed `{`, an unfinished comparison (`check(a is)`), a transfer with no destination (`deck >`), or a trailing comma in a call.
 - The line number is usually right, but can point slightly after the real problem. Some errors report line `0`.
 
 ## Language
@@ -61,4 +61,6 @@ This works because a failing `check` makes the function return `false`. Keep the
 
 ## Interpreter
 
-See [Using the CLI](cli.md#commands-that-crash-the-interpreter) for commands that currently crash.
+The interpreter should never crash. If you find a game file or command that makes it panic, that's a bug. Please report it, or add it to the [roadmap](ROADMAP.md).
+
+See [Using the CLI](cli.md#when-a-move-is-ignored) for the messages printed when a move can't be made.

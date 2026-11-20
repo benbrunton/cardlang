@@ -2,7 +2,7 @@
 
 A DSL for specifying card games
 
-New here? Start with the [user guides](docs/README.md): [getting started](docs/getting-started.md), [language reference](docs/language-reference.md), [CLI](docs/cli.md) and [known limitations](docs/limitations.md).
+New here? Start with the [user guides](docs/README.md): [getting started](docs/getting-started.md), [language reference](docs/language-reference.md), [CLI](docs/cli.md) and [known limitations](docs/limitations.md). Planned work is in the [roadmap](docs/ROADMAP.md).
 
 ## CLI usage
 ### (interactive mode)
@@ -16,15 +16,11 @@ ace spades, two spades, three spades...
 three hearts, four diamonds, five clubs
 ```
 
-## run spec tests
+## check a game file parses
 ```
-cardlang test ./gamedef.card
+cardlang test ./gamedef.card   # exits 1 if the file doesn't parse
 ```
+(Running spec tests written inside a game file is planned; see the roadmap.)
 
-## Todo
-- filter deck in declaration
-- limit on stack transfer
-- switch statements
-- specify cards on transfer
-- cards_in_stack inbuilt function
-- spec test
+## Roadmap
+Known bugs and planned work are tracked in [docs/ROADMAP.md](docs/ROADMAP.md).

@@ -112,8 +112,8 @@ impl Game {
         self.runtime.setup();
     }
 
-    pub fn player_move(&mut self, player: usize) {
-        self.runtime.player_move(player);
+    pub fn player_move(&mut self, player: usize) -> Result<(), String> {
+        self.runtime.player_move(player)
     }
 
     fn check_exploded_show(&self, key: &str) -> String {
@@ -125,8 +125,14 @@ impl Game {
     }
 
     fn handle_show_player(&self, args: Vec<&str>) -> String {
-        let player_num = args[1].parse::<usize>().unwrap_or(1) - 1;
-        Self::display_list(&self.runtime.get_player(player_num).get_hand())
+        let player_num = match args.get(1).map(|a| a.parse::<usize>()) {
+            Some(Ok(n)) if n >= 1 => n,
+            _ => return "usage: show player <number>".to_string()
+        };
+        match self.runtime.get_player(player_num - 1) {
+            Some(player) => Self::display_list(&player.get_hand()),
+            None => format!("there is no player {}", player_num)
+        }
     }
 
     fn display_name(&self) -> String {
@@ -445,7 +451,7 @@ mod test{
 
         let mut game = Game::new(ast);
         game.start();
-        game.player_move(1);
+        game.player_move(1).unwrap();
 
         let usual_order = Game::display_list(&standard_deck());
         let deck = game.show("deck");
@@ -484,7 +490,7 @@ mod test{
 
         let mut game = Game::new(ast);
         game.start();
-        game.player_move(1);
+        game.player_move(1).unwrap();
 
         let player_hand = game.show("player 1 hand");
 
@@ -522,7 +528,7 @@ mod test{
 
         let mut game = Game::new(ast);
         game.start();
-        game.player_move(2);
+        game.player_move(2).unwrap();
 
         let player1_hand = game.show("player 1 hand");
         let player2_hand = game.show("player 2 hand");
@@ -640,7 +646,7 @@ mod test{
         );
 
         let mut game = Game::new(ast);
-        game.player_move(1);
+        assert!(game.player_move(1).is_err());
 
         let player_hand = game.show("player 1 hand");
 
@@ -691,7 +697,7 @@ mod test{
 
         let mut game = Game::new(ast);
         game.start();
-        game.player_move(1);
+        assert!(game.player_move(1).is_err());
 
         let player_hand = game.show("player 1 hand");
 
@@ -746,7 +752,7 @@ mod test{
 
         let mut game = Game::new(ast);
         game.start();
-        game.player_move(1);
+        game.player_move(1).unwrap();
 
         let display = game.show("game");
 
@@ -936,7 +942,7 @@ mod test{
 
         let mut game = Game::new(ast);
         game.start();
-        game.player_move(1);
+        game.player_move(1).unwrap();
 
         let display = game.show("game");
 
@@ -1005,7 +1011,7 @@ mod test{
 
         let mut game = Game::new(ast);
         game.start();
-        game.player_move(1);
+        game.player_move(1).unwrap();
 
         let display = game.show("game");
 
@@ -1255,7 +1261,7 @@ mod test{
 
         let mut game = Game::new(ast);
         game.start();
-        game.player_move(1);
+        game.player_move(1).unwrap();
 
         let player_hand = game.show("player 1 hand");
 
@@ -1302,7 +1308,7 @@ define player_move(player){
 }
 ");
         game.start();
-        game.player_move(1);
+        game.player_move(1).unwrap();
 
         assert_eq!(game.show("game"), "game over");
     }
@@ -1326,7 +1332,7 @@ define player_move(player){
 }
 ");
         game.start();
-        game.player_move(1);
+        game.player_move(1).unwrap();
 
         assert_eq!(game.show("game"), "active");
     }
@@ -1350,7 +1356,7 @@ define player_move(player){
 }
 ");
         game.start();
-        game.player_move(1);
+        game.player_move(1).unwrap();
 
         assert_eq!(game.show("player 1 hand"), "");
         assert_eq!(game.show("middle"), "king diamonds");
@@ -1467,8 +1473,79 @@ define player_move(player){
 }
 ");
         game.start();
-        game.player_move(1);
+        game.player_move(1).unwrap();
 
         assert_eq!(game.show("game"), "game over");
+    }
+
+    #[test]
+    fn built_ins_called_without_arguments_do_not_panic() {
+        let mut game = game_from_source("
+players 2
+
+define setup(){
+    winner()
+    if(count() is 0){
+        end()
+    }
+}
+");
+        game.start();
+
+        assert_eq!(game.show("game"), "game over");
+    }
+
+    #[test]
+    fn transferring_everything_from_an_unknown_stack_does_nothing() {
+        let mut game = game_from_source("
+players 2
+
+define setup(){
+    nowhere > deck end
+}
+");
+        game.start();
+
+        assert_eq!(game.show("game"), "active");
+    }
+
+    #[test]
+    fn moving_without_a_player_move_function_is_an_error() {
+        let mut game = game_from_source("
+players 2
+");
+        game.start();
+
+        assert!(game.player_move(1).is_err());
+    }
+
+    #[test]
+    fn moving_for_a_player_that_does_not_exist_is_an_error() {
+        let mut game = game_from_source("
+players 2
+
+define player_move(player){
+    end()
+}
+");
+        game.start();
+
+        assert!(game.player_move(0).is_err());
+        assert!(game.player_move(3).is_err());
+        assert_eq!(game.show("game"), "active");
+        assert!(game.player_move(2).is_ok());
+    }
+
+    #[test]
+    fn showing_a_player_that_does_not_exist_gives_a_message() {
+        let game = game_from_source("
+players 2
+");
+
+        assert_eq!(game.show("player"), "usage: show player <number>");
+        assert_eq!(game.show("player x"), "usage: show player <number>");
+        assert_eq!(game.show("player 0"), "usage: show player <number>");
+        assert_eq!(game.show("player 3"), "there is no player 3");
+        assert_eq!(game.show("player 2"), "");
     }
 }

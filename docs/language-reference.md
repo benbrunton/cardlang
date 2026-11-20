@@ -30,10 +30,12 @@ Declarations go at the top level of the file, outside any function.
 | Declaration | Meaning | Default |
 |---|---|---|
 | `name <word>` | The game's name, shown by `show name`. Must be a single word. | none |
-| `players <n>` | Number of players. They are numbered `1` to `n` and start with empty hands. | `1` |
-| `current_player <n>` | Which player's turn it is at the start. | `1` |
+| `players <number>` | Number of players. They are numbered `1` to `n` and start with empty hands. | `1` |
+| `current_player <number>` | Which player's turn it is at the start. | `1` |
 | `stack <word>` | Creates an empty pile with this name. Repeat it for more piles. | none |
 | `deck <word>` | Accepted but currently **ignored**. | none |
+
+Giving a declaration the wrong kind of value, such as `players two` or `name 5`, is a parse error.
 
 Every game has a standard 52-card deck called `deck`. It starts unshuffled, in order: ace to king of spades, then hearts, then clubs, then diamonds. The **top** of the deck is the last card, the king of diamonds.
 
@@ -132,9 +134,9 @@ Equality compares type as well as value: the number `1` is not equal to the text
 | Function | Does | Returns |
 |---|---|---|
 | `shuffle(deck)` | Shuffles the main deck. It always shuffles `deck`, whatever you pass. | nothing |
-| `count(stack)` | Counts cards. Gives `0` for anything that isn't a stack. | number |
+| `count(stack)` | Counts cards. Gives `0` for anything that isn't a stack, or when called with no argument. | number |
 | `filter(stack, f)` | Calls your function `f` with each card. Keeps the cards where `f` returns `true`. The original stack is not changed. | stack |
-| `winner(id)` | Adds a player to the winners list. Call it more than once for several winners. | nothing |
+| `winner(id)` | Adds a player to the winners list. Call it more than once for several winners. With no argument it prints an error and does nothing. | nothing |
 | `end()` | Ends the game. Later moves are ignored. | nothing |
 | `next_player()` | Moves `current_player` to the next player, wrapping from the last back to 1. | nothing |
 

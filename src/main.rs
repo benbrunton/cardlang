@@ -1,4 +1,4 @@
-use std::{fs, env, io::{stdin, stdout, Write}};
+use std::{fs, env, process, io::{stdin, stdout, Write}};
 
 mod lex;
 mod parse;
@@ -16,7 +16,8 @@ enum CommandResult {
     Exit,
     Show(String),
     Start,
-    Move(usize)
+    Move(usize),
+    Nothing
 }
 
 fn main() {
@@ -25,28 +26,42 @@ fn main() {
     let args: Vec<String> = env::args().collect();
     let command = args.get(1).unwrap_or(&default_command);
     match command as &str {
-        "test"    => test(args.get(2)),
+        "test"    => {
+            if !test(args.get(2)) {
+                process::exit(1);
+            }
+        },
         _         => interactive()
     }
 }
 
-fn test(cmd: Option<&String>) {
+// returns true when the file parses
+fn test(cmd: Option<&String>) -> bool {
     match cmd {
         Some(path) => {
-            let file_result = fs::read_to_string(path);
+            let source = match fs::read_to_string(path) {
+                Ok(s) => s,
+                Err(_) => {
+                    eprintln!("unable to read '{}'", path);
+                    return false;
+                }
+            };
 
-            if file_result.is_err() {
-                println!("unable to read '{}'", path);
-                return;
-            }
-
-            let game = parse_game(file_result.expect("unable to read file"));
-            match game {
-                Some(_g) => println!("success!"),
-                _       => println!("failed to parse!")
+            match parse_game(source) {
+                Some(_g) => {
+                    println!("success!");
+                    true
+                },
+                None => {
+                    eprintln!("failed to parse!");
+                    false
+                }
             }
         },
-        _ => println!("no file specified!")
+        None => {
+            eprintln!("no file specified!");
+            false
+        }
     }
 }
 
@@ -58,7 +73,14 @@ fn interactive() {
         let _ = stdout().flush();
 
         let mut input = String::new();
-        stdin().read_line(&mut input).unwrap();
+        match stdin().read_line(&mut input) {
+            // end of input (e.g. ctrl-d or a closed pipe)
+            Ok(0) | Err(_) => {
+                println!();
+                break;
+            },
+            Ok(_) => ()
+        }
 
         let command = input.trim().split(' ').collect();
         let command_result = translate_command(command);
@@ -76,6 +98,7 @@ fn interactive() {
 
 fn translate_command(command: Vec<&str>) -> CommandResult {
     match command[0] {
+        "" => CommandResult::Nothing,
         "exit" => CommandResult::Exit,
         "build" => build_game(command),
         "show" => {
@@ -84,11 +107,12 @@ fn translate_command(command: Vec<&str>) -> CommandResult {
         },
         "start" => CommandResult::Start,
         "move" => {
-            if command.len() < 2 {
-                println!("expected argument!");
-                CommandResult::CommandFailed
-            } else {
-                CommandResult::Move(command[1].parse().unwrap_or(1))
+            match command.get(1).map(|n| n.parse::<usize>()) {
+                Some(Ok(n)) => CommandResult::Move(n),
+                _ => {
+                    println!("usage: move <player number>");
+                    CommandResult::CommandFailed
+                }
             }
         },
         _ => unrecognised_command()
@@ -96,11 +120,21 @@ fn translate_command(command: Vec<&str>) -> CommandResult {
 }
 
 fn handle_game_command(command: CommandResult, game: &mut Option<Game>) {
-    if let Some(ref mut g) = game { 
-        match command {
+    match game {
+        Some(ref mut g) => match command {
             CommandResult::Show(c) => println!("{}", g.show(&c)),
             CommandResult::Start => g.start(),
-            CommandResult::Move(n) => g.player_move(n),
+            CommandResult::Move(n) => {
+                if let Err(e) = g.player_move(n) {
+                    println!("move ignored: {}", e);
+                }
+            },
+            _ => ()
+        },
+        None => match command {
+            CommandResult::Show(_) | CommandResult::Start | CommandResult::Move(_) => {
+                println!("no game loaded - use 'build <file>' first");
+            },
             _ => ()
         }
     }

@@ -98,7 +98,14 @@ impl Runtime {
                 None
             },
             "winner" => {
-                let player_id = match self.resolve_expression(&f.arguments[0]) {
+                let argument = match f.arguments.get(0) {
+                    Some(a) => a,
+                    None => {
+                        eprintln!("winner: expected a player id");
+                        return None;
+                    }
+                };
+                let player_id = match self.resolve_expression(argument) {
                     PrimitiveValue::Number(n) => n,
                     _ => 0.0
                 };
@@ -107,8 +114,13 @@ impl Runtime {
                 None
             },
             "count" => {
-                let stack_to_count = self.resolve_expression(&f.arguments[0]);
-                let c = count(stack_to_count);
+                let c = match f.arguments.get(0) {
+                    Some(a) => {
+                        let stack_to_count = self.resolve_expression(a);
+                        count(stack_to_count)
+                    },
+                    None => 0
+                };
                 Some(PrimitiveValue::Number(c as f64))
             },
             "next_player" => {
@@ -199,32 +211,39 @@ impl Runtime {
         self.players.clone()
     }
 
-    pub fn get_player(&self, n: usize) -> Player {
-        self.players[n].clone()
+    pub fn get_player(&self, n: usize) -> Option<Player> {
+        self.players.get(n).cloned()
     }
 
     pub fn get_winners(&self) -> Vec<f64> {
         self.winners.clone()
     }
 
-    pub fn player_move(&mut self, n: usize) {
-        if self.status != GameState::Active {
-            return;
+    pub fn player_move(&mut self, n: usize) -> Result<(), String> {
+        match self.status {
+            GameState::Pending => return Err("the game has not started - use 'start'".to_string()),
+            GameState::GameOver => return Err("the game is over".to_string()),
+            GameState::Active => ()
         }
 
-        let p_move = self.callbacks.player_move.clone().unwrap();
+        let p_move = match self.callbacks.player_move.clone() {
+            Some(m) => m,
+            None => return Err("this game does not define player_move".to_string())
+        };
+
+        if n < 1 || n > self.players.len() {
+            return Err(format!("there is no player {} (players: {})", n, self.players.len()));
+        }
 
         let mut call_stack_frame = HashMap::new();
-        match p_move.arguments.get(0) {
-            Some(arg) => {
-                let player = self.players[n - 1].clone();
-                call_stack_frame.insert(arg.clone(), Self::build_player_object(player));
-            },
-            None => ()
+        if let Some(arg) = p_move.arguments.get(0) {
+            let player = self.players[n - 1].clone();
+            call_stack_frame.insert(arg.clone(), Self::build_player_object(player));
         }
         self.call_stack.push(call_stack_frame);
-        self.handle_statements(&p_move.body.clone());
+        self.handle_statements(&p_move.body);
         self.call_stack.pop();
+        Ok(())
     }
 
     pub fn setup(&mut self) {
