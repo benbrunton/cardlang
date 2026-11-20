@@ -118,17 +118,17 @@ impl Runtime {
 
         let mut card_stacks: HashMap<String, Vec<Card>> = HashMap::new();
         for stack in initial_values.card_stacks.iter() {
-            card_stacks.insert(stack.to_string(), vec!());
+            card_stacks.insert(stack.to_string(), vec![]);
         }
 
         Runtime {
             status: GameState::Pending,
             deck:  standard_deck(),
-            winners: vec!(),
+            winners: vec![],
             current_player: initial_values.current_player,
-            call_stack: vec!(),
+            call_stack: vec![],
             current_move: None,
-            function_names: vec!(),
+            function_names: vec![],
             failure: None,
             card_stacks,
             card_values: initial_values.card_values.iter().cloned().collect(),
@@ -212,7 +212,7 @@ impl Runtime {
             "filter" => {
                 let stack = match f.arguments.first().map(|a| self.resolve_expression(a)) {
                     Some(PrimitiveValue::Stack(s)) => s,
-                    _ => return Some(PrimitiveValue::Stack(vec!()))
+                    _ => return Some(PrimitiveValue::Stack(vec![]))
                 };
                 let definition = match f.arguments.get(1) {
                     Some(Expression::Symbol(name)) => self.callbacks.definitions.get(name).cloned(),
@@ -222,7 +222,7 @@ impl Runtime {
                     Some(d) => Some(PrimitiveValue::Stack(self.filter(stack, d))),
                     None => {
                         eprintln!("filter: expected a function name as the second argument");
-                        Some(PrimitiveValue::Stack(vec!()))
+                        Some(PrimitiveValue::Stack(vec![]))
                     }
                 }
             },
@@ -412,7 +412,7 @@ impl Runtime {
             }
         };
 
-        let mut moves = vec!();
+        let mut moves = vec![];
         for argument in arguments {
             match argument {
                 Expression::Symbol(name) => match self.callbacks.definitions.get(name) {
@@ -437,7 +437,7 @@ impl Runtime {
             _ => None
         };
 
-        let values = vec!(player, move_object);
+        let values = vec![player, move_object];
         match requested {
             Some(name) => match moves.iter().find(|d| d.name == name) {
                 Some(definition) => !Self::failed(&self.call_with_values(definition, values)),
@@ -448,7 +448,7 @@ impl Runtime {
                 }
             },
             None => {
-                let mut reasons = vec!();
+                let mut reasons = vec![];
                 for definition in moves.iter() {
                     let before = self.snapshot();
                     self.failure = None;
@@ -840,15 +840,15 @@ mod test{
         });
         let func = Definition{
             name: "_".to_string(),
-            arguments: vec!("card".to_string()),
-            body: vec!(return_statement)
+            arguments: vec!["card".to_string()],
+            body: vec![return_statement]
         };
 
         let initial_values = InitialValues{
             players: 1,
-            player_stacks: vec!(),
-            card_values: vec!(),
-            card_stacks: vec!(),
+            player_stacks: vec![],
+            card_values: vec![],
+            card_stacks: vec![],
             current_player: 1,
         };
 
@@ -871,15 +871,15 @@ mod test{
         });
         let func = Definition{
             name: "_".to_string(),
-            arguments: vec!("card".to_string()),
-            body: vec!(return_statement)
+            arguments: vec!["card".to_string()],
+            body: vec![return_statement]
         };
 
         let initial_values = InitialValues{
             players: 1,
-            player_stacks: vec!(),
-            card_values: vec!(),
-            card_stacks: vec!(),
+            player_stacks: vec![],
+            card_values: vec![],
+            card_stacks: vec![],
             current_player: 1,
         };
 
@@ -906,15 +906,15 @@ mod test{
         let return_statement = Statement::ReturnStatement(ReturnStatement{ expression });
         let func = Definition{
             name: "_".to_string(),
-            arguments: vec!("card".to_string()),
-            body: vec!(return_statement)
+            arguments: vec!["card".to_string()],
+            body: vec![return_statement]
         };
 
         let initial_values = InitialValues{
             players: 1,
-            player_stacks: vec!(),
-            card_values: vec!(),
-            card_stacks: vec!(),
+            player_stacks: vec![],
+            card_values: vec![],
+            card_stacks: vec![],
             current_player: 1,
         };
 
@@ -941,15 +941,15 @@ mod test{
         let return_statement = Statement::ReturnStatement(ReturnStatement{ expression });
         let func = Definition{
             name: "_".to_string(),
-            arguments: vec!("card".to_string()),
-            body: vec!(return_statement)
+            arguments: vec!["card".to_string()],
+            body: vec![return_statement]
         };
 
         let initial_values = InitialValues{
             players: 1,
-            player_stacks: vec!(),
-            card_values: vec!(),
-            card_stacks: vec!(),
+            player_stacks: vec![],
+            card_values: vec![],
+            card_stacks: vec![],
             current_player: 1,
         };
 

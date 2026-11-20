@@ -85,7 +85,7 @@ fn get_rank_array() -> [Rank; 13] {
 pub fn standard_deck() -> Vec<Card> {
     let suits = get_suit_array();
     let ranks = get_rank_array();
-    let mut cards = vec!();
+    let mut cards = vec![];
     for suit in &suits {
         for rank in &ranks {
             let card = Card {

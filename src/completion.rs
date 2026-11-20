@@ -48,10 +48,10 @@ pub fn complete(line: &str, pos: usize, context: Option<&CompletionContext>) -> 
             words
         },
         Some("show") => show_candidates(&previous[1..], context),
-        Some(w) if RESERVED_WORDS.contains(&w) => vec!(),
+        Some(w) if RESERVED_WORDS.contains(&w) => vec![],
         Some(_) => match context {
             Some(c) => move_candidates(before, start, &previous, c),
-            None => vec!()
+            None => vec![]
         }
     };
 
@@ -73,7 +73,7 @@ fn show_candidates(arguments: &[&str], context: Option<&CompletionContext>) -> V
         ["player", _] => std::iter::once("hand".to_string())
             .chain(context.player_stacks.iter().cloned())
             .collect(),
-        _ => vec!()
+        _ => vec![]
     }
 }
 
@@ -85,7 +85,7 @@ fn move_candidates(before: &str, start: usize, previous: &[&str], context: &Comp
     };
 
     // after a player number, the next word can be a move name
-    let mut candidates = vec!();
+    let mut candidates = vec![];
     if words.is_empty() {
         candidates.extend(context.move_names.iter().cloned());
     }
@@ -150,12 +150,12 @@ mod test {
 
     fn scopa_context() -> CompletionContext {
         CompletionContext {
-            move_names: vec!("drop".to_string(), "take".to_string()),
-            stacks: vec!("middle".to_string()),
-            player_stacks: vec!("collection".to_string()),
+            move_names: vec!["drop".to_string(), "take".to_string()],
+            stacks: vec!["middle".to_string()],
+            player_stacks: vec!["collection".to_string()],
             players: 2,
-            hand: vec!("7h".to_string(), "10d".to_string(), "ks".to_string()),
-            table: vec!("3c".to_string(), "4s".to_string(), "7c".to_string())
+            hand: vec!["7h".to_string(), "10d".to_string(), "ks".to_string()],
+            table: vec!["3c".to_string(), "4s".to_string(), "7c".to_string()]
         }
     }
 

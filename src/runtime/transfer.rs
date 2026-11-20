@@ -90,7 +90,7 @@ mod test{
     #[test]
     fn it_can_handle_moving_stack_to_stack() {
         let from = Some(TransferTarget::Stack(standard_deck()));
-        let to = Some(TransferTarget::Stack(vec!()));
+        let to = Some(TransferTarget::Stack(vec![]));
 
         let result = transfer(from, to, None);
 

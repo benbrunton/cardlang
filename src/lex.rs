@@ -39,7 +39,7 @@ impl std::fmt::Display for LexError {
 
 pub fn lexer(source: &str) -> Result<Vec<SourceToken>, LexError> {
     let mut line_number = 1;
-    let mut tokens = vec!();
+    let mut tokens = vec![];
     let mut chars = source.chars().peekable();
 
     let mut partial_token: Option<String> = None;

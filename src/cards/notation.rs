@@ -85,7 +85,7 @@ pub fn parse_cards(input: &str) -> Result<Vec<Card>, String> {
         .filter(|w| !w.is_empty())
         .collect();
 
-    let mut cards = vec!();
+    let mut cards = vec![];
     let mut i = 0;
     while i < words.len() {
         let word = words[i];

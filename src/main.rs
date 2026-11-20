@@ -38,13 +38,13 @@ fn main() {
         },
         // build and start a game in one step
         "play"    => match args.get(2) {
-            Some(path) => interactive(vec!(format!("build {}", path), "start".to_string())),
+            Some(path) => interactive(vec![format!("build {}", path), "start".to_string()]),
             None => {
                 eprintln!("usage: cardlang play <file>");
                 process::exit(1);
             }
         },
-        _         => interactive(vec!())
+        _         => interactive(vec![])
     }
 }
 
