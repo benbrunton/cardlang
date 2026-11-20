@@ -111,7 +111,7 @@ player card taken         .(a card, or none; starts none)
 
 ### 12. `not` (roadmap 65), and `and` for `&`
 ```
-check(not player:drawn, …)
+must(not player:drawn, …)
 ```
 Every draft wanted `not`. Also, `or` is a word and `&` is a symbol, and in the drafts `&` is the odd one out. Suggest `and`, keeping `&` working for a while. **All three.**
 
@@ -130,9 +130,21 @@ use poker      .(gives poker_rank(cards): higher is better)
 ```
 Most of poker ranking is easy to write in cardlang: sets, flushes and straights are a few lines each, the same as Gin's `is_set` and `is_run`. The hard part is breaking ties, where kickers are compared one by one. That needs sorting and comparing lists, and fitting it into a single number overflows. Adding sorting and lists to the language for one game would make it bigger for everyone. Instead, `poker_rank` would be a library written in Rust that gives each hand a number (kind × 15⁵ plus the deciding cards in order), and a game uses it with `use poker`. The same `use` could later load libraries written in cardlang. Lots of games use poker hands (Stud, Draw, Pai Gow, video poker), so it's a reasonable thing to provide. **Hold'em.**
 
+### 16. `must` replaces `check`
+```
+must(count(played) is 1, play one card, e.g. drop 9d)
+must(card:colour is not target:colour, it must be the other colour)
+```
+Same behaviour as `check`, with a better name. A rule reads as a rule: "the card must be the other colour". It also frees up `check` as a move name, so Hold'em has a real `check` move alongside `call`. `check` would be kept working for a while and then removed. **All three.**
+
+### 17. The language knows about cards: `card:colour`
+```
+card:colour        .(Red for hearts and diamonds, Black for spades and clubs)
+```
+Facts that are true of a card in every game belong to the language, not the game spec. Today a card has `:rank`, `:suit` and `:value`; Klondike also needed its colour, and without this every patience game would define the same `red(card)` function. Other candidates to add when a game needs them: `:face` (true for Jack, Queen and King) and the next or previous rank. Things that change from game to game, such as what a card is worth, stay in `values` tables. **Klondike.**
+
 ## Smaller observations
 
-- **`check` is a keyword**, so poker's "check" can't be a move. The draft folds it into `call` (calling nothing is a check), which is how many poker apps do it. If that comes up again, the statement could be renamed `must(…)`, which also reads well: `must(count(played) is 1, play one card)`.
 - **A turn made of two moves** (Gin's take, then discard) works today: the first move sets `current_player = player` and a flag. `keep_turn()` would say it more clearly, but it doesn't seem worth a new built-in yet.
 - **`>` means two things**: a transfer as a statement, "greater than" inside an expression. Statement position separates them and the drafts never got confused, but it's worth keeping in mind before adding more symbols.
 - **`:` also means two things**: a field (`p:score`) and the start of a condition (`every player p: …`). `every player p: p:score > 0` has both. Spacing helps; it hasn't been a problem yet.
@@ -143,9 +155,10 @@ The drafts suggest a rule of thumb based on how you'd say it in English:
 
 | You'd say… | Write it as | Examples |
 |---|---|---|
-| "the *x* of *y*" | a **field**, `y:x` | `card:suit`, `pile:top`, `card:pile`, `p:chips` |
+| "the *x* of *y*" | a **field**, `y:x` | `card:suit`, `card:colour`, `pile:top`, `card:pile`, `p:chips` |
 | "*a* is/is in/plus/beats *b*" | an **operator** between two values | `a is b`, `card in hand`, `hand + board`, `a < b` |
 | "do *x*" | a **function** used as a statement | `shuffle(deck)`, `turn_up(c)`, `end()`, `winner(p)` |
+| "*x* must be so" | a **rule**, `must(…)` | `must(count(played) is 1, play one card)` |
 | "the *x* of these" / "how many" | a **function** that gives a value | `count(pile)`, `sum(pile)`, `poker_rank(cards)` |
 | "for every / any / the first / the most…" | a **quantifier** | `every player p: …`, `first pile c in columns: …` |
 | "move these cards there" | a **transfer** | `deck > players 10` |
@@ -155,6 +168,7 @@ Some principles behind it:
 1. **Operators are for relations and combinations between exactly two values** that read as a sentence left to right: `played in player:hand`. If it needs a third input, a choice of how, or has a side effect, it's a function.
 2. **A small, fixed set of operators.** No operators defined by games. Every operator should be guessable by someone who has never read the docs, and the precedence table should stay short enough to remember.
 3. **Words before symbols** when a plain word exists: `is`, `not`, `or`, `in`, `and`. Symbols only where they're universal: `+ - * / < >`.
-4. **Fields for things a value has, not things you work out.** `pile:top` is a field because the pile has a top card. `count(pile)` stays a function because it's a calculation, and so does anything a game defines for itself (`red(card)`), since games can't add fields to cards except through value tables.
-5. **One way to say each thing.** When `in` arrives, `cards_in_stack` goes. The short forms `count(pile)` and `sum(pile)` are fine next to the quantifiers because they use the same word for the same idea.
-6. **Name a function when an expression gets clever.** `players_in_hand() is 1`, `can_lift(card)` and `goes_home(card, f)` are what make the drafts readable. A function name is free documentation, and the language should keep defining them easy.
+4. **Fields for things a value has, not things you work out.** `pile:top` and `card:colour` are fields because the pile has a top card and the card has a colour. `count(pile)` stays a function because it's a calculation, and so does anything a game defines for itself (`can_lift(card)`), since games can't add fields to cards except through value tables.
+5. **The language provides facts about cards; the game provides rules.** A card's colour is the same in every game, so a spec shouldn't have to define it. What a card is worth isn't, so that stays in the spec.
+6. **One way to say each thing.** When `in` arrives, `cards_in_stack` goes. The short forms `count(pile)` and `sum(pile)` are fine next to the quantifiers because they use the same word for the same idea.
+7. **Name a function when an expression gets clever.** `players_in_hand() is 1`, `can_lift(card)` and `goes_home(card, f)` are what make the drafts readable. A function name is free documentation, and the language should keep defining them easy.

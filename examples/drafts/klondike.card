@@ -1,6 +1,7 @@
 .(KLONDIKE - DRAFT. Uses proposed syntax, so it doesn't parse yet.
   Proposals used: 1 let, 2 none, 3 face up and face down, 4 numbered piles,
-  5 :top and :pile, 6 from, 7 in, 9 first. See PROPOSALS.md.
+  5 :top and :pile, 6 from, 7 in, 9 first, 16 must, 17 card:colour.
+  See PROPOSALS.md.
 
   HOW TO PLAY
 
@@ -53,7 +54,7 @@ def setup(){
 
 move draw(player){
     if(count(stock) is 0){
-        check(count(waste) > 0, there are no cards left to draw)
+        must(count(waste) > 0, there are no cards left to draw)
         waste > stock end    .(turning the waste over makes it the stock again)
     } else {
         stock > waste
@@ -61,32 +62,32 @@ move draw(player){
 }
 
 move put(player, moving, onto){
-    check(count(moving) is 1 & count(onto) is 1, name the card to move and the card to put it on, e.g. put 7h / 8s)
+    must(count(moving) is 1 & count(onto) is 1, name the card to move and the card to put it on, e.g. put 7h / 8s)
     let card = moving:top
     let target = onto:top
-    check(can_lift(card), you can only move a face-up card, and only the top card of the waste or a foundation)
-    check(target:pile in columns & target is target:pile:top, you can only put cards on the top card of a column)
-    check(card:value is target:value - 1, it must be one lower than the card it goes on)
-    check(red(card) is not red(target), it must be the other colour)
+    must(can_lift(card), you can only move a face-up card, and only the top card of the waste or a foundation)
+    must(target:pile in columns & target is target:pile:top, you can only put cards on the top card of a column)
+    must(card:value is target:value - 1, it must be one lower than the card it goes on)
+    must(card:colour is not target:colour, it must be the other colour)
     card:pile > target:pile from card
 }
 
 move space(player, moving){
-    check(count(moving) is 1, name the king to move, e.g. space kh)
+    must(count(moving) is 1, name the king to move, e.g. space kh)
     let card = moving:top
-    check(card:rank is King, only a king can go in an empty column)
-    check(can_lift(card), you can only move a face-up card, and only the top card of the waste or a foundation)
+    must(card:rank is King, only a king can go in an empty column)
+    must(can_lift(card), you can only move a face-up card, and only the top card of the waste or a foundation)
     let space = first pile column in columns: count(column) is 0
-    check(space is not none, there's no empty column)
+    must(space is not none, there's no empty column)
     card:pile > space from card
 }
 
 move home(player, moving){
-    check(count(moving) is 1, name the card to move, e.g. home 2h)
+    must(count(moving) is 1, name the card to move, e.g. home 2h)
     let card = moving:top
-    check(card:face_up & card is card:pile:top, only the top card of a pile can go home)
+    must(card:face_up & card is card:pile:top, only the top card of a pile can go home)
     let foundation = first pile f in foundations: goes_home(card, f)
-    check(foundation is not none, that card can't go home yet: it needs the card one below it in the same suit)
+    must(foundation is not none, that card can't go home yet: it needs the card one below it in the same suit)
     card:pile > foundation from card
 }
 
@@ -108,10 +109,6 @@ def after_move(){
 
 
 .(Rules about cards)
-
-def red(card){
-    return(card:suit is Hearts or card:suit is Diamonds)
-}
 
 .(from a column you can lift any face-up card, with the cards on top of it;
   from the waste or a foundation, only the top card)

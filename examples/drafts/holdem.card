@@ -1,7 +1,7 @@
 .(TEXAS HOLD'EM - DRAFT. Uses proposed syntax, so it doesn't parse yet.
   Proposals used: 1 let, 3 face up and face down, 8 pile +, 9 quantifiers,
   10 players are their numbers, 11 flag, 12 not, 13 number parameters,
-  14 * and /, 15 use. See PROPOSALS.md.
+  14 * and /, 15 use, 16 must. See PROPOSALS.md.
 
   HOW TO PLAY
 
@@ -25,8 +25,8 @@
   Betting
     On your turn, do one of these:
     - fold: give up the hand. The chips you've put in stay in the pot.
-    - call: put in enough chips to match the biggest bet so far. If there's
-      nothing to match, this is a "check": you stay in without betting.
+    - check: stay in without betting. Only when there's nothing to match.
+    - call: put in enough chips to match the biggest bet so far.
     - raise 10: match the biggest bet, then raise it by 10 chips (or any
       amount, at least 2). If nobody has bet yet, this is simply a bet.
     Before the flop, betting starts after the big blind. In later rounds it
@@ -122,14 +122,20 @@ move fold(player){
     player:folded = true
 }
 
+move check(player){
+    must(player:bet is highest_bet, there's a bet to match - call, raise or fold)
+    player:acted = true
+}
+
 move call(player){
+    must(player:bet < highest_bet, there's nothing to call - check instead)
     pay(player, min(highest_bet - player:bet, player:chips))
     player:acted = true
 }
 
 move raise(player, number amount){
-    check(amount >= 2, the smallest raise is 2 chips)
-    check(every player p: p:folded or p:bet + p:chips >= highest_bet + amount,
+    must(amount >= 2, the smallest raise is 2 chips)
+    must(every player p: p:folded or p:bet + p:chips >= highest_bet + amount,
         someone still in the hand couldn't match that - bet less)
     highest_bet = highest_bet + amount
     pay(player, highest_bet - player:bet)

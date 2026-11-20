@@ -1,7 +1,7 @@
 .(GIN RUMMY - DRAFT. Uses proposed syntax, so it doesn't parse yet.
   Proposals used: 1 let, 2 none, 3 face up and face down, 4 numbered piles,
   5 :top and :pile, 7 in, 8 pile +, 9 quantifiers, 10 players are their
-  numbers, 11 flag and card, 12 not. See PROPOSALS.md.
+  numbers, 11 flag and card, 12 not, 16 must. See PROPOSALS.md.
 
   HOW TO PLAY
 
@@ -102,14 +102,14 @@ def next_hand(){
 .(Taking a card)
 
 move draw(player){
-    check(not player:drawn, you've already taken a card - now discard or knock, e.g. discard 7h)
+    must(not player:drawn, you've already taken a card - now discard or knock, e.g. discard 7h)
     stock > player:hand
     player:drawn = true
     current_player = player    .(still your turn: discard or knock next)
 }
 
 move take(player){
-    check(not player:drawn, you've already taken a card - now discard or knock, e.g. discard 7h)
+    must(not player:drawn, you've already taken a card - now discard or knock, e.g. discard 7h)
     player:taken = discards:top
     discards > player:hand
     player:drawn = true
@@ -120,9 +120,9 @@ move take(player){
 .(Ending your turn)
 
 move discard(player, played){
-    check(player:drawn, take a card first: draw from the stock, or take from the discard pile)
-    check(count(played) is 1, discard one card, e.g. discard 7h)
-    check(played:top is not player:taken, you can't discard the card you just took)
+    must(player:drawn, take a card first: draw from the stock, or take from the discard pile)
+    must(count(played) is 1, discard one card, e.g. discard 7h)
+    must(played:top is not player:taken, you can't discard the card you just took)
     player:hand > discards taking played
     player:drawn = false
     player:taken = none
@@ -132,17 +132,17 @@ move discard(player, played){
 }
 
 move knock(player, played, meld1, meld2, meld3){
-    check(player:drawn, take a card first: draw from the stock, or take from the discard pile)
-    check(count(played) is 1, discard one card first, then your melds, e.g. knock 2c / 7h 8h 9h / 5s 5d 5c)
-    check(played:top is not player:taken, you can't discard the card you just took)
-    check(meld_or_nothing(meld1) & meld_or_nothing(meld2) & meld_or_nothing(meld3),
+    must(player:drawn, take a card first: draw from the stock, or take from the discard pile)
+    must(count(played) is 1, discard one card first, then your melds, e.g. knock 2c / 7h 8h 9h / 5s 5d 5c)
+    must(played:top is not player:taken, you can't discard the card you just took)
+    must(meld_or_nothing(meld1) & meld_or_nothing(meld2) & meld_or_nothing(meld3),
         each group after a / must be a meld: 3 or 4 of a kind, or 3 or more in a row in one suit)
-    check(played + meld1 + meld2 + meld3 in player:hand, you can only use cards from your hand)
+    must(played + meld1 + meld2 + meld3 in player:hand, you can only use cards from your hand)
     player:hand > discards taking played face down
     player:hand > player:melds:1 taking meld1
     player:hand > player:melds:2 taking meld2
     player:hand > player:melds:3 taking meld3
-    check(deadwood(player) <= 10, your deadwood adds up to more than 10 - you can't knock yet)
+    must(deadwood(player) <= 10, your deadwood adds up to more than 10 - you can't knock yet)
     player:knocked = true
 }
 
@@ -150,28 +150,28 @@ move knock(player, played, meld1, meld2, meld3){
 .(After a knock: the other player's moves)
 
 move meld(player, cards){
-    check(answering(player), you can only lay out melds after the other player knocks)
-    check(is_meld(cards), that's not a meld: 3 or 4 of a kind, or 3 or more in a row in one suit)
+    must(answering(player), you can only lay out melds after the other player knocks)
+    must(is_meld(cards), that's not a meld: 3 or 4 of a kind, or 3 or more in a row in one suit)
     let space = first pile m in player:melds: count(m) is 0
-    check(space is not none, you've laid out three melds already)
+    must(space is not none, you've laid out three melds already)
     player:hand > space taking cards
     current_player = player
 }
 
 move lay(player, cards, onto){
-    check(answering(player), you can only add to melds after the other player knocks)
-    check(count(onto) is 1, name a card in the meld to add to, e.g. lay 10h / 9h)
+    must(answering(player), you can only add to melds after the other player knocks)
+    must(count(onto) is 1, name a card in the meld to add to, e.g. lay 10h / 9h)
     let knocker = first player p: p:knocked
     let meld = onto:top:pile
-    check(deadwood(knocker) > 0, you can't add to the melds of a gin hand)
-    check(meld in knocker:melds, you can only add to the knocker's melds)
-    check(is_meld(meld + cards), those cards don't fit that meld)
+    must(deadwood(knocker) > 0, you can't add to the melds of a gin hand)
+    must(meld in knocker:melds, you can only add to the knocker's melds)
+    must(is_meld(meld + cards), those cards don't fit that meld)
     player:hand > meld taking cards
     current_player = player
 }
 
 move done(player){
-    check(answering(player), you can only finish after the other player knocks)
+    must(answering(player), you can only finish after the other player knocks)
     score_hand()
 }
 
