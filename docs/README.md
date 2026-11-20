@@ -18,3 +18,4 @@ The language is still early and changing. The guides describe what the code on t
 - [`examples/race.card`](../examples/race.card): the game built in the getting started guide.
 - [`examples/turns.card`](../examples/turns.card): a minimal turn-based game.
 - [`examples/simple_scopa.card`](../examples/simple_scopa.card): Simple Scopa, a fuller game where players choose which cards to play. It shows named moves (`take 9d / 4c 5s`), card values, `taking` transfers and a pile for each player.
+- [`examples/scopa.card`](../examples/scopa.card): full Scopa to 11 points. Its header is a plain-English rulebook. It uses numbers and assignment, `any`/`group`/`most`, a 40-card deck, and a second values table for the primiera.

@@ -91,17 +91,19 @@ After `start` and after every accepted move, the CLI shows the state of the game
 
 ```
 player 2 to play
-  deck: 42 cards
-  middle: three hearts, ten clubs, ace clubs, ten diamonds
-  player 2 hand: six clubs, ace diamonds, eight hearts
-  collection: player 1: 0 cards, player 2: 2 cards
+  deck: 24 cards
+  middle: 3c, 7d, kh
+  player 1: score 4, scopas 1, collection 12 cards
+  player 2: score 6, scopas 0, collection 9 cards
+  your hand (player 2): 5s, 2h, 7c
 ```
 
 - the first line says whose turn it is, or `game over - winners: …`
 - the deck shows only how many cards are left, because it's face down
 - every pile declared with `stack` is listed; a pile with more than 10 cards shows its size and top card
+- if the game declares `player number` or `player stack` fields, each player gets a line with their numbers and how many cards are in their piles
 - the current player's hand is shown in full, so the CLI works for players passing the keyboard round
-- piles declared with `stack <name> per player` show how many cards each player has
+- cards are shown as codes (`7h`, `10d`, `ks`), the same way you type them in moves
 
 The `show` commands below give more detail.
 
@@ -133,9 +135,10 @@ Games can give their own messages, as Simple Scopa does. Otherwise the reason sh
 | `show name` | the game's `name` | `race` |
 | `show players` | every player and how many cards are in their hand | `player 1 (cards: 26), player 2 (cards: 26)` |
 | `show player <n>` | player `n`'s hand | `king diamonds, jack clubs` |
-| `show player <n> <stack>` | one of player `n`'s own stacks (`hand`, or one declared with `stack <name> per player`) | `jack spades, jack diamonds` |
+| `show player <n> <field>` | one of player `n`'s piles (`hand`, or one declared with `player stack`) or numbers (`player number`) | `jack spades, jack diamonds` or `4` |
 | `show current_player` | whose turn it is | `2` |
 | `show deck` | the cards in the deck | `ace spades, two spades, …` |
 | `show <pile>` | the cards in a pile declared with `stack` | `four hearts` |
+| `show <number>` | a number declared with `number` | `2` |
 
-Cards are listed bottom first, so the **last** card shown is the top of the pile. An empty pile prints a blank line. An unknown name prints `<name> not found`. `show player` without a valid number prints `usage: show player <number>`. A player that doesn't exist prints `there is no player <n>`, and an unknown stack prints `player 1 has no stack '<name>'`.
+Cards are listed bottom first, so the **last** card shown is the top of the pile. An empty pile prints a blank line. An unknown name prints `<name> not found`. `show player` without a valid number prints `usage: show player <number>`. A player that doesn't exist prints `there is no player <n>`, and an unknown field prints `player 1 has no stack or number '<name>'`.

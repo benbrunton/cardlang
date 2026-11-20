@@ -102,20 +102,20 @@ Game loaded
 > start
 player 1 to play
   middle: empty
-  player 1 hand: seven diamonds, ace clubs, …
+  your hand (player 1): 7c, 10d, …
 > move
 player 2 to play
-  middle: seven clubs
-  player 2 hand: jack spades, two spades, …
+  middle: 8c
+  your hand (player 2): 9c, 4s, …
 > 1 move
 move ignored: not allowed: check failed in player_move: player:id is current_player
 > move
 player 1 to play
-  middle: seven clubs, eight clubs
-  player 1 hand: seven diamonds, ace clubs, …
+  middle: 8c, ad
+  your hand (player 1): 7c, 10d, …
 ```
 
-`start` deals the cards and shows the table: whose turn it is, the piles, and the current player's hand (shortened here; a hand is listed bottom first, so the card played is the last one). Any line that isn't one of the CLI's own commands is a move. `move` makes a move for the current player. Race's moves don't need a name or cards, so any word would do. After each move the table is shown again.
+`start` deals the cards and shows the table: whose turn it is, the piles, and the current player's hand (shortened here; a hand is listed bottom first, so the card played is the last one). Cards are shown as short codes: `8c` is the eight of clubs, `ad` the ace of diamonds. Any line that isn't one of the CLI's own commands is a move. `move` makes a move for the current player. Race's moves don't need a name or cards, so any word would do. After each move the table is shown again.
 
 `1 move` tries to move as player 1. It's rejected because it's player 2's turn, and the message shows which rule failed. Your cards will differ because the deck is shuffled.
 
@@ -136,3 +136,4 @@ Two shortcuts:
 - Read the [language reference](language-reference.md) for every statement and built-in function.
 - Try changing Race: deal only part of the deck (`deck > players 5`), add a second pile, or use `filter` to remove the picture cards before dealing.
 - Look at [`examples/simple_scopa.card`](../examples/simple_scopa.card). It's a fuller game where players choose which cards to play: named moves, card values, and capturing cards into a pile each player owns.
+- Then [`examples/scopa.card`](../examples/scopa.card): full Scopa, with scoring over several hands. Its opening comment explains the rules in plain English.

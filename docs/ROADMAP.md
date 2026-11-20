@@ -125,21 +125,44 @@ Not started. The aim is to use cardlang as the rules engine inside other program
 | 56 | Return all errors and messages to the caller instead of printing to stderr | ⬜ | |
 | 57 | Proof of concept: a small WebAssembly page to play Simple Scopa by clicking cards | ⬜ | Builds on 48–50. Do this before committing to a server design. |
 
+## Milestone 8: full Scopa ✅
+
+[`examples/scopa.card`](../examples/scopa.card) plays the full game to 11 points: a 40-card deck, single-match priority, compulsory capture, scopas, the last capturer taking the rest, and scoring for most cards, most diamonds, the settebello and the primiera. Its header is a plain-English rulebook. Tests play whole games and check scoring with known collections.
+
+| # | Item | Status | Notes |
+|---|---|---|---|
+| 15 | `deck standard without Eight Nine Ten` | ✅ | |
+| 36 | Numbers: `number dealer`, `player number score`, assigned with `=` | ✅ | Declarations by type: `stack` / `number`, and `player stack` / `player number` for every player. `player stack` replaces `stack … per player`. |
+| 37 | Hands within a game: `gather()` puts every card back in the deck | ✅ | The game decides when a hand ends and the next starts |
+| 38 | Compulsory capture | ✅ | Written in the game with `any` and `group` |
+| 47 | `any` | ✅ | `not` for a whole condition is still missing |
+| 59 | `group g in <pile>`: every combination of cards | ✅ | Piles over 20 cards are refused |
+| 60 | Card literals: `[7d, kh]` | ✅ | |
+| 61 | `most player p: …`: the leader's id, or 0 for a tie | ✅ | Instead of passing function names around |
+| 62 | Named value tables: `values primiera { … }` → `card:primiera` | ✅ | |
+| 63 | A line break inside `( … )` continues the statement | ✅ | |
+| 64 | The table grouped by player, with their numbers and piles, and cards as codes | ✅ | |
+
+### Plan from here
+
+1. ~~Specify Scopa~~ ✅
+2. Resolve issues or limitations it shows up
+3. Web and embedding (Milestone 7)
+4. Pick the next card game to specify
+5. Resolve the issues it shows up
+6. Build a lightweight client
+
 ## Backlog
 
 Deferred or not yet needed. Each needs a design decision before it starts.
 
 | # | Item | Status | Notes |
 |---|---|---|---|
-| 36 | Variables or game state, e.g. who captured last (in Scopa, they take the cards left at the end) | ⏸️ deferred | |
-| 37 | Rounds and scores: play several hands, keep points between them | ⏸️ deferred | Needed for full Scopa scoring; builds on 36 |
-| 38 | Compulsory capture (Scopa rule): only allow `drop` when no `take` is possible | ⏸️ deferred | Needs a way to ask "would this move work?" without making it |
 | 44 | Let a game choose what the table shows, e.g. a `display` function | ⏸️ deferred | |
-| 47 | "Any" tests and `not` for a whole condition | ⬜ | Today: `(every player p: …) is false` |
-| 15 | A real `deck` declaration (currently ignored), e.g. a 40-card deck | ⬜ | README "filter deck in declaration". `filter` + `taking` in `setup` works today. |
 | 21 | Stacks as real references. Passing a pile to a function copies it, and `filter` results can't be stored. | ⬜ | |
 | 22 | Spec tests: `.test(...)` blocks in a game file, run by `cardlang test` | ⏸️ deferred | README "spec test"; sketched in `examples/turns.card` |
 | 24 | `shuffle(x)` should shuffle `x`, not always `deck` | ⬜ | |
 | 25 | Multi-word names | ⬜ | Could reuse the free-text approach from check messages |
 | 26 | Switch statements | ⬜ | README; `else if` covers most uses |
 | 39b | `*` and `/` | ⬜ | |
+| 65 | `not` for a whole condition | ⬜ | Today: `(…) is false` |
