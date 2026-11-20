@@ -38,9 +38,12 @@
     ]
   },
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "package": "vsce package --skip-license -o cardlang.vsix",
+    "install-extension": "npm run package && code --install-extension cardlang.vsix --force"
   },
   "devDependencies": {
+    "@vscode/vsce": "3.9.2",
     "vscode-oniguruma": "^2.0.1",
     "vscode-textmate": "^9.3.2"
   }
