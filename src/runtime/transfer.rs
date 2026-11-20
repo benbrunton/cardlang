@@ -31,10 +31,14 @@ pub fn transfer(
 ) -> Option<(TransferTarget, TransferTarget)> {
     let mut count = match t_count {
         None => 1,
-        Some(TransferCount::End) => from.as_ref().map_or(0, |f| f.count())
+        Some(TransferCount::End) => from.as_ref().map_or(0, |f| f.count()),
+        Some(TransferCount::Number(n)) => *n,
+        // specific cards are moved by the runtime, not here
+        Some(TransferCount::Taking(_)) => return None
     };
 
-    // multiply by number of target stacks
+    // counts are per destination stack, so multiply by the number of them
+    // (for `end` this is harmless: the loop stops when the source is empty)
     count *= match &to {
         Some(TransferTarget::Stack(_)) => 1,
         Some(TransferTarget::StackList(s)) => s.len(),

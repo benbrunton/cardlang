@@ -1,49 +1,69 @@
-name simple scopa
-deck filter(StandardDeck, not_royal)
+.(Simple Scopa: Scopa with a normal 52-card deck and no end-of-round scoring.
+
+  Four cards are dealt face up to the middle and three to each player.
+  On your turn, play one card from your hand:
+    take - capture cards from the middle whose values add up to your card,
+           e.g. 'take 9d / 4c 5s' (aces are 1, jacks 11, queens 12, kings 13)
+    drop - put the card in the middle, e.g. 'drop 9d'
+  You can leave out the move name: '9d / 4c 5s' takes, '9d' drops.
+  When both hands are empty, three more cards are dealt to each player.
+  When the deck and hands are all empty, whoever captured most cards wins.)
+
+name simple_scopa
 players 2
 current_player 1
 stack middle
+stack collection per player
 
 def setup(){
+    shuffle(deck)
     deck > middle 4
     deck > players 3
 }
 
-def player_move(player move){
+def player_move(player, move){
     check(player:id is current_player)
     valid_moves(take, drop)
-
-    .(end game conditions...)
+    after_move()
+    next_player()
 }
 
-def take(player move) {
-    .(each card in players hand)
-    check(cards_in_stack(move:cards, player:hand))
-
-    .(target is single card)
-    check(count(move:target) is 1)
-
-    .(target is in middle)
-    check(cards_in_stack(move:target, middle))
-
-    .(move matches target value)
-    check(get_value(move:cards) is get_value(move:target))
-
-    .(make the transfer)
-    middle > player:collection - move:target
-    player:hand > player:collection - move:cards
-}
-
-def drop(move player) {
+def take(player, move){
     check(count(move:cards) is 1)
+    check(count(move:target) > 0)
     check(cards_in_stack(move:cards, player:hand))
-    player:hand > middle - move:cards
+    check(cards_in_stack(move:target, middle))
+    check(sum(move:target) is sum(move:cards))
+    middle > player:collection taking move:target
+    player:hand > player:collection taking move:cards
 }
 
-def get_value(cards) {
-
+def drop(player, move){
+    check(count(move:cards) is 1)
+    check(count(move:target) is 0)
+    player:hand > middle taking move:cards
 }
 
-def not_royal(card){
-   return(card:rank is not King & card:rank is not Queen & card:rank is not Jack)
+def hands_empty(){
+    return(count(players:1:hand) is 0 & count(players:2:hand) is 0)
+}
+
+def after_move(){
+    if(hands_empty() & count(deck) is 0){
+        end_game()
+    } else if(hands_empty()){
+        deck > players 3
+    }
+}
+
+def end_game(){
+    if(count(players:1:collection) > count(players:2:collection)){
+        winner(1)
+    } else if(count(players:2:collection) > count(players:1:collection)){
+        winner(2)
+    } else {
+        winner(1)
+        winner(2)
+    }
+    end()
 }

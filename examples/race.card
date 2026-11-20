@@ -5,16 +5,16 @@ players 2
 current_player 1
 stack middle
 
-define setup(){
+def setup(){
     shuffle(deck)
     deck > players end
 }
 
-define is_out(p){
+def is_out(p){
     return(count(p:hand) is 0)
 }
 
-define player_move(player){
+def player_move(player){
     check(player:id is current_player)
     player:hand > middle
     if(is_out(player)){

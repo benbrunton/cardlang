@@ -7,17 +7,17 @@ cardlang is early-stage. Everything listed here has been checked against the cur
 Errors give a line number and a short description:
 
 ```
-error: line 33: unrecognised character (for example '-', '"' or a decimal number)
+error: line 3: unrecognised character (for example '"' or a decimal number)
 error: line 2: unexpected word or symbol
 ```
 
 | Message | Common causes |
 |---|---|
-| `unrecognised character` | `-`, `"`, a decimal number such as `1.5`, or a word starting with a digit |
+| `unrecognised character` | `"`, a decimal number such as `1.5`, or a word starting with a digit |
 | `a comment is never closed` | a `.(` comment with no matching `)` |
-| `unexpected word or symbol` | a multi-word `name`; a declaration with the wrong kind of value (`players two`, `name 5`); a missing `(` after `check`, `return` or `if`; a chained comparison (`a is b is c`); `else` without an `if`; a number after a transfer (`deck > middle 4`); anything left over at the top level of the file |
+| `unexpected word or symbol` | a multi-word `name`; a declaration with the wrong kind of value (`players two`, `name 5`); a missing `(` after `check`, `return` or `if`; a chained comparison (`a is b is c`, `a < b < c`); `else` without an `if`; a function named `build`, `start`, `show`, `help` or `exit`; a `values` entry that isn't a rank name and a number; anything left over at the top level of the file |
 | `unexpected end of statement` | something is missing: an unclosed `{` or `(`, an unfinished comparison (`check(a is)`), or a transfer with no destination (`deck >`) |
-| `expected a name` | `define` not followed by a function name, or something other than names in a function's parameter list |
+| `expected a name` | `def` not followed by a function name, or something other than names in a function's parameter list |
 
 The message says what the parser found, but not yet what it expected.
 
@@ -25,23 +25,24 @@ The message says what the parser found, but not yet what it expected.
 
 | Limitation | What happens | What to do instead |
 |---|---|---|
-| No arithmetic | `+`, `-` etc. aren't supported | none yet; see the [roadmap](ROADMAP.md) (item 20) |
-| Transfer counts | `deck > middle 4` is a parse error | Repeat the transfer, or use `end` |
-| `deck <word>` declaration | Ignored. Every game uses the full 52-card deck. | Use `filter` in your logic |
-| `filter` results can't be moved | `filter` returns a new stack that isn't stored anywhere | Use it for counting or comparing |
+| No loops | You can't repeat something for each player or card | Address players by number (`players:1:hand`, `players:2:hand`); use `filter`, `count` and `sum` for cards |
+| No variables | You can't store a value, such as who captured last | Keep state in piles, or work it out from the cards |
+| Only `+` and `-` | No `*`, `/`, `<=` or `>=` | `a < b or a is b` for `<=` |
+| `filter` results can't be stored | `filter` returns a new stack that isn't kept anywhere | Use it directly: count it, sum it, or move it with `taking` |
 | Stacks passed as arguments are copies | Transferring into a stack parameter doesn't change the original pile | Pass the player, or name the pile directly |
+| `deck <word>` declaration | Ignored. Every game uses the full 52-card deck. | Use `filter` and `taking` in `setup` to remove cards |
 | `shuffle` argument | Always shuffles `deck` | none |
 | Multi-word names | `name my game` fails to parse | `name my_game` |
-| Unknown pile names in transfers | Only noticed when the transfer runs. It's skipped, with a message on stderr. | Check spelling against your `stack` declarations |
+| Unknown pile names in transfers | Only noticed when the transfer runs: it fails, with a message on stderr | Check spelling against your `stack` declarations |
 | `.test(...)` blocks | Skipped; spec tests aren't run yet | none |
 
-## Syntax used in `examples/simple_scopa.card` that doesn't exist yet
+## Moves
 
-- `def` (use `define`)
-- removing specific cards in a transfer: `a > b - move:cards`
-- `valid_moves(...)`, `cards_in_stack(...)`
-- `deck filter(StandardDeck, not_royal)` as a declaration
-- a move argument for `player_move` (the CLI only passes the player)
+| Limitation | What happens |
+|---|---|
+| Rejected moves don't say why | The CLI prints `move ignored: not allowed`, not which `check` failed |
+| At most two groups of cards | A move has `move:cards` and `move:target`; a third `/` group is rejected |
+| Some words can't be move names | Anything that reads as a card (`as`, `seven`, `10`) and the CLI's own commands |
 
 ## Interpreter
 

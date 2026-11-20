@@ -2,6 +2,7 @@ use crate::ast::*;
 use std::fmt::Display;
 use std::collections::HashMap;
 use crate::runtime::{
+    MoveInput,
     Runtime,
     InitialValues,
     Callbacks
@@ -22,6 +23,8 @@ impl Game {
 
         let mut initial_values = InitialValues{ 
             players: 1,
+            player_stacks: vec!(),
+            card_values: vec!(),
             card_stacks: vec!(),
             current_player: 1 
         };
@@ -68,6 +71,15 @@ impl Game {
                 }) => {
                     initial_values.card_stacks.push(s.to_string());
                 },
+                Statement::ValueTable(table) => {
+                    initial_values.card_values.extend(table.iter().cloned());
+                },
+                Statement::Declaration(Declaration{
+                    key: GlobalKey::PlayerStack,
+                    value: Expression::Symbol(s)
+                }) => {
+                    initial_values.player_stacks.push(s.to_string());
+                },
                 _ => ()
             }
 
@@ -112,8 +124,14 @@ impl Game {
         self.runtime.setup();
     }
 
+    // a move with no name or cards, as a specific player
+    #[cfg(test)]
     pub fn player_move(&mut self, player: usize) -> Result<(), String> {
-        self.runtime.player_move(player)
+        self.make_move(MoveInput{ player: Some(player), ..MoveInput::default() })
+    }
+
+    pub fn make_move(&mut self, input: MoveInput) -> Result<(), String> {
+        self.runtime.player_move(input)
     }
 
     fn check_exploded_show(&self, key: &str) -> String {
@@ -129,8 +147,12 @@ impl Game {
             Some(Ok(n)) if n >= 1 => n,
             _ => return "usage: show player <number>".to_string()
         };
+        let stack_name = args.get(2).copied().unwrap_or("hand");
         match self.runtime.get_player(player_num - 1) {
-            Some(player) => Self::display_list(&player.get_hand()),
+            Some(player) => match player.get_stack(stack_name) {
+                Some(cards) => Self::display_list(&cards),
+                None => format!("player {} has no stack '{}'", player_num, stack_name)
+            },
             None => format!("there is no player {}", player_num)
         }
     }
@@ -1279,12 +1301,12 @@ mod test{
         let mut game = game_from_source("
 players 2
 
-define finish(id){
+def finish(id){
     winner(id)
     end()
 }
 
-define setup(){
+def setup(){
     finish(2)
 }
 ");
@@ -1298,11 +1320,11 @@ define setup(){
         let mut game = game_from_source("
 players 2
 
-define has_no_cards(p){
+def has_no_cards(p){
     return(count(p:hand) is 0)
 }
 
-define player_move(player){
+def player_move(player){
     check(has_no_cards(player) is true)
     end()
 }
@@ -1318,21 +1340,21 @@ define player_move(player){
         let mut game = game_from_source("
 players 2
 
-define has_no_cards(p){
+def has_no_cards(p){
     return(count(p:hand) is 0)
 }
 
-define setup(){
+def setup(){
     deck > players end
 }
 
-define player_move(player){
+def player_move(player){
     check(has_no_cards(player) is true)
     end()
 }
 ");
         game.start();
-        game.player_move(1).unwrap();
+        assert_eq!(game.player_move(1), Err("not allowed".to_string()));
 
         assert_eq!(game.show("game"), "active");
     }
@@ -1343,15 +1365,15 @@ define player_move(player){
 players 2
 stack middle
 
-define discard(p){
+def discard(p){
     p:hand > middle
 }
 
-define setup(){
+def setup(){
     deck > players
 }
 
-define player_move(player){
+def player_move(player){
     discard(player)
 }
 ");
@@ -1367,16 +1389,16 @@ define player_move(player){
         let mut game = game_from_source("
 players 2
 
-define inner(id){
+def inner(id){
     winner(id)
 }
 
-define outer(id){
+def outer(id){
     inner(1)
     winner(id)
 }
 
-define setup(){
+def setup(){
     outer(2)
 }
 ");
@@ -1388,11 +1410,11 @@ define setup(){
     #[test]
     fn filter_can_be_called_with_a_user_defined_function() {
         let mut game = game_from_source("
-define is_ace(card){
+def is_ace(card){
     return(card:rank is Ace)
 }
 
-define setup(){
+def setup(){
     if(count(filter(deck, is_ace)) is 4){
         end()
     }
@@ -1406,11 +1428,11 @@ define setup(){
     #[test]
     fn filter_can_use_negative_comparisons() {
         let mut game = game_from_source("
-define not_ace(card){
+def not_ace(card){
     return(card:rank is not Ace)
 }
 
-define setup(){
+def setup(){
     if(count(filter(deck, not_ace)) is 48){
         end()
     }
@@ -1426,7 +1448,7 @@ define setup(){
         let mut game = game_from_source("
 stack middle
 
-define setup(){
+def setup(){
     deck > middle
     if(count(middle) is 1){
         end()
@@ -1441,11 +1463,11 @@ define setup(){
     #[test]
     fn infinite_recursion_is_stopped() {
         let mut game = game_from_source("
-define forever(){
+def forever(){
     forever()
 }
 
-define setup(){
+def setup(){
     forever()
     end()
 }
@@ -1461,11 +1483,11 @@ define setup(){
 players 2
 stack middle
 
-define setup(){
+def setup(){
     deck > players
 }
 
-define player_move(player){
+def player_move(player){
     player:hand > middle
     if(count(player:hand) is 0){
         end()
@@ -1483,7 +1505,7 @@ define player_move(player){
         let mut game = game_from_source("
 players 2
 
-define setup(){
+def setup(){
     winner()
     if(count() is 0){
         end()
@@ -1500,7 +1522,7 @@ define setup(){
         let mut game = game_from_source("
 players 2
 
-define setup(){
+def setup(){
     nowhere > deck end
 }
 ");
@@ -1524,7 +1546,7 @@ players 2
         let mut game = game_from_source("
 players 2
 
-define player_move(player){
+def player_move(player){
     end()
 }
 ");
@@ -1560,14 +1582,14 @@ players 2
         let result = winners_of("
 players 2
 
-define pick(a, b){
+def pick(a, b){
     if(a is 1){
         return(10)
     }
     return(b)
 }
 
-define setup(){
+def setup(){
     winner(pick(1, 20))
     winner(pick(2, 30))
 }
@@ -1580,7 +1602,7 @@ define setup(){
         let result = winners_of("
 players 2
 
-define setup(){
+def setup(){
     if(true){
         check(false)
     }
@@ -1595,7 +1617,7 @@ define setup(){
         let result = winners_of("
 players 2
 
-define setup(){
+def setup(){
     if(1 is 1 & 2 is 2){
         winner(1)
     }
@@ -1615,7 +1637,7 @@ define setup(){
         let result = winners_of("
 players 2
 
-define setup(){
+def setup(){
     if(1 is 2 or 3 is 3){
         winner(1)
     }
@@ -1638,15 +1660,15 @@ define setup(){
         let result = winners_of("
 players 2
 
-define yes(){
+def yes(){
     return(true)
 }
 
-define no(){
+def no(){
     return(false)
 }
 
-define setup(){
+def setup(){
     if(yes()){
         winner(1)
     }
@@ -1671,11 +1693,11 @@ define setup(){
         let result = winners_of("
 players 2
 
-define one(){
+def one(){
     return(1)
 }
 
-define setup(){
+def setup(){
     if(one()){
         winner(1)
     }
@@ -1689,7 +1711,7 @@ define setup(){
         let result = winners_of("
 players 2
 
-define setup(){
+def setup(){
     if(1 is 2){
         winner(1)
     } else {
@@ -1711,7 +1733,7 @@ define setup(){
         let result = winners_of("
 players 2
 
-define classify(n){
+def classify(n){
     if(n is 1){
         return(10)
     } else if(n is 2){
@@ -1721,7 +1743,7 @@ define classify(n){
     }
 }
 
-define setup(){
+def setup(){
     winner(classify(1))
     winner(classify(2))
     winner(classify(3))
@@ -1735,11 +1757,461 @@ define setup(){
         let result = winners_of("
 players 2
 
-define setup(){
+def setup(){
     winner(nobody)
     winner(2)
 }
 ");
         assert_eq!(result, "active\nwinners: 2");
+    }
+
+    #[test]
+    fn a_transfer_count_moves_that_many_cards_to_each_destination() {
+        let mut game = game_from_source("
+players 3
+stack middle
+
+def setup(){
+    deck > middle 4
+    deck > players 3
+}
+");
+        game.start();
+
+        assert_eq!(game.show("middle"), "king diamonds, queen diamonds, jack diamonds, ten diamonds");
+        assert_eq!(game.show("players"), "player 1 (cards: 3), player 2 (cards: 3), player 3 (cards: 3)");
+        assert_eq!(game.show("player 1"), "nine diamonds, six diamonds, three diamonds");
+    }
+
+    #[test]
+    fn a_transfer_count_larger_than_the_source_moves_what_there_is() {
+        let mut game = game_from_source("
+players 2
+stack a
+stack b
+
+def setup(){
+    deck > a 2
+    a > b 5
+}
+");
+        game.start();
+
+        assert_eq!(game.show("a"), "");
+        assert_eq!(game.show("b"), "queen diamonds, king diamonds");
+    }
+
+    #[test]
+    fn taking_moves_exactly_the_given_cards() {
+        let mut game = game_from_source("
+players 2
+stack middle
+stack pile
+
+def is_ace(card){
+    return(card:rank is Ace)
+}
+
+def setup(){
+    deck > middle taking filter(deck, is_ace)
+    middle > pile taking filter(middle, is_ace)
+}
+");
+        game.start();
+
+        assert_eq!(game.show("middle"), "");
+        assert_eq!(game.show("pile"), "ace spades, ace hearts, ace clubs, ace diamonds");
+        assert_eq!(game.show("players"), "player 1 (cards: 0), player 2 (cards: 0)");
+    }
+
+    #[test]
+    fn taking_cards_that_are_not_all_there_moves_nothing_and_stops_the_function() {
+        let mut game = game_from_source("
+players 2
+stack middle
+stack pile
+
+def is_ace(card){
+    return(card:rank is Ace)
+}
+
+def setup(){
+    deck > middle 1
+    middle > pile taking filter(deck, is_ace)
+    end()
+}
+");
+        game.start();
+
+        assert_eq!(game.show("middle"), "king diamonds");
+        assert_eq!(game.show("pile"), "");
+        assert_eq!(game.show("game"), "active");
+    }
+
+    #[test]
+    fn a_transfer_with_an_unknown_stack_stops_the_function() {
+        let mut game = game_from_source("
+players 2
+
+def setup(){
+    deck > nowhere
+    end()
+}
+");
+        game.start();
+
+        assert_eq!(game.show("game"), "active");
+    }
+
+    #[test]
+    fn cards_in_stack_checks_every_card_is_present() {
+        let result = winners_of("
+players 2
+stack middle
+
+def is_king(card){
+    return(card:rank is King)
+}
+
+def setup(){
+    deck > middle 2
+    if(cards_in_stack(filter(middle, is_king), middle)){
+        winner(1)
+    }
+    if(cards_in_stack(filter(deck, is_king), middle)){
+        winner(2)
+    }
+    if(cards_in_stack(middle, deck)){
+        winner(3)
+    }
+}
+");
+        assert_eq!(result, "active\nwinners: 1");
+    }
+
+    #[test]
+    fn per_player_stacks_can_be_used_through_a_player_object() {
+        let mut game = game_from_source("
+players 2
+stack collection per player
+
+def setup(){
+    deck > players 2
+}
+
+def player_move(player){
+    player:hand > player:collection
+    if(count(player:collection) is 1 & count(player:hand) is 1){
+        end()
+    }
+}
+");
+        game.start();
+        game.player_move(2).unwrap();
+
+        assert_eq!(game.show("player 2 collection"), "ten diamonds");
+        assert_eq!(game.show("player 2 hand"), "queen diamonds");
+        assert_eq!(game.show("player 1 collection"), "");
+        assert_eq!(game.show("game"), "game over");
+    }
+
+    #[test]
+    fn any_player_can_be_addressed_by_number() {
+        let mut game = game_from_source("
+players 2
+stack collection per player
+
+def setup(){
+    deck > players:2:collection 3
+    players:2:collection > players:1:hand
+    if(count(players:2:collection) is 2 & players:1:id is 1){
+        end()
+    }
+}
+");
+        game.start();
+
+        assert_eq!(game.show("player 1"), "jack diamonds");
+        assert_eq!(game.show("player 2 collection"), "king diamonds, queen diamonds");
+        assert_eq!(game.show("game"), "game over");
+    }
+
+    #[test]
+    fn unknown_player_stacks_are_reported() {
+        let mut game = game_from_source("
+players 2
+
+def setup(){
+    deck > players:3:hand
+    end()
+}
+");
+        game.start();
+
+        assert_eq!(game.show("game"), "active");
+        assert_eq!(game.show("player 1 collection"), "player 1 has no stack 'collection'");
+    }
+
+    #[test]
+    fn cards_have_default_values_from_ace_1_to_king_13() {
+        let result = winners_of("
+players 2
+
+def is_spade(card){
+    return(card:suit is Spades)
+}
+
+def setup(){
+    winner(sum(filter(deck, is_spade)))
+}
+");
+        assert_eq!(result, "active\nwinners: 91");
+    }
+
+    #[test]
+    fn a_value_table_overrides_card_values() {
+        let result = winners_of("
+players 2
+values {
+    Jack 8, Queen 9
+    King 10
+}
+
+def is_royal(card){
+    return(card:rank is Jack or card:rank is Queen or card:rank is King)
+}
+
+def is_spade(card){
+    return(card:suit is Spades)
+}
+
+def setup(){
+    winner(sum(filter(filter(deck, is_spade), is_royal)))
+    winner(sum(filter(deck, is_spade)))
+}
+");
+        // royals 8 + 9 + 10; all spades 1..10 + 27
+        assert_eq!(result, "active\nwinners: 27, 82");
+    }
+
+    #[test]
+    fn arithmetic_and_ordering_work_on_numbers() {
+        let result = winners_of("
+players 2
+
+def setup(){
+    winner(1 + 2 - 4)
+    if(3 > 2 & 2 < 3 & 1 + 1 is 2){
+        winner(10)
+    }
+    if(3 < 2 or 2 > 3){
+        winner(20)
+    }
+    if(count(deck) - 2 is 50){
+        winner(30)
+    }
+}
+");
+        assert_eq!(result, "active\nwinners: -1, 10, 30");
+    }
+
+    #[test]
+    fn arithmetic_on_non_numbers_is_not_true() {
+        let result = winners_of("
+players 2
+
+def setup(){
+    if(deck > 3){
+        winner(1)
+    }
+    winner(2)
+}
+");
+        assert_eq!(result, "active\nwinners: 2");
+    }
+
+    const MOVES_GAME: &str = "
+players 2
+stack middle
+stack collection per player
+values { Ten 9 }
+
+def setup(){
+    deck > middle 4
+    deck > players 3
+}
+
+def player_move(player, move){
+    valid_moves(take, drop)
+}
+
+def take(player, move){
+    check(count(move:cards) is 1)
+    middle > player:collection taking move:target
+    check(sum(move:target) is sum(move:cards))
+    player:hand > player:collection taking move:cards
+}
+
+def drop(player, move){
+    check(count(move:cards) is 1)
+    player:hand > middle taking move:cards
+}
+";
+
+    fn play(game: &mut Game, line: &str) -> Result<(), String> {
+        let input = crate::move_input::parse_move(line)?;
+        game.make_move(input)
+    }
+
+    #[test]
+    fn a_named_move_runs_that_move() {
+        let mut game = game_from_source(MOVES_GAME);
+        game.start();
+        // middle: king, queen, jack, ten of diamonds; player 1: nine, seven, five
+        assert_eq!(game.show("player 1"), "nine diamonds, seven diamonds, five diamonds");
+
+        play(&mut game, "take 9d / 10d").unwrap();
+
+        assert_eq!(game.show("player 1 collection"), "ten diamonds, nine diamonds");
+        assert_eq!(game.show("middle"), "king diamonds, queen diamonds, jack diamonds");
+    }
+
+    #[test]
+    fn a_failed_move_changes_nothing() {
+        let mut game = game_from_source(MOVES_GAME);
+        game.start();
+
+        // the target is moved before the sum check fails, so it must be put back
+        assert_eq!(play(&mut game, "take 9d / jd"), Err("not allowed".to_string()));
+
+        assert_eq!(game.show("player 1 collection"), "");
+        assert_eq!(game.show("middle"), "king diamonds, queen diamonds, jack diamonds, ten diamonds");
+        assert_eq!(game.show("player 1"), "nine diamonds, seven diamonds, five diamonds");
+    }
+
+    #[test]
+    fn without_a_name_the_first_valid_move_is_used() {
+        let mut game = game_from_source(MOVES_GAME);
+        game.start();
+
+        // take works (ten is worth 9), so it is used rather than drop
+        play(&mut game, "9d / 10d").unwrap();
+        assert_eq!(game.show("player 1 collection"), "ten diamonds, nine diamonds");
+
+        // take fails (jack is 11, not 7) and is undone, so the card is dropped
+        play(&mut game, "7d / jd").unwrap();
+        assert_eq!(game.show("player 1 collection"), "ten diamonds, nine diamonds");
+        assert_eq!(game.show("middle"), "king diamonds, queen diamonds, jack diamonds, seven diamonds");
+        assert_eq!(game.show("player 1"), "five diamonds");
+    }
+
+    #[test]
+    fn an_unknown_move_name_is_rejected() {
+        let mut game = game_from_source(MOVES_GAME);
+        game.start();
+
+        assert_eq!(play(&mut game, "steal 9d"), Err("not allowed".to_string()));
+        assert_eq!(game.show("player 1"), "nine diamonds, seven diamonds, five diamonds");
+    }
+
+    #[test]
+    fn moves_can_be_made_for_another_player() {
+        let mut game = game_from_source(MOVES_GAME);
+        game.start();
+
+        play(&mut game, "2 drop 8d").unwrap();
+
+        assert_eq!(game.show("player 2"), "six diamonds, four diamonds");
+    }
+
+    #[test]
+    fn cli_command_names_cannot_be_function_names() {
+        for name in ["build", "start", "show", "exit", "help"].iter() {
+            let source = format!("def {}(){{ end() }}", name);
+            let tokens = crate::lex::lexer(&source).unwrap();
+            assert!(crate::parse::parse(&tokens).is_err(), "{} should be reserved", name);
+        }
+    }
+
+    fn cards_shown(game: &Game, what: &str) -> Vec<String> {
+        game.show(what).split(", ").filter(|c| !c.is_empty()).map(|c| c.to_string()).collect()
+    }
+
+    #[test]
+    fn simple_scopa_can_be_played_to_the_end() {
+        let mut game = game_from_source(include_str!("../examples/simple_scopa.card"));
+        game.start();
+        assert_eq!(cards_shown(&game, "middle").len(), 4);
+        assert_eq!(game.show("players"), "player 1 (cards: 3), player 2 (cards: 3)");
+
+        let mut moves = 0;
+        let mut captures = 0;
+        while !game.show("game").starts_with("game over") {
+            moves += 1;
+            assert!(moves <= 52, "the game should end after 48 cards are played");
+
+            let current = game.show("current_player");
+            let other = if current == "1" { "2" } else { "1" };
+            let hand = cards_shown(&game, &format!("player {}", current));
+            let middle = cards_shown(&game, "middle");
+
+            // moving out of turn is rejected
+            let other_hand = cards_shown(&game, &format!("player {}", other));
+            if let Some(card) = other_hand.first() {
+                assert!(play(&mut game, &format!("{} drop {}", other, card)).is_err());
+            }
+
+            // capture a single card of the same value if possible, otherwise drop
+            let mut played = false;
+            'search: for card in hand.iter() {
+                for target in middle.iter() {
+                    if play(&mut game, &format!("take {} / {}", card, target)).is_ok() {
+                        captures += 1;
+                        played = true;
+                        break 'search;
+                    }
+                }
+            }
+            if !played {
+                play(&mut game, &format!("drop {}", hand[0])).unwrap();
+            }
+        }
+
+        assert_eq!(moves, 48);
+        let collected_1 = cards_shown(&game, "player 1 collection").len();
+        let collected_2 = cards_shown(&game, "player 2 collection").len();
+        let middle = cards_shown(&game, "middle").len();
+        // every card is accounted for: each capture collects two cards
+        assert_eq!(collected_1 + collected_2, captures * 2);
+        assert_eq!(collected_1 + collected_2 + middle, 52);
+        assert_eq!(cards_shown(&game, "deck").len(), 0);
+
+        let expected_winners = if collected_1 > collected_2 {
+            "1"
+        } else if collected_2 > collected_1 {
+            "2"
+        } else {
+            "1, 2"
+        };
+        assert_eq!(game.show("game"), format!("game over\nwinners: {}", expected_winners));
+    }
+
+    #[test]
+    fn simple_scopa_take_needs_matching_values() {
+        let mut game = game_from_source(include_str!("../examples/simple_scopa.card"));
+        game.start();
+
+        let hand = cards_shown(&game, "player 1");
+        let middle = cards_shown(&game, "middle");
+
+        // a drop with a target, or a take with no target, is never valid
+        assert!(play(&mut game, &format!("drop {} / {}", hand[0], middle[0])).is_err());
+        assert!(play(&mut game, &format!("take {}", hand[0])).is_err());
+        // cards that aren't in your hand can't be played
+        let not_mine = cards_shown(&game, "player 2")[0].clone();
+        assert!(play(&mut game, &format!("drop {}", not_mine)).is_err());
+
+        assert_eq!(cards_shown(&game, "player 1"), hand);
+        assert_eq!(cards_shown(&game, "middle"), middle);
     }
 }

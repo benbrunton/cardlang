@@ -78,6 +78,26 @@ pub fn parse(tokens: &Vec<SourceToken>) -> Result<Vec<Statement>, ParseError> {
                     Some(v) => v,
                     None => return Err(ParseError::new(ParseErrorType::UnexpectedToken, next_token.line_number))
                 };
+
+                // `stack <name> per player` gives every player their own stack
+                let mut key = key;
+                let mut lookahead = tokens_iter.clone();
+                if key == GlobalKey::Stack {
+                    if let (
+                        Some(SourceToken{ token: Token::Symbol(per), .. }),
+                        Some(SourceToken{ token: Token::Symbol(player), .. })
+                    ) = (lookahead.next(), lookahead.next()) {
+                        if per == "per" && player == "player" {
+                            if value == Expression::Symbol("hand".to_string()) {
+                                // every player already has a hand
+                                return Err(ParseError::new(ParseErrorType::UnexpectedToken, next_token.line_number));
+                            }
+                            tokens_iter = lookahead;
+                            key = GlobalKey::PlayerStack;
+                        }
+                    }
+                }
+
                 let declaration = Declaration{ key, value };
                 let statement = Statement::Declaration(declaration);
                 ast.push(statement);
@@ -107,12 +127,20 @@ pub fn parse(tokens: &Vec<SourceToken>) -> Result<Vec<Statement>, ParseError> {
                     }
                 }
             },
+            Some(SourceToken{ token: Token::Values, line_number }) => {
+                let table = build_value_table(&mut tokens_iter, *line_number)?;
+                ast.push(Statement::ValueTable(table));
+            },
             Some(SourceToken{ token: Token::Define, line_number }) => {
                 let next_token = match tokens_iter.next() {
                     Some(t) => t,
                     None => return Err(ParseError::new(ParseErrorType::UnexpectedEndOfStream, *line_number))
                 };
                 let name = match &next_token.token {
+                    // the CLI's own commands can't be used as function (move) names
+                    Token::Symbol(s) if crate::move_input::RESERVED_WORDS.contains(&s.as_str()) => {
+                        return Err(ParseError::new(ParseErrorType::UnexpectedToken, next_token.line_number))
+                    },
                     Token::Symbol(s) => s.to_owned(),
                     _ => {
                         return Err(
@@ -239,6 +267,18 @@ fn create_transfer(from: &str, tokens_iter: &mut std::slice::Iter<SourceToken>, 
             tokens_iter.next();
             Some(TransferCount::End)
         },
+        Some(SourceToken{ token: Token::Number(n), line_number: l }) => {
+            tokens_iter.next();
+            if *n < 0.0 || n.fract() != 0.0 {
+                return Err(ParseError::new(ParseErrorType::UnexpectedToken, *l));
+            }
+            Some(TransferCount::Number(*n as usize))
+        },
+        Some(SourceToken{ token: Token::Symbol(s), ..}) if s == "taking" => {
+            tokens_iter.next();
+            let cards = parse_or(tokens_iter).map_err(|e| e.or_line(line_number))?;
+            Some(TransferCount::Taking(cards))
+        },
         _ => None
     };
 
@@ -319,8 +359,9 @@ fn build_block(tokens_iter: &mut std::slice::Iter<SourceToken>) -> Result<Vec<St
 // Expression grammar, lowest precedence first:
 //   expression := and_expr ( "or" and_expr )*
 //   and_expr   := comparison ( "&" comparison )*
-//   comparison := primary ( "is" ["not"] primary )?
-//   primary    := literal | name | name "(" arguments ")" | "(" expression ")"
+//   comparison := additive ( ( "is" ["not"] | "<" | ">" ) additive )?
+//   additive   := primary ( ( "+" | "-" ) primary )*
+//   primary    := literal | "-" number | name | name "(" arguments ")" | "(" expression ")"
 // Parses the expression inside `check(...)`, `return(...)` or `if(...)`,
 // consuming the closing parens.
 fn build_expression(tokens_iter: &mut std::slice::Iter<SourceToken>) -> Result<Expression, ParseError> {
@@ -366,19 +407,39 @@ fn parse_and(tokens_iter: &mut std::slice::Iter<SourceToken>) -> Result<Expressi
 }
 
 fn parse_comparison(tokens_iter: &mut std::slice::Iter<SourceToken>) -> Result<Expression, ParseError> {
-    let left = parse_primary(tokens_iter)?;
-    if peek_token(tokens_iter) != Some(Token::Is) {
-        return Ok(left);
-    }
+    let left = parse_additive(tokens_iter)?;
+    let op = match peek_token(tokens_iter) {
+        Some(Token::LessThan) => BinaryOp::LessThan,
+        // inside an expression '>' means greater than, not a transfer
+        Some(Token::Transfer) => BinaryOp::GreaterThan,
+        Some(Token::Is) => {
+            tokens_iter.next();
+            let negative = peek_token(tokens_iter) == Some(Token::Not);
+            if negative {
+                tokens_iter.next();
+            }
+            let right = parse_additive(tokens_iter)?;
+            return Ok(Expression::Comparison(Box::new(Comparison{ left, right, negative })));
+        },
+        _ => return Ok(left)
+    };
     tokens_iter.next();
+    let right = parse_additive(tokens_iter)?;
+    Ok(Expression::Binary(Box::new(Binary{ op, left, right })))
+}
 
-    let negative = peek_token(tokens_iter) == Some(Token::Not);
-    if negative {
+fn parse_additive(tokens_iter: &mut std::slice::Iter<SourceToken>) -> Result<Expression, ParseError> {
+    let mut left = parse_primary(tokens_iter)?;
+    loop {
+        let op = match peek_token(tokens_iter) {
+            Some(Token::Plus) => BinaryOp::Add,
+            Some(Token::Minus) => BinaryOp::Subtract,
+            _ => return Ok(left)
+        };
         tokens_iter.next();
+        let right = parse_primary(tokens_iter)?;
+        left = Expression::Binary(Box::new(Binary{ op, left, right }));
     }
-
-    let right = parse_primary(tokens_iter)?;
-    Ok(Expression::Comparison(Box::new(Comparison{ left, right, negative })))
 }
 
 fn parse_primary(tokens_iter: &mut std::slice::Iter<SourceToken>) -> Result<Expression, ParseError> {
@@ -391,6 +452,10 @@ fn parse_primary(tokens_iter: &mut std::slice::Iter<SourceToken>) -> Result<Expr
         Token::True => Expression::Bool(true),
         Token::False => Expression::Bool(false),
         Token::Number(n) => Expression::Number(*n),
+        Token::Minus => match tokens_iter.next() {
+            Some(SourceToken{ token: Token::Number(n), .. }) => Expression::Number(-*n),
+            _ => return Err(ParseError::new(ParseErrorType::UnexpectedToken, source_token.line_number))
+        },
         Token::CurrentPlayer => Expression::Symbol("current_player".to_string()),
         Token::Deck => Expression::Symbol("deck".to_string()),
         Token::Players => Expression::Symbol("players".to_string()),
@@ -453,6 +518,39 @@ fn build_else(tokens_iter: &mut std::slice::Iter<SourceToken>, line_number: u32)
     }
 
     build_block(tokens_iter)
+}
+
+// `values { Jack 8, Queen 9, King 10 }` - commas and newlines between entries are optional
+fn build_value_table(tokens_iter: &mut std::slice::Iter<SourceToken>, line_number: u32) -> Result<Vec<(String, f64)>, ParseError> {
+    match tokens_iter.next() {
+        Some(SourceToken{ token: Token::OpenBracket, .. }) => (),
+        _ => return Err(ParseError::new(ParseErrorType::UnexpectedToken, line_number))
+    }
+
+    let mut table = vec!();
+    loop {
+        match tokens_iter.next() {
+            Some(SourceToken{ token: Token::CloseBracket, .. }) => break,
+            Some(SourceToken{ token: Token::Newline, .. }) | Some(SourceToken{ token: Token::Comma, .. }) => (),
+            Some(SourceToken{ token: Token::Symbol(rank), line_number: l }) => {
+                if !RANK_NAMES.contains(&rank.as_str()) {
+                    return Err(ParseError::new(ParseErrorType::UnexpectedToken, *l));
+                }
+                let value = match tokens_iter.next() {
+                    Some(SourceToken{ token: Token::Number(n), .. }) => *n,
+                    Some(SourceToken{ token: Token::Minus, .. }) => match tokens_iter.next() {
+                        Some(SourceToken{ token: Token::Number(n), .. }) => -*n,
+                        _ => return Err(ParseError::new(ParseErrorType::UnexpectedToken, *l))
+                    },
+                    _ => return Err(ParseError::new(ParseErrorType::UnexpectedToken, *l))
+                };
+                table.push((rank.to_string(), value));
+            },
+            Some(SourceToken{ line_number: l, .. }) => return Err(ParseError::new(ParseErrorType::UnexpectedToken, *l)),
+            None => return Err(ParseError::new(ParseErrorType::UnexpectedEndOfStream, line_number))
+        }
+    }
+    Ok(table)
 }
 
 fn skip_parens_group(tokens_iter: &mut std::slice::Iter<SourceToken>, line_number: u32) -> Result<(), ParseError> {
@@ -1296,7 +1394,7 @@ mod test{
     #[test]
     fn it_can_parse_a_multiline_if_block_inside_a_func() {
         /*
-        define player_move(player){
+        def player_move(player){
             if(count(player:hand) is 0){
                 winner(player:id)
                 end()
@@ -1545,14 +1643,20 @@ mod test{
     #[test]
     fn incomplete_or_invalid_source_is_a_parse_error_not_a_panic() {
         let cases = [
-            "define setup() }",
-            "define setup() x { }",
+            "values { Joker 1 }",
+            "values { King }",
+            "values King 10",
+            "def setup(){ check(1 + ) }",
+            "def setup(){ check(1 < 2 < 3) }",
+            "stack hand per player",
+            "def setup() }",
+            "def setup() x { }",
             "}",
             ")",
             "5",
             "name x 5",
-            "define setup(){ deck > middle 4 }",
-            "define setup(){ if true){ end() } }",
+            "def setup(){ deck > middle taking }",
+            "def setup(){ if true){ end() } }",
             "name",
             "players",
             "stack",
@@ -1563,13 +1667,13 @@ mod test{
             "stack 3",
             "current_player first",
             "players > deck end",
-            "define",
-            "define setup(){ check(1 is) }",
-            "define setup(){ check(1 &) }",
-            "define setup(){ check(1 is not) }",
-            "define setup(){ x > }",
-            "define setup(){ deck > }",
-            "define setup(){ deck > 5 }",
+            "def",
+            "def setup(){ check(1 is) }",
+            "def setup(){ check(1 &) }",
+            "def setup(){ check(1 is not) }",
+            "def setup(){ x > }",
+            "def setup(){ deck > }",
+            "def setup(){ deck > 5 }",
         ];
 
         for case in cases.iter() {
@@ -1579,7 +1683,7 @@ mod test{
 
     #[test]
     fn an_unfinished_transfer_reports_its_line() {
-        let result = parse_source("name x\ndefine setup(){\n    deck >\n}");
+        let result = parse_source("name x\ndef setup(){\n    deck >\n}");
         assert_eq!(result.unwrap_err().line_number, 3);
     }
 
@@ -1591,7 +1695,8 @@ mod test{
             Token::Define, Token::OpenParens, Token::CloseParens, Token::Comma,
             Token::OpenBracket, Token::CloseBracket, Token::Transfer, Token::Check, Token::Is,
             Token::If, Token::Newline, Token::True, Token::False, Token::Ampersand,
-            Token::Return, Token::Test, Token::Not, Token::Or, Token::Else
+            Token::Return, Token::Test, Token::Not, Token::Or, Token::Else,
+            Token::Plus, Token::Minus, Token::LessThan, Token::Values
         );
 
         // simple deterministic pseudo random generator, so failures are reproducible
@@ -1643,16 +1748,58 @@ mod test{
     #[test]
     fn invalid_expressions_and_else_are_parse_errors() {
         let cases = [
-            "define setup(){ check(1 is 2 is 3) }",
-            "define setup(){ check(or true) }",
-            "define setup(){ check(true &) }",
-            "define setup(){ check((true) }",
-            "define setup(){ if(true){ } else }",
-            "define setup(){ else { } }",
+            "def setup(){ check(1 is 2 is 3) }",
+            "def setup(){ check(or true) }",
+            "def setup(){ check(true &) }",
+            "def setup(){ check((true) }",
+            "def setup(){ if(true){ } else }",
+            "def setup(){ else { } }",
         ];
 
         for case in cases.iter() {
             assert!(parse_source(case).is_err(), "expected a parse error for {:?}", case);
         }
+    }
+
+    #[test]
+    fn it_parses_per_player_stacks() {
+        let result = parse_source("stack middle\nstack collection per player").unwrap();
+
+        assert_eq!(result, vec!(
+            Statement::Declaration(Declaration{ key: GlobalKey::Stack, value: Expression::Symbol("middle".to_string()) }),
+            Statement::Declaration(Declaration{ key: GlobalKey::PlayerStack, value: Expression::Symbol("collection".to_string()) })
+        ));
+    }
+
+    #[test]
+    fn arithmetic_binds_tighter_than_comparison() {
+        let result = parse_source("return(a + 1 > b - 2)").unwrap();
+
+        let expected = Expression::Binary(Box::new(Binary{
+            op: BinaryOp::GreaterThan,
+            left: Expression::Binary(Box::new(Binary{
+                op: BinaryOp::Add,
+                left: Expression::Symbol("a".to_string()),
+                right: Expression::Number(1.0)
+            })),
+            right: Expression::Binary(Box::new(Binary{
+                op: BinaryOp::Subtract,
+                left: Expression::Symbol("b".to_string()),
+                right: Expression::Number(2.0)
+            }))
+        }));
+
+        assert_eq!(result, vec!(Statement::ReturnStatement(ReturnStatement{ expression: expected })));
+    }
+
+    #[test]
+    fn it_parses_a_value_table() {
+        let result = parse_source("values {\n    Ace 11, King 10\n    Two -1\n}").unwrap();
+        let expected = vec!(Statement::ValueTable(vec!(
+            ("Ace".to_string(), 11.0),
+            ("King".to_string(), 10.0),
+            ("Two".to_string(), -1.0)
+        )));
+        assert_eq!(result, expected);
     }
 }

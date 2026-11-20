@@ -7,6 +7,8 @@ pub enum Statement {
     IfStatement(IfStatement),
     CheckStatement(CheckStatement),
     ReturnStatement(ReturnStatement),
+    // `values { Jack 8, Queen 9 }`: card values by rank
+    ValueTable(Vec<(String, f64)>),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -17,7 +19,8 @@ pub enum Expression {
     Bool(bool),
     FunctionCall(FunctionCall),
     And(Box<And>),
-    Or(Box<Or>)
+    Or(Box<Or>),
+    Binary(Box<Binary>)
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -26,7 +29,9 @@ pub enum GlobalKey {
     Players,
     Stack,
     Deck,
-    CurrentPlayer
+    CurrentPlayer,
+    // a stack that every player has, e.g. `stack collection per player`
+    PlayerStack
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -64,7 +69,12 @@ pub enum TransferModifier {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum TransferCount {
-    End
+    // every card in the source
+    End,
+    // this many cards to each destination stack
+    Number(usize),
+    // exactly these cards, all or nothing
+    Taking(Expression)
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -101,3 +111,23 @@ pub struct Or {
     pub left: Expression,
     pub right: Expression
 }
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum BinaryOp {
+    Add,
+    Subtract,
+    LessThan,
+    GreaterThan
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct Binary {
+    pub op: BinaryOp,
+    pub left: Expression,
+    pub right: Expression
+}
+
+pub const RANK_NAMES: [&str; 13] = [
+    "Ace", "Two", "Three", "Four", "Five", "Six", "Seven",
+    "Eight", "Nine", "Ten", "Jack", "Queen", "King"
+];

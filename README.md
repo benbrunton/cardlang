@@ -8,12 +8,16 @@ New here? Start with the [user guides](docs/README.md): [getting started](docs/g
 ### (interactive mode)
 ```
 cardlang # (or cargo run)
-> build ./gamedef.card
-> show deck
-ace spades, two spades, three spades...
+> build ./examples/simple_scopa.card
 > start
-> show player 1 hand
-three hearts, four diamonds, five clubs
+> show middle
+jack diamonds, ace spades, two spades, nine clubs
+> show player 1
+six hearts, seven spades, two clubs
+> take 2c / 2s
+> show player 1 collection
+two spades, two clubs
+> help
 ```
 
 ## check a game file parses

@@ -25,7 +25,11 @@ pub enum Token {
     Test,
     Not,
     Or,
-    Else
+    Else,
+    Plus,
+    Minus,
+    LessThan,
+    Values
 }
 
 #[derive(Debug, PartialEq, Clone)]

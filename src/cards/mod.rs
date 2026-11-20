@@ -2,6 +2,8 @@ use std::fmt;
 
 mod player;
 pub use player::*;
+mod notation;
+pub use notation::{parse_cards, starts_a_card};
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Suit {
@@ -41,6 +43,11 @@ impl Card {
 
     pub fn get_rank_str(&self) -> String {
         format!("{:?}", self.rank)
+    }
+
+    // Ace 1, Two 2 ... Jack 11, Queen 12, King 13
+    pub fn default_value(&self) -> f64 {
+        (self.rank as usize + 1) as f64
     }
 }
 

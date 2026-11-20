@@ -4,12 +4,12 @@ players 2
 current_player 1
 stack middle
 
-define setup(){
+def setup(){
     shuffle(deck)
     deck > players end
 }
 
-define player_move(player){
+def player_move(player){
     check(player:id is current_player)
     player:hand > middle
 
