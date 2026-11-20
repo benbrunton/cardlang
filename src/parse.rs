@@ -137,6 +137,10 @@ pub fn parse(tokens: &Vec<SourceToken>) -> Result<Vec<Statement>, ParseError> {
                     None => return Err(ParseError::new(ParseErrorType::UnexpectedEndOfStream, *line_number))
                 };
                 let name = match &next_token.token {
+                    // the CLI's own commands can't be used as function (move) names
+                    Token::Symbol(s) if crate::move_input::RESERVED_WORDS.contains(&s.as_str()) => {
+                        return Err(ParseError::new(ParseErrorType::UnexpectedToken, next_token.line_number))
+                    },
                     Token::Symbol(s) => s.to_owned(),
                     _ => {
                         return Err(

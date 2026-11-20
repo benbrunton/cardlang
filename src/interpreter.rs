@@ -2,6 +2,7 @@ use crate::ast::*;
 use std::fmt::Display;
 use std::collections::HashMap;
 use crate::runtime::{
+    MoveInput,
     Runtime,
     InitialValues,
     Callbacks
@@ -123,8 +124,14 @@ impl Game {
         self.runtime.setup();
     }
 
+    // a move with no name or cards, as a specific player
+    #[cfg(test)]
     pub fn player_move(&mut self, player: usize) -> Result<(), String> {
-        self.runtime.player_move(player)
+        self.make_move(MoveInput{ player: Some(player), ..MoveInput::default() })
+    }
+
+    pub fn make_move(&mut self, input: MoveInput) -> Result<(), String> {
+        self.runtime.player_move(input)
     }
 
     fn check_exploded_show(&self, key: &str) -> String {
@@ -1347,7 +1354,7 @@ def player_move(player){
 }
 ");
         game.start();
-        game.player_move(1).unwrap();
+        assert_eq!(game.player_move(1), Err("not allowed".to_string()));
 
         assert_eq!(game.show("game"), "active");
     }
@@ -2021,5 +2028,108 @@ def setup(){
 }
 ");
         assert_eq!(result, "active\nwinners: 2");
+    }
+
+    const MOVES_GAME: &str = "
+players 2
+stack middle
+stack collection per player
+values { Ten 9 }
+
+def setup(){
+    deck > middle 4
+    deck > players 3
+}
+
+def player_move(player, move){
+    valid_moves(take, drop)
+}
+
+def take(player, move){
+    check(count(move:cards) is 1)
+    middle > player:collection taking move:target
+    check(sum(move:target) is sum(move:cards))
+    player:hand > player:collection taking move:cards
+}
+
+def drop(player, move){
+    check(count(move:cards) is 1)
+    player:hand > middle taking move:cards
+}
+";
+
+    fn play(game: &mut Game, line: &str) -> Result<(), String> {
+        let input = crate::move_input::parse_move(line)?;
+        game.make_move(input)
+    }
+
+    #[test]
+    fn a_named_move_runs_that_move() {
+        let mut game = game_from_source(MOVES_GAME);
+        game.start();
+        // middle: king, queen, jack, ten of diamonds; player 1: nine, seven, five
+        assert_eq!(game.show("player 1"), "nine diamonds, seven diamonds, five diamonds");
+
+        play(&mut game, "take 9d / 10d").unwrap();
+
+        assert_eq!(game.show("player 1 collection"), "ten diamonds, nine diamonds");
+        assert_eq!(game.show("middle"), "king diamonds, queen diamonds, jack diamonds");
+    }
+
+    #[test]
+    fn a_failed_move_changes_nothing() {
+        let mut game = game_from_source(MOVES_GAME);
+        game.start();
+
+        // the target is moved before the sum check fails, so it must be put back
+        assert_eq!(play(&mut game, "take 9d / jd"), Err("not allowed".to_string()));
+
+        assert_eq!(game.show("player 1 collection"), "");
+        assert_eq!(game.show("middle"), "king diamonds, queen diamonds, jack diamonds, ten diamonds");
+        assert_eq!(game.show("player 1"), "nine diamonds, seven diamonds, five diamonds");
+    }
+
+    #[test]
+    fn without_a_name_the_first_valid_move_is_used() {
+        let mut game = game_from_source(MOVES_GAME);
+        game.start();
+
+        // take works (ten is worth 9), so it is used rather than drop
+        play(&mut game, "9d / 10d").unwrap();
+        assert_eq!(game.show("player 1 collection"), "ten diamonds, nine diamonds");
+
+        // take fails (jack is 11, not 7) and is undone, so the card is dropped
+        play(&mut game, "7d / jd").unwrap();
+        assert_eq!(game.show("player 1 collection"), "ten diamonds, nine diamonds");
+        assert_eq!(game.show("middle"), "king diamonds, queen diamonds, jack diamonds, seven diamonds");
+        assert_eq!(game.show("player 1"), "five diamonds");
+    }
+
+    #[test]
+    fn an_unknown_move_name_is_rejected() {
+        let mut game = game_from_source(MOVES_GAME);
+        game.start();
+
+        assert_eq!(play(&mut game, "steal 9d"), Err("not allowed".to_string()));
+        assert_eq!(game.show("player 1"), "nine diamonds, seven diamonds, five diamonds");
+    }
+
+    #[test]
+    fn moves_can_be_made_for_another_player() {
+        let mut game = game_from_source(MOVES_GAME);
+        game.start();
+
+        play(&mut game, "2 drop 8d").unwrap();
+
+        assert_eq!(game.show("player 2"), "six diamonds, four diamonds");
+    }
+
+    #[test]
+    fn cli_command_names_cannot_be_function_names() {
+        for name in ["build", "start", "show", "exit", "help"].iter() {
+            let source = format!("def {}(){{ end() }}", name);
+            let tokens = crate::lex::lexer(&source).unwrap();
+            assert!(crate::parse::parse(&tokens).is_err(), "{} should be reserved", name);
+        }
     }
 }

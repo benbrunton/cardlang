@@ -71,6 +71,26 @@ impl Flow {
     }
 }
 
+// A move as typed by a player, e.g. `2 take 7h / 3c 4s`
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct MoveInput {
+    // defaults to the current player
+    pub player: Option<usize>,
+    pub name: Option<String>,
+    // card groups separated by `/`: move:cards, then move:target
+    pub groups: Vec<Vec<Card>>
+}
+
+// The parts of the game state a move can change, so a failed move can be undone
+struct Snapshot {
+    status: GameState,
+    deck: Vec<Card>,
+    winners: Vec<f64>,
+    current_player: usize,
+    players: Vec<Player>,
+    card_stacks: HashMap<String, Vec<Card>>
+}
+
 const INTERNAL_REF: &str = "_ref";
 const MAX_CALL_DEPTH: usize = 256;
 
@@ -84,7 +104,9 @@ pub struct Runtime {
     players: Vec<Player>,
     card_stacks: HashMap<String, Vec<Card>>,
     card_values: HashMap<String, f64>,
-    call_stack: Vec<HashMap<String, ArgumentValue>>
+    call_stack: Vec<HashMap<String, ArgumentValue>>,
+    // the player and move objects of the move being made, for valid_moves
+    current_move: Option<(ArgumentValue, ArgumentValue)>
 }
 
 impl Runtime {
@@ -101,6 +123,7 @@ impl Runtime {
             winners: vec!(),
             current_player: initial_values.current_player,
             call_stack: vec!(),
+            current_move: None,
             card_stacks,
             card_values: initial_values.card_values.iter().cloned().collect(),
             players: Self::generate_players(initial_values.players, &initial_values.player_stacks),
@@ -165,6 +188,7 @@ impl Runtime {
                 };
                 Some(PrimitiveValue::Number(total))
             },
+            "valid_moves" => Some(PrimitiveValue::Bool(self.valid_moves(&f.arguments))),
             "cards_in_stack" => {
                 let cards = f.arguments.get(0).map(|a| self.resolve_expression(a));
                 let stack = f.arguments.get(1).map(|a| self.resolve_expression(a));
@@ -231,6 +255,19 @@ impl Runtime {
         Some(result)
     }
 
+    // calls a game function with values that are already resolved
+    fn call_with_values(&mut self, definition: &Definition, values: Vec<ArgumentValue>) -> Flow {
+        if self.call_stack.len() >= MAX_CALL_DEPTH {
+            eprintln!("maximum call depth exceeded in '{}'", definition.name);
+            return Flow::Return(PrimitiveValue::Bool(false));
+        }
+        let call_stack_frame = definition.arguments.iter().cloned().zip(values).collect();
+        self.call_stack.push(call_stack_frame);
+        let result = self.handle_statements(&definition.body);
+        self.call_stack.pop();
+        result
+    }
+
     fn resolve_argument(&mut self, expression: &Expression) -> ArgumentValue {
         // pass whole objects (e.g. a player) through by name
         if let Expression::Symbol(s) = expression {
@@ -267,7 +304,7 @@ impl Runtime {
         self.winners.clone()
     }
 
-    pub fn player_move(&mut self, n: usize) -> Result<(), String> {
+    pub fn player_move(&mut self, input: MoveInput) -> Result<(), String> {
         match self.status {
             GameState::Pending => return Err("the game has not started - use 'start'".to_string()),
             GameState::GameOver => return Err("the game is over".to_string()),
@@ -279,19 +316,132 @@ impl Runtime {
             None => return Err("this game does not define player_move".to_string())
         };
 
+        let n = input.player.unwrap_or(self.current_player);
         if n < 1 || n > self.players.len() {
             return Err(format!("there is no player {} (players: {})", n, self.players.len()));
         }
 
+        if input.groups.len() > 2 {
+            return Err("a move can have at most two groups of cards (cards / target)".to_string());
+        }
+
+        let player = Self::build_player_object(self.players[n - 1].clone());
+        let move_object = Self::build_move_object(&input);
+
         let mut call_stack_frame = HashMap::new();
         if let Some(arg) = p_move.arguments.get(0) {
-            let player = self.players[n - 1].clone();
-            call_stack_frame.insert(arg.clone(), Self::build_player_object(player));
+            call_stack_frame.insert(arg.clone(), player.clone());
         }
+        if let Some(arg) = p_move.arguments.get(1) {
+            call_stack_frame.insert(arg.clone(), move_object.clone());
+        }
+
+        // a move either happens completely or not at all
+        let before = self.snapshot();
+        self.current_move = Some((player, move_object));
         self.call_stack.push(call_stack_frame);
-        self.handle_statements(&p_move.body);
+        let result = self.handle_statements(&p_move.body);
         self.call_stack.pop();
+        self.current_move = None;
+
+        if Self::failed(&result) {
+            self.restore(before);
+            return Err("not allowed".to_string());
+        }
         Ok(())
+    }
+
+    fn build_move_object(input: &MoveInput) -> ArgumentValue {
+        let group = |i: usize| PrimitiveValue::Stack(input.groups.get(i).cloned().unwrap_or_default());
+        let mut move_object = HashMap::new();
+        move_object.insert("name".to_string(), PrimitiveValue::String(input.name.clone().unwrap_or_default()));
+        move_object.insert("cards".to_string(), group(0));
+        move_object.insert("target".to_string(), group(1));
+        ArgumentValue::Obj(move_object)
+    }
+
+    // a function failed if a check or transfer stopped it, or it returned false
+    fn failed(flow: &Flow) -> bool {
+        matches!(flow, Flow::Return(PrimitiveValue::Bool(false)))
+    }
+
+    fn snapshot(&self) -> Snapshot {
+        Snapshot {
+            status: self.status.clone(),
+            deck: self.deck.clone(),
+            winners: self.winners.clone(),
+            current_player: self.current_player,
+            players: self.players.clone(),
+            card_stacks: self.card_stacks.clone()
+        }
+    }
+
+    fn restore(&mut self, snapshot: Snapshot) {
+        self.status = snapshot.status;
+        self.deck = snapshot.deck;
+        self.winners = snapshot.winners;
+        self.current_player = snapshot.current_player;
+        self.players = snapshot.players;
+        self.card_stacks = snapshot.card_stacks;
+    }
+
+    // valid_moves(take, drop): runs the move the player named, or if they
+    // didn't name one, the first of these that succeeds
+    fn valid_moves(&mut self, arguments: &[Expression]) -> bool {
+        let (player, move_object) = match self.current_move.clone() {
+            Some(m) => m,
+            None => {
+                eprintln!("valid_moves can only be used while a player is making a move");
+                return false;
+            }
+        };
+
+        let mut moves = vec!();
+        for argument in arguments {
+            match argument {
+                Expression::Symbol(name) => match self.callbacks.definitions.get(name) {
+                    Some(d) => moves.push(d.clone()),
+                    None => {
+                        eprintln!("valid_moves: no function called '{}'", name);
+                        return false;
+                    }
+                },
+                other => {
+                    eprintln!("valid_moves: expected function names, got {:?}", other);
+                    return false;
+                }
+            }
+        }
+
+        let requested = match &move_object {
+            ArgumentValue::Obj(o) => match o.get("name") {
+                Some(PrimitiveValue::String(s)) if !s.is_empty() => Some(s.clone()),
+                _ => None
+            },
+            _ => None
+        };
+
+        let values = vec!(player, move_object);
+        match requested {
+            Some(name) => match moves.iter().find(|d| d.name == name) {
+                Some(definition) => !Self::failed(&self.call_with_values(definition, values)),
+                None => {
+                    let names: Vec<String> = moves.iter().map(|d| d.name.clone()).collect();
+                    eprintln!("unknown move '{}' - valid moves: {}", name, names.join(", "));
+                    false
+                }
+            },
+            None => {
+                for definition in moves.iter() {
+                    let before = self.snapshot();
+                    if !Self::failed(&self.call_with_values(definition, values.clone())) {
+                        return true;
+                    }
+                    self.restore(before);
+                }
+                false
+            }
+        }
     }
 
     pub fn setup(&mut self) {
@@ -313,7 +463,11 @@ impl Runtime {
                     }
                 },
                 Statement::FunctionCall(f) => {
-                    let _ = self.handle_function_call(f);
+                    let result = self.handle_function_call(f);
+                    // a move that isn't valid stops player_move, like a failed check
+                    if f.name == "valid_moves" && result == Some(PrimitiveValue::Bool(false)) {
+                        return Flow::Return(PrimitiveValue::Bool(false));
+                    }
                 },
                 Statement::IfStatement(i) => {
                     if let Flow::Return(v) = self.handle_if_statement(i) {

@@ -7,6 +7,7 @@ mod ast;
 mod interpreter;
 mod cards;
 mod runtime;
+mod move_input;
 
 use interpreter::Game;
 
@@ -16,7 +17,7 @@ enum CommandResult {
     Exit,
     Show(String),
     Start,
-    Move(usize),
+    Move(runtime::MoveInput),
     Nothing
 }
 
@@ -106,17 +107,32 @@ fn translate_command(command: Vec<&str>) -> CommandResult {
             CommandResult::Show(display_list.join(" "))
         },
         "start" => CommandResult::Start,
-        "move" => {
-            match command.get(1).map(|n| n.parse::<usize>()) {
-                Some(Ok(n)) => CommandResult::Move(n),
-                _ => {
-                    println!("usage: move <player number>");
-                    CommandResult::CommandFailed
-                }
-            }
+        "help" => {
+            print_help();
+            CommandResult::Nothing
         },
-        _ => unrecognised_command()
+        // anything else is a move, e.g. `take 7h / 3c 4s`
+        _ => match move_input::parse_move(&command.join(" ")) {
+            Ok(input) => CommandResult::Move(input),
+            Err(e) => {
+                println!("{}", e);
+                CommandResult::CommandFailed
+            }
+        }
     }
+}
+
+fn print_help() {
+    println!("commands:
+  build <file>        load a game
+  start               start (or restart) the game
+  show <what>         game, name, players, current_player, deck, <stack>,
+                      player <n> [stack]
+  exit                quit
+moves:
+  [player] [name] [cards] [/ cards]
+  e.g.  take 7h / 3c 4s     drop nine of diamonds     2 move
+  cards: 7h, 10d, ks, as - or 'seven hearts', 'seven of hearts'");
 }
 
 fn handle_game_command(command: CommandResult, game: &mut Option<Game>) {
@@ -124,8 +140,8 @@ fn handle_game_command(command: CommandResult, game: &mut Option<Game>) {
         Some(ref mut g) => match command {
             CommandResult::Show(c) => println!("{}", g.show(&c)),
             CommandResult::Start => g.start(),
-            CommandResult::Move(n) => {
-                if let Err(e) = g.player_move(n) {
+            CommandResult::Move(input) => {
+                if let Err(e) = g.make_move(input) {
                     println!("move ignored: {}", e);
                 }
             },
@@ -183,9 +199,4 @@ fn parse_game(source: String) -> Option<Game> {
     let game = Game::new(ast);
     println!("Game loaded");
     Some(game)
-}
-
-fn unrecognised_command() -> CommandResult {
-    println!("unrecognised command");
-    CommandResult::CommandFailed
 }
