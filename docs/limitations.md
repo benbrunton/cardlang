@@ -40,7 +40,7 @@ The message says what the parser found, but not yet what it expected.
 
 | Limitation | What happens |
 |---|---|
-| Rejected moves don't say why | The CLI prints `move ignored: not allowed`, not which `check` failed |
+| Rejection reasons show the rule, not advice | e.g. `check failed in take: count(move:cards) is 1` when you forgot the `/`. A game can't give its own message yet. |
 | At most two groups of cards | A move has `move:cards` and `move:target`; a third `/` group is rejected |
 | Some words can't be move names | Anything that reads as a card (`as`, `seven`, `10`) and the CLI's own commands |
 

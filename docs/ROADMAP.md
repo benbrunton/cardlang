@@ -79,7 +79,8 @@ Not started. These came up while building Simple Scopa, plus the leftovers from 
 
 | # | Item | Status | Notes |
 |---|---|---|---|
-| 34 | Say why a move was rejected: which `check` failed, or a message the game provides | ⬜ | Today it's always `move ignored: not allowed` |
+| 34 | Say why a move was rejected | ✅ | e.g. `not allowed: check failed in take: sum(move:target) is sum(move:cards)` |
+| 34b | Let a game attach its own message to a `check`, e.g. `check(count(move:target) > 0, "put a / before the cards you're capturing")` | ⬜ | The built-in reason shows the rule, not what the player should do |
 | 35 | Loops, e.g. `for each player` | ⬜ | Simple Scopa compares `players:1` and `players:2` by hand, so it only works for 2 players |
 | 36 | Variables or game state, e.g. who captured last (in Scopa, they take the cards left at the end) | ⬜ | |
 | 37 | Rounds and scores: play several hands, keep points between them | ⬜ | Needed for full Scopa scoring |
@@ -91,3 +92,17 @@ Not started. These came up while building Simple Scopa, plus the leftovers from 
 | 25 | Multi-word names and quoted strings | ⬜ | |
 | 26 | Switch statements | ⬜ | README; `else if` covers most uses |
 | 39 | `*`, `/`, `<=`, `>=` | ⬜ | |
+
+## Milestone 6: CLI experience
+
+Making the interpreter pleasant to play at.
+
+| # | Item | Status | Notes |
+|---|---|---|---|
+| 40 | **Tab completion**: press Tab to complete `build` file paths (e.g. `build ex<Tab>` → `build examples/`), command names, `show` targets, move names and cards in hand | ⬜ | Needs a line-editing library such as `rustyline` |
+| 41 | Command history: up arrow to repeat or edit a previous line | ⬜ | Comes with the same library |
+| 42 | Show the table after `start` and after each move | ✅ | Whose turn, deck size, shared piles, current hand, each player's own piles |
+| 43 | `show` before `start` says to type `start` | ✅ | It used to print empty piles |
+| 44 | Let a game choose what the table shows, e.g. a `display` function | ⬜ | The built-in table is the same for every game |
+| 45 | `cardlang play <file>`: build and start in one step | ⬜ | |
+
