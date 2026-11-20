@@ -105,6 +105,25 @@ Making the interpreter pleasant to play at.
 | 44 | Let a game choose what the table shows, e.g. a `display` function | ⚠️ | Needs a design decision; see Milestone 5 |
 | 46 | Save history between sessions | ⬜ | History lasts for one session today |
 
+## Milestone 7: web and embedding
+
+Not started. The aim is to use cardlang as the rules engine inside other programs, such as a web app, and not only the CLI. There are two ways to run it:
+- **On a server**, which acts as the referee for networked play. Players can't cheat, and each sees only what they're allowed to.
+- **In the browser via WebAssembly**, for pass-and-play, offline play, or a playground for writing games. The engine can see every card there, so it's not enough on its own for play between people who don't trust each other.
+
+| # | Item | Status | Notes |
+|---|---|---|---|
+| 48 | Split into a library crate plus the CLI binary | ⬜ | So a server or WebAssembly build can call the engine directly |
+| 49 | Game state as data (e.g. JSON) instead of display text | ⬜ | `show` and the table are text for the terminal |
+| 50 | Visibility: who can see which cards, and a view of the game per player | ⬜ | ⚠️ Needs a design decision; probably declared in the game file (face up/down, owner-only hands) |
+| 51 | Event log of what happened in a move, e.g. "7h moved from player 1's hand to their collection" | ⬜ | For animation and history |
+| 52 | List the legal moves, or check one without making it | ⬜ | For highlighting playable cards; the engine can already try a move and undo it. Also unblocks compulsory capture (38). |
+| 53 | Seeded shuffles | ⬜ | Replayable and testable games; server and browser agree on the deck |
+| 54 | Save and load a game in progress | ⬜ | Between requests, or across restarts |
+| 55 | Limits on how much work one move can do | ⬜ | Needed before running rules uploaded by players. Recursion depth is capped today, but not total work. |
+| 56 | Return all errors and messages to the caller instead of printing to stderr | ⬜ | |
+| 57 | Proof of concept: a small WebAssembly page to play Simple Scopa by clicking cards | ⬜ | Builds on 48–50. Do this before committing to a server design. |
+
 ## Backlog
 
 Deferred or not yet needed. Each needs a design decision before it starts.
