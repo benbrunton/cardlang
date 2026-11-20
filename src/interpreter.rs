@@ -1448,4 +1448,27 @@ define setup(){
 
         assert_eq!(game.show("game"), "game over");
     }
+
+    #[test]
+    fn player_hand_reflects_transfers_made_during_the_move() {
+        let mut game = game_from_source("
+players 2
+stack middle
+
+define setup(){
+    deck > players
+}
+
+define player_move(player){
+    player:hand > middle
+    if(count(player:hand) is 0){
+        end()
+    }
+}
+");
+        game.start();
+        game.player_move(1);
+
+        assert_eq!(game.show("game"), "game over");
+    }
 }

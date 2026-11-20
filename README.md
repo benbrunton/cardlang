@@ -2,6 +2,8 @@
 
 A DSL for specifying card games
 
+New here? Start with the [user guides](docs/README.md): [getting started](docs/getting-started.md), [language reference](docs/language-reference.md), [CLI](docs/cli.md) and [known limitations](docs/limitations.md).
+
 ## CLI usage
 ### (interactive mode)
 ```

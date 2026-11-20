@@ -388,6 +388,7 @@ fn build_args_list(tokens_iter: &mut std::slice::Iter<SourceToken>) -> Result<Ve
     loop {
         match tokens_iter.next() {
             Some(SourceToken{ token: Token::Symbol(s), ..}) => args_list.push(s.to_string()),
+            Some(SourceToken{ token: Token::Comma, ..}) => (),
             Some(SourceToken{ token: Token::CloseParens, ..}) => break,
             Some(SourceToken{ line_number, .. }) => {
                 return Err(ParseError::new(ParseErrorType::ExpectedSymbol, *line_number))
@@ -821,6 +822,30 @@ mod test{
         ));
 
         assert!(parse(&tokens).is_err());
+    }
+
+    #[test]
+    fn it_accepts_commas_between_definition_arguments() {
+        let tokens = get_source_tokens(vec!(
+            Token::Define,
+            Token::Symbol("take".to_owned()),
+            Token::OpenParens,
+            Token::Symbol("player".to_string()),
+            Token::Comma,
+            Token::Symbol("target".to_string()),
+            Token::CloseParens,
+            Token::OpenBracket,
+            Token::CloseBracket
+        ));
+
+        let definition = Definition{
+            name: "take".to_owned(),
+            arguments: vec!("player".to_string(), "target".to_string()),
+            body: vec!()
+        };
+        let expected = Ok(vec!(Statement::Definition(definition)));
+
+        assert_eq!(parse(&tokens), expected);
     }
 
     #[test]

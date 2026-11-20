@@ -270,6 +270,12 @@ impl Runtime {
                 let components: Vec<&str> = s.split(&[':'][..]).collect();
                 match self.find_in_call_stack(components[0]) {
                     Some(ArgumentValue::Obj(o)) if components.len() > 1 => {
+                        // a player's hand changes during a move, so read it live
+                        if components[1] == "hand" {
+                            if let Some(hand) = self.live_player_hand(&o) {
+                                return PrimitiveValue::Stack(hand);
+                            }
+                        }
                         match o.get(components[1]){
                             Some(v) => v.clone(),
                             None => PrimitiveValue::Bool(false)
@@ -440,6 +446,17 @@ impl Runtime {
                 }
             },
             _ => ()
+        }
+    }
+
+    fn live_player_hand(&self, obj: &HashMap<String, PrimitiveValue>) -> Option<Vec<Card>> {
+        match obj.get(INTERNAL_REF) {
+            Some(PrimitiveValue::String(s)) => {
+                let parts: Vec<&str> = s.split(":").collect();
+                let i = parts.get(1)?.parse::<usize>().ok()?;
+                self.players.get(i).map(|p| p.get_hand())
+            },
+            _ => None
         }
     }
 

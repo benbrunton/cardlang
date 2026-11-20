@@ -1,0 +1,25 @@
+.(Race to empty: take turns playing your top card.
+  First player with no cards left wins.)
+name race
+players 2
+current_player 1
+stack middle
+
+define setup(){
+    shuffle(deck)
+    deck > players end
+}
+
+define is_out(p){
+    return(count(p:hand) is 0)
+}
+
+define player_move(player){
+    check(player:id is current_player)
+    player:hand > middle
+    if(is_out(player) is true){
+        winner(player:id)
+        end()
+    }
+    next_player()
+}
