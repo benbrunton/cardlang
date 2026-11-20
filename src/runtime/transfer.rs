@@ -31,7 +31,7 @@ pub fn transfer(
 ) -> Option<(TransferTarget, TransferTarget)> {
     let mut count = match t_count {
         None => 1,
-        Some(TransferCount::End) => from.as_ref().unwrap().count()
+        Some(TransferCount::End) => from.as_ref().map_or(0, |f| f.count())
     };
 
     // multiply by number of target stacks

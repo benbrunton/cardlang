@@ -33,44 +33,65 @@ pub fn parse(tokens: &Vec<SourceToken>) -> Result<Vec<Statement>, ParseError> {
     loop {
         let current_token = tokens_iter.next();
         match current_token {
-            Some(SourceToken{ token: Token::Name, .. }) 
-                | Some(SourceToken{ token: Token::Players, ..}) 
-                | Some(SourceToken{ token: Token::CurrentPlayer, ..})
-                | Some(SourceToken{ token: Token::Stack, ..}) => {
-                let unwrapped_token = current_token.expect("unable to unwrap token");
-                let key = get_key(&unwrapped_token.token).expect("unable to find key");
-                let next_token = tokens_iter.next().expect("unable to find next token");
-                let value = get_value(&next_token.token).expect("unable to find expression");
+            Some(SourceToken{ token: Token::Players, line_number })
+                if matches!(tokens_iter.clone().next(), Some(SourceToken{ token: Token::Transfer, .. })) => {
+                // players can only receive cards, not be the source of a transfer
+                return Err(ParseError::new(ParseErrorType::UnexpectedToken, *line_number));
+            },
+            Some(SourceToken{ token: declaration_token @ (Token::Name | Token::Players | Token::CurrentPlayer | Token::Stack), line_number }) => {
+                let key = match get_key(declaration_token) {
+                    Some(k) => k,
+                    None => return Err(ParseError::new(ParseErrorType::UnexpectedToken, *line_number))
+                };
+                let next_token = match tokens_iter.next() {
+                    Some(t) => t,
+                    None => return Err(ParseError::new(ParseErrorType::UnexpectedEndOfStream, *line_number))
+                };
+                let value = match (&key, &next_token.token) {
+                    (GlobalKey::Name, Token::Symbol(_))
+                        | (GlobalKey::Stack, Token::Symbol(_))
+                        | (GlobalKey::Players, Token::Number(_))
+                        | (GlobalKey::CurrentPlayer, Token::Number(_)) => get_value(&next_token.token),
+                    _ => None
+                };
+                let value = match value {
+                    Some(v) => v,
+                    None => return Err(ParseError::new(ParseErrorType::UnexpectedToken, next_token.line_number))
+                };
                 let declaration = Declaration{ key, value };
                 let statement = Statement::Declaration(declaration);
                 ast.push(statement);
             },
             Some(SourceToken{ token: Token::Deck, line_number }) => {
-                let deck_token = current_token.expect("unable to unwrap token");
                 let next_token_result = tokens_iter.next();
                 match next_token_result {
-                    Some(SourceToken{ token: Token::Symbol(_), ..}) => {
-                        let key = get_key(&deck_token.token).expect("unable to find key");
-                        let next_token = next_token_result.expect("unable to find next token");
-                        let value = get_value(&next_token.token).expect("unable to find expression");
+                    Some(SourceToken{ token: Token::Symbol(deck_name), ..}) => {
+                        let key = GlobalKey::Deck;
+                        let value = Expression::Symbol(deck_name.to_owned());
                         let declaration = Declaration{ key, value };
                         let statement = Statement::Declaration(declaration);
                         ast.push(statement);
                     },
                     Some(SourceToken{ token: Token::Transfer, ..}) => {
-                        let transfer_result = create_transfer("deck", &mut tokens_iter);
+                        let transfer_result = create_transfer("deck", &mut tokens_iter, *line_number);
                         if transfer_result.is_err() {
                             return Err(transfer_result.unwrap_err());
                         }
                         ast.push(transfer_result.unwrap())
+                    },
+                    None => {
+                        return Err(ParseError::new(ParseErrorType::UnexpectedEndOfStream, *line_number));
                     },
                     _ => {
                         return Err(ParseError::new(ParseErrorType::UnexpectedToken, *line_number)); 
                     }
                 }
             },
-            Some(SourceToken{ token: Token::Define, ..}) => {
-                let next_token = tokens_iter.next().expect("unable to find next token");
+            Some(SourceToken{ token: Token::Define, line_number }) => {
+                let next_token = match tokens_iter.next() {
+                    Some(t) => t,
+                    None => return Err(ParseError::new(ParseErrorType::UnexpectedEndOfStream, *line_number))
+                };
                 let name = match &next_token.token {
                     Token::Symbol(s) => s.to_owned(),
                     _ => {
@@ -109,7 +130,7 @@ pub fn parse(tokens: &Vec<SourceToken>) -> Result<Vec<Statement>, ParseError> {
                         ast.push(func_result.unwrap());
                     },
                     Some(SourceToken{ token: Token::Transfer, ..}) => {
-                        let transfer_result = create_transfer(name, &mut tokens_iter);
+                        let transfer_result = create_transfer(name, &mut tokens_iter, *line_number);
                         if transfer_result.is_err() {
                             return Err(transfer_result.unwrap_err());
                         }
@@ -190,8 +211,16 @@ fn create_function(name: &str, tokens_iter: &mut std::slice::Iter<SourceToken>) 
 }
 
 
-fn create_transfer(from: &str, tokens_iter: &mut std::slice::Iter<SourceToken>) -> Result<Statement, ParseError> {
-    let transfer_target = tokens_iter.next().expect("unable to find next token");
+fn create_transfer(from: &str, tokens_iter: &mut std::slice::Iter<SourceToken>, line_number: u32) -> Result<Statement, ParseError> {
+    let transfer_target = match tokens_iter.next() {
+        Some(t) => t,
+        None => return Err(ParseError::new(ParseErrorType::UnexpectedEndOfStream, line_number))
+    };
+    match transfer_target.token {
+        Token::Deck | Token::Players | Token::Symbol(_) => (),
+        Token::Newline => return Err(ParseError::new(ParseErrorType::UnexpectedEndOfStream, line_number)),
+        _ => return Err(ParseError::new(ParseErrorType::UnexpectedToken, transfer_target.line_number))
+    }
     let from = get_transfer_value(&Token::Symbol(from.to_string()));
     let to = get_transfer_value(&transfer_target.token);
     let modifier = None;
@@ -298,7 +327,7 @@ fn combine_expression(tokens_iter: &mut std::slice::Iter<SourceToken>, left: Exp
                 },
                 _ => false
             };
-            let right = build_expression(tokens_iter).expect("bad right expression for comparison");
+            let right = build_expression(tokens_iter)?;
             let comparison = Comparison {
                 left,
                 right,
@@ -307,7 +336,7 @@ fn combine_expression(tokens_iter: &mut std::slice::Iter<SourceToken>, left: Exp
             Ok(Expression::Comparison(Box::new(comparison)))
         },
         Some(SourceToken{ token: Token::Ampersand, ..}) => {
-            let right = build_expression(tokens_iter).expect("bad right expression");
+            let right = build_expression(tokens_iter)?;
             let and = And {
                 left,
                 right
@@ -1396,5 +1425,73 @@ mod test{
 
         assert_eq!(Ok(expected), result);
     }
+
+    fn parse_source(source: &str) -> Result<Vec<Statement>, ParseError> {
+        let tokens = crate::lex::lexer(source).expect("lex error");
+        parse(&tokens)
+    }
+
+    #[test]
+    fn incomplete_or_invalid_source_is_a_parse_error_not_a_panic() {
+        let cases = [
+            "name",
+            "players",
+            "stack",
+            "current_player",
+            "deck",
+            "players two",
+            "name 5",
+            "stack 3",
+            "current_player first",
+            "players > deck end",
+            "define",
+            "define setup(){ check(1 is) }",
+            "define setup(){ check(1 &) }",
+            "define setup(){ check(1 is not) }",
+            "define setup(){ x > }",
+            "define setup(){ deck > }",
+            "define setup(){ deck > 5 }",
+        ];
+
+        for case in cases.iter() {
+            assert!(parse_source(case).is_err(), "expected a parse error for {:?}", case);
+        }
+    }
+
+    #[test]
+    fn an_unfinished_transfer_reports_its_line() {
+        let result = parse_source("name x\ndefine setup(){\n    deck >\n}");
+        assert_eq!(result.unwrap_err().line_number, 3);
+    }
+
+    #[test]
+    fn the_parser_never_panics_on_random_tokens() {
+        let alphabet = vec!(
+            Token::Name, Token::Symbol("a".to_string()), Token::Symbol("p:hand".to_string()),
+            Token::Number(1.0), Token::Stack, Token::Deck, Token::Players, Token::CurrentPlayer,
+            Token::Define, Token::OpenParens, Token::CloseParens, Token::Comma,
+            Token::OpenBracket, Token::CloseBracket, Token::Transfer, Token::Check, Token::Is,
+            Token::If, Token::Newline, Token::True, Token::False, Token::Ampersand,
+            Token::Return, Token::Test, Token::Not
+        );
+
+        // simple deterministic pseudo random generator, so failures are reproducible
+        let mut seed: u64 = 0x2545F4914F6CDD1D;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+
+        for _ in 0..20000 {
+            let length = (next() % 12) as usize;
+            let tokens: Vec<Token> = (0..length)
+                .map(|_| alphabet[(next() % alphabet.len() as u64) as usize].clone())
+                .collect();
+            let source_tokens = get_source_tokens(tokens.clone());
+            let result = std::panic::catch_unwind(|| parse(&source_tokens));
+            assert!(result.is_ok(), "parser panicked on {:?}", tokens);
+        }
+    }
 }
-        

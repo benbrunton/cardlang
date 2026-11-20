@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --locked
+
+      - name: Test
+        run: cargo test --locked
+
+      - name: Check example games parse
+        run: |
+          cargo run --quiet -- test examples/race.card
+          cargo run --quiet -- test examples/turns.card
+
+      # Warnings are reported but not yet fatal; see docs/ROADMAP.md (Milestone 4).
+      - name: Clippy
+        run: cargo clippy --locked --all-targets
