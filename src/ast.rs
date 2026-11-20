@@ -7,8 +7,10 @@ pub enum Statement {
     IfStatement(IfStatement),
     CheckStatement(CheckStatement),
     ReturnStatement(ReturnStatement),
-    // `values { Jack 8, Queen 9 }`: card values by rank
-    ValueTable(Vec<(String, f64)>),
+    // `values { Jack 8 }` or `values primiera { Seven 21 }`: card values by rank
+    ValueTable(ValueTable),
+    // `deck standard without Eight Nine Ten`: the ranks left out of the deck
+    DeckWithout(Vec<String>),
     // every player p { ... } / every card c in pile { ... }
     Every(EveryLoop),
 }
@@ -24,7 +26,9 @@ pub enum Expression {
     Or(Box<Or>),
     Binary(Box<Binary>),
     // every player p: condition / every card c in pile: condition
-    Every(Box<EveryTest>)
+    Every(Box<EveryTest>),
+    // [7d, kh]: specific cards
+    Cards(Vec<crate::cards::Card>)
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -191,6 +195,10 @@ impl std::fmt::Display for Expression {
                 };
                 write!(f, "{} {} {}", b.left, op, b.right)
             },
+            Expression::Cards(cards) => {
+                let codes: Vec<String> = cards.iter().map(crate::cards::card_code).collect();
+                write!(f, "[{}]", codes.join(", "))
+            },
             Expression::Every(e) => match &e.kind {
                 EveryKind::Player => write!(f, "every player {}: {}", e.variable, e.condition),
                 EveryKind::Card(pile) => write!(f, "every card {} in {}: {}", e.variable, pile, e.condition)
@@ -210,3 +218,13 @@ impl std::fmt::Display for Transfer {
         }
     }
 }
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct ValueTable {
+    // None for the main table (card:value), or a name such as primiera (card:primiera)
+    pub name: Option<String>,
+    pub entries: Vec<(String, f64)>
+}
+
+// the decks a game can use
+pub const DECK_NAMES: [&str; 1] = ["standard"];

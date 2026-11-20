@@ -44,6 +44,10 @@ pub struct InitialValues {
     pub player_stacks: Vec<String>,
     // overrides from a `values { ... }` table, by rank name
     pub card_values: Vec<(String, f64)>,
+    // named tables from `values <name> { ... }`, each a card field
+    pub named_values: Vec<(String, Vec<(String, f64)>)>,
+    // ranks left out of the deck, from `deck standard without ...`
+    pub deck_without: Vec<String>,
     pub card_stacks: Vec<String>,
     pub current_player: usize,
 }
@@ -104,6 +108,7 @@ pub struct Runtime {
     players: Vec<Player>,
     card_stacks: HashMap<String, Vec<Card>>,
     card_values: HashMap<String, f64>,
+    named_values: HashMap<String, HashMap<String, f64>>,
     call_stack: Vec<HashMap<String, ArgumentValue>>,
     // the player and move objects of the move being made, for valid_moves
     current_move: Option<(ArgumentValue, ArgumentValue)>,
@@ -125,7 +130,9 @@ impl Runtime {
 
         Runtime {
             status: GameState::Pending,
-            deck:  standard_deck(),
+            deck: standard_deck().into_iter()
+                .filter(|card| !initial_values.deck_without.contains(&card.get_rank_str()))
+                .collect(),
             winners: vec![],
             current_player: initial_values.current_player,
             call_stack: vec![],
@@ -135,6 +142,9 @@ impl Runtime {
             failure_is_message: false,
             card_stacks,
             card_values: initial_values.card_values.iter().cloned().collect(),
+            named_values: initial_values.named_values.iter()
+                .map(|(name, entries)| (name.clone(), entries.iter().cloned().collect()))
+                .collect(),
             players: Self::generate_players(initial_values.players, &initial_values.player_stacks),
             callbacks
         }
@@ -599,7 +609,8 @@ impl Runtime {
                 | Expression::And(_)
                 | Expression::Or(_)
                 | Expression::Every(_) => PrimitiveValue::Bool(self.resolve_to_bool(expression)),
-            Expression::Binary(b) => self.evaluate_binary(b)
+            Expression::Binary(b) => self.evaluate_binary(b),
+            Expression::Cards(cards) => PrimitiveValue::Stack(cards.clone())
         }
     }
 
@@ -622,6 +633,11 @@ impl Runtime {
         card_object.insert("rank".to_string(), PrimitiveValue::String(card.get_rank_str()));
         card_object.insert("suit".to_string(), PrimitiveValue::String(card.get_suit_str()));
         card_object.insert("value".to_string(), PrimitiveValue::Number(self.card_value(&card)));
+        // each named values table is a field too, e.g. card:primiera (0 for unlisted ranks)
+        for (name, table) in self.named_values.iter() {
+            let value = table.get(&card.get_rank_str()).copied().unwrap_or(0.0);
+            card_object.insert(name.clone(), PrimitiveValue::Number(value));
+        }
         ArgumentValue::Obj(card_object)
     }
 
@@ -919,6 +935,8 @@ mod test{
             players: 1,
             player_stacks: vec![],
             card_values: vec![],
+            named_values: vec![],
+            deck_without: vec![],
             card_stacks: vec![],
             current_player: 1,
         };
@@ -950,6 +968,8 @@ mod test{
             players: 1,
             player_stacks: vec![],
             card_values: vec![],
+            named_values: vec![],
+            deck_without: vec![],
             card_stacks: vec![],
             current_player: 1,
         };
@@ -985,6 +1005,8 @@ mod test{
             players: 1,
             player_stacks: vec![],
             card_values: vec![],
+            named_values: vec![],
+            deck_without: vec![],
             card_stacks: vec![],
             current_player: 1,
         };
@@ -1020,6 +1042,8 @@ mod test{
             players: 1,
             player_stacks: vec![],
             card_values: vec![],
+            named_values: vec![],
+            deck_without: vec![],
             card_stacks: vec![],
             current_player: 1,
         };

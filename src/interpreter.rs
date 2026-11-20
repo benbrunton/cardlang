@@ -62,6 +62,8 @@ impl Game {
             players: 1,
             player_stacks: vec![],
             card_values: vec![],
+            named_values: vec![],
+            deck_without: vec![],
             card_stacks: vec![],
             current_player: 1 
         };
@@ -99,8 +101,12 @@ impl Game {
                 }) => {
                     initial_values.card_stacks.push(s.to_string());
                 },
-                Statement::ValueTable(table) => {
-                    initial_values.card_values.extend(table.iter().cloned());
+                Statement::ValueTable(table) => match &table.name {
+                    None => initial_values.card_values.extend(table.entries.iter().cloned()),
+                    Some(name) => initial_values.named_values.push((name.clone(), table.entries.clone()))
+                },
+                Statement::DeckWithout(ranks) => {
+                    initial_values.deck_without.extend(ranks.iter().cloned());
                 },
                 Statement::Declaration(Declaration{
                     key: GlobalKey::PlayerStack,
@@ -2586,5 +2592,89 @@ def setup(){
 }
 ");
         assert_eq!(result, "active\nwinners: 2, 3");
+    }
+
+    #[test]
+    fn a_deck_can_leave_out_ranks() {
+        let result = winners_of("
+players 2
+deck standard without Eight Nine Ten
+
+def is_eight(card){
+    return(card:rank is Eight or card:rank is Ten)
+}
+
+def setup(){
+    winner(count(deck))
+    winner(count(filter(deck, is_eight)))
+}
+");
+        assert_eq!(result, "active\nwinners: 40, 0");
+    }
+
+    #[test]
+    fn a_named_values_table_becomes_a_card_field() {
+        let result = winners_of("
+players 2
+values { King 10 }
+values primiera {
+    Seven 21, Six 18
+}
+
+def is_seven(card){
+    return(card:primiera is 21 & card:value is 7)
+}
+
+def is_king(card){
+    return(card:rank is King & card:primiera is 0 & card:value is 10)
+}
+
+def setup(){
+    winner(count(filter(deck, is_seven)))
+    winner(count(filter(deck, is_king)))
+}
+");
+        assert_eq!(result, "active\nwinners: 4, 4");
+    }
+
+    #[test]
+    fn card_literals_are_piles_of_specific_cards() {
+        let mut game = game_from_source("
+players 2
+stack middle
+
+def setup(){
+    deck > middle taking [7d, kh]
+    if(cards_in_stack([7d], middle) & count([as, 2c, 3h]) is 3){
+        winner(1)
+    }
+    if(cards_in_stack([7d], deck)){
+        winner(2)
+    }
+}
+");
+        game.start();
+        assert_eq!(game.show("middle"), "seven diamonds, king hearts");
+        assert_eq!(game.show("game"), "active\nwinners: 1");
+    }
+
+    #[test]
+    fn a_line_break_inside_brackets_continues_the_statement() {
+        let result = winners_of("
+players 2
+
+def add(a, b, c){
+    return(a + b
+        + c)
+}
+
+def setup(){
+    winner(add(1,
+               2,
+               3))
+    winner(4)
+}
+");
+        assert_eq!(result, "active\nwinners: 6, 4");
     }
 }

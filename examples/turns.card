@@ -1,5 +1,5 @@
 name turns
-deck StandardDeck
+deck standard
 players 2
 current_player 1
 stack middle

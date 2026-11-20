@@ -12,7 +12,8 @@ pub enum LexErrorType{
     EmptySpecification,
     ParseError,
     UnterminatedComment,
-    UnterminatedCheck
+    UnterminatedCheck,
+    UnterminatedCards
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -33,7 +34,8 @@ impl std::fmt::Display for LexError {
             LexErrorType::EmptySpecification => "the file is empty",
             LexErrorType::ParseError => "unrecognised character (for example '\"' or a decimal number)",
             LexErrorType::UnterminatedComment => "a comment is never closed - missing ')'",
-            LexErrorType::UnterminatedCheck => "a check message is never closed - missing ')'"
+            LexErrorType::UnterminatedCheck => "a check message is never closed - missing ')'",
+            LexErrorType::UnterminatedCards => "a list of cards is never closed - missing ']'"
         };
         write!(f, "line {}: {}", self.line_number, message)
     }
@@ -51,11 +53,30 @@ pub fn lexer(source: &str) -> Result<Vec<SourceToken>, LexError> {
     let mut after_check = false;
     let mut check_depth = 0;
 
+    // a line break inside ( ) doesn't end the statement
+    let mut bracket_depth: usize = 0;
+
     while let Some(current_char) = chars.next() {
 
         // newlines inside a comment still count as lines
         if current_char == '\n' && partial_token.is_some() {
             line_number += 1;
+        }
+
+        // [7d, kh]: card codes are read as written up to the ']'
+        if partial_token.is_none() && current_char == '[' {
+            let start_line = line_number;
+            let mut cards = String::new();
+            loop {
+                match chars.next() {
+                    Some(']') => break,
+                    Some('\n') | None => return Err(LexError::new(LexErrorType::UnterminatedCards, start_line)),
+                    Some(c) => cards.push(c)
+                }
+            }
+            tokens.push(SourceToken{ token: Token::Cards(cards), line_number });
+            after_check = false;
+            continue;
         }
 
         // two-character operators
@@ -77,6 +98,16 @@ pub fn lexer(source: &str) -> Result<Vec<SourceToken>, LexError> {
                 partial_token = None;
 
                 let starts_message = t == Token::Comma && check_depth == 1;
+                match t {
+                    Token::OpenParens => bracket_depth += 1,
+                    Token::CloseParens => bracket_depth = bracket_depth.saturating_sub(1),
+                    _ => ()
+                }
+                if is_newline && bracket_depth > 0 {
+                    line_number += 1;
+                    continue;
+                }
+
                 match t {
                     Token::Check => after_check = true,
                     Token::OpenParens if after_check => {
@@ -106,6 +137,7 @@ pub fn lexer(source: &str) -> Result<Vec<SourceToken>, LexError> {
                     tokens.push(SourceToken{ token: Token::Text(message), line_number: message_line });
                     tokens.push(SourceToken{ token: Token::CloseParens, line_number });
                     check_depth = 0;
+                    bracket_depth = bracket_depth.saturating_sub(1);
                 }
             },
             TokenResult::PartialToken(s) => {
@@ -190,6 +222,7 @@ fn handle_single_chars(current_char: char) -> Option<TokenResult> {
         '+' => Some(TokenResult::Token(Token::Plus)),
         '-' => Some(TokenResult::Token(Token::Minus)),
         '<' => Some(TokenResult::Token(Token::LessThan)),
+        '=' => Some(TokenResult::Token(Token::Assign)),
         // a ':' on its own; inside a word (p:hand) it's part of the word
         ':' => Some(TokenResult::Token(Token::Colon)),
         _ => None
@@ -233,6 +266,9 @@ fn handle_keyword(partial_token: &str, next_char: Option<&char>) -> Option<Token
         "values" => Some(TokenResult::Token(Token::Values)),
         "every" => Some(TokenResult::Token(Token::Every)),
         "in" => Some(TokenResult::Token(Token::In)),
+        "any" => Some(TokenResult::Token(Token::Any)),
+        "most" => Some(TokenResult::Token(Token::Most)),
+        "number" => Some(TokenResult::Token(Token::NumberType)),
         _ => None
     }
 }
