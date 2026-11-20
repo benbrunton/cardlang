@@ -1168,7 +1168,7 @@ mod test{
     #[test]
     fn check_stops_a_function_executing_when_expression_is_false() {
         let body = vec![
-            Statement::CheckStatement(CheckStatement{
+            Statement::CheckStatement(CheckStatement{ message: None,
                 expression: Expression::Bool(false)
             }),
             Statement::FunctionCall(
@@ -1201,7 +1201,7 @@ mod test{
     #[test]
     fn check_passes_through_when_expression_is_true() {
         let body = vec![
-            Statement::CheckStatement(CheckStatement{
+            Statement::CheckStatement(CheckStatement{ message: None,
                 expression: Expression::Bool(true)
             }),
             Statement::FunctionCall(
@@ -2371,6 +2371,55 @@ def drop(player, move){
             play(&mut game, "drop kc"),
             Err("not allowed: transfer failed in drop: player:hand > middle taking move:cards \
                  (king clubs is not in player:hand)".to_string())
+        );
+    }
+
+    #[test]
+    fn a_check_message_is_shown_instead_of_the_rule() {
+        let mut game = game_from_source("
+players 2
+stack middle
+
+def setup(){
+    deck > players 3
+}
+
+def player_move(player, move){
+    check(count(move:target) > 0, put a / before the cards you're capturing, e.g. take 7h / 7c)
+    end()
+}
+");
+        game.start();
+
+        assert_eq!(
+            play(&mut game, "take 9d"),
+            Err("put a / before the cards you're capturing, e.g. take 7h / 7c".to_string())
+        );
+        assert_eq!(game.show("game"), "active");
+    }
+
+    #[test]
+    fn check_messages_without_a_name_are_listed_with_the_other_reasons() {
+        let mut game = game_from_source("
+players 2
+
+def player_move(player, move){
+    valid_moves(take, drop)
+}
+
+def take(player, move){
+    check(count(move:target) > 0, nothing to take)
+}
+
+def drop(player, move){
+    check(count(move:cards) is 0)
+}
+");
+        game.start();
+
+        assert_eq!(
+            play(&mut game, "9d"),
+            Err("not allowed: no valid move - nothing to take; check failed in drop: count(move:cards) is 0".to_string())
         );
     }
 }

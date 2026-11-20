@@ -110,7 +110,9 @@ pub struct Runtime {
     // names of the game functions being run, innermost last
     function_names: Vec<String>,
     // why the most recent check, transfer or move failed
-    failure: Option<String>
+    failure: Option<String>,
+    // true when the failure is the game's own message from check(rule, message)
+    failure_is_message: bool
 }
 
 impl Runtime {
@@ -130,6 +132,7 @@ impl Runtime {
             current_move: None,
             function_names: vec![],
             failure: None,
+            failure_is_message: false,
             card_stacks,
             card_values: initial_values.card_values.iter().cloned().collect(),
             players: Self::generate_players(initial_values.players, &initial_values.player_stacks),
@@ -359,6 +362,11 @@ impl Runtime {
 
         if Self::failed(&result) {
             self.restore(before);
+            if self.failure_is_message {
+                if let Some(message) = self.failure.take() {
+                    return Err(message);
+                }
+            }
             return Err(match self.failure.take() {
                 Some(reason) => format!("not allowed: {}", reason),
                 None => "not allowed".to_string()
@@ -444,6 +452,7 @@ impl Runtime {
                 None => {
                     let names: Vec<String> = moves.iter().map(|d| d.name.clone()).collect();
                     self.failure = Some(format!("unknown move '{}' - valid moves: {}", name, names.join(", ")));
+                    self.failure_is_message = false;
                     false
                 }
             },
@@ -459,6 +468,7 @@ impl Runtime {
                     reasons.push(self.failure.take().unwrap_or_else(|| format!("{} failed", definition.name)));
                 }
                 self.failure = Some(format!("no valid move - {}", reasons.join("; ")));
+                self.failure_is_message = false;
                 false
             }
         }
@@ -483,6 +493,7 @@ impl Runtime {
     fn fail(&mut self, what: &str, detail: String) {
         let function = self.function_names.last().cloned().unwrap_or_else(|| "game".to_string());
         self.failure = Some(format!("{} in {}: {}", what, function, detail));
+        self.failure_is_message = false;
     }
 
     fn handle_statements(&mut self, statements: &[Statement]) -> Flow {
@@ -508,7 +519,13 @@ impl Runtime {
                 },
                 Statement::CheckStatement(c) => {
                     if !self.resolve_to_bool(&c.expression) {
-                        self.fail("check failed", c.expression.to_string());
+                        match &c.message {
+                            Some(message) => {
+                                self.failure = Some(message.clone());
+                                self.failure_is_message = true;
+                            },
+                            None => self.fail("check failed", c.expression.to_string())
+                        }
                         return Flow::Return(PrimitiveValue::Bool(false));
                     }
                 },

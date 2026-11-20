@@ -183,10 +183,28 @@ pub fn parse(tokens: &[SourceToken]) -> Result<Vec<Statement>, ParseError> {
                     })
                 }
 
-                let expression = build_expression(&mut tokens_iter)
-                    .map_err(|e| e.or_line(*line_number))?;
+                let expression = parse_or(&mut tokens_iter).map_err(|e| e.or_line(*line_number))?;
 
-                let check_statement = CheckStatement{ expression };
+                // check(rule) or check(rule, message)
+                let message = match tokens_iter.next() {
+                    Some(SourceToken{ token: Token::CloseParens, ..}) => None,
+                    Some(SourceToken{ token: Token::Comma, ..}) => {
+                        let text = match tokens_iter.next() {
+                            Some(SourceToken{ token: Token::Text(t), ..}) => t.clone(),
+                            _ => return Err(ParseError::new(ParseErrorType::UnexpectedToken, *line_number))
+                        };
+                        match tokens_iter.next() {
+                            Some(SourceToken{ token: Token::CloseParens, ..}) => Some(text),
+                            _ => return Err(ParseError::new(ParseErrorType::UnexpectedToken, *line_number))
+                        }
+                    },
+                    Some(SourceToken{ line_number: l, .. }) => {
+                        return Err(ParseError::new(ParseErrorType::UnexpectedToken, *l))
+                    },
+                    None => return Err(ParseError::new(ParseErrorType::UnexpectedEndOfStream, *line_number))
+                };
+
+                let check_statement = CheckStatement{ expression, message };
                 let statement = Statement::CheckStatement(check_statement);
                 ast.push(statement);
             },
@@ -1024,7 +1042,7 @@ mod test{
             right: Expression::Bool(true),
             negative: false
         }));
-        let expected = Ok(vec![Statement::CheckStatement(CheckStatement{ expression })]);
+        let expected = Ok(vec![Statement::CheckStatement(CheckStatement{ expression, message: None })]);
 
         assert_eq!(parse(&tokens), expected);
     }
@@ -1465,7 +1483,7 @@ mod test{
         ];
 
         let expected = vec![
-            Statement::CheckStatement(CheckStatement{
+            Statement::CheckStatement(CheckStatement{ message: None,
                 expression: Expression::Bool(true)
             })
         ];
@@ -1510,7 +1528,7 @@ mod test{
         }));
 
         let expected = vec![
-            Statement::CheckStatement(CheckStatement{ expression })
+            Statement::CheckStatement(CheckStatement{ expression, message: None })
         ];
 
         let result = parse(&tokens);
@@ -1781,5 +1799,45 @@ mod test{
             ("Two".to_string(), -1.0)
         ))];
         assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn a_check_message_is_free_text() {
+        let result = parse_source("check(a is 1, don't do that (please), or else / ok)").unwrap();
+        let expected = vec![Statement::CheckStatement(CheckStatement{
+            expression: Expression::Comparison(Box::new(Comparison{
+                left: Expression::Symbol("a".to_string()),
+                right: Expression::Number(1.0),
+                negative: false
+            })),
+            message: Some("don't do that (please), or else / ok".to_string())
+        })];
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn commas_inside_the_rule_are_not_the_message() {
+        let result = parse_source("check(same(a, b), not the same)").unwrap();
+        match &result[0] {
+            Statement::CheckStatement(c) => {
+                assert_eq!(c.expression.to_string(), "same(a, b)");
+                assert_eq!(c.message, Some("not the same".to_string()));
+            },
+            other => panic!("expected a check, got {:?}", other)
+        }
+    }
+
+    #[test]
+    fn a_check_message_can_span_lines_and_line_numbers_stay_right() {
+        let source = "def setup(){\n    check(false, a long\n        message)\n    oops oops\n}";
+        let tokens = crate::lex::lexer(source).unwrap();
+        let error = parse(&tokens).unwrap_err();
+        assert_eq!(error.line_number, 4);
+    }
+
+    #[test]
+    fn an_unclosed_check_message_is_an_error() {
+        assert!(crate::lex::lexer("check(a is 1, never closed").is_err());
+        assert!(crate::lex::lexer("check(a is 1, unbalanced ( bracket)").is_err());
     }
 }

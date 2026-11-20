@@ -11,7 +11,8 @@ enum TokenResult {
 pub enum LexErrorType{
     EmptySpecification,
     ParseError,
-    UnterminatedComment
+    UnterminatedComment,
+    UnterminatedCheck
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -31,7 +32,8 @@ impl std::fmt::Display for LexError {
         let message = match self.error_type {
             LexErrorType::EmptySpecification => "the file is empty",
             LexErrorType::ParseError => "unrecognised character (for example '\"' or a decimal number)",
-            LexErrorType::UnterminatedComment => "a comment is never closed - missing ')'"
+            LexErrorType::UnterminatedComment => "a comment is never closed - missing ')'",
+            LexErrorType::UnterminatedCheck => "a check message is never closed - missing ')'"
         };
         write!(f, "line {}: {}", self.line_number, message)
     }
@@ -43,6 +45,11 @@ pub fn lexer(source: &str) -> Result<Vec<SourceToken>, LexError> {
     let mut chars = source.chars().peekable();
 
     let mut partial_token: Option<String> = None;
+
+    // check(rule, message): the message after the first top-level comma is
+    // free text, read as written up to the matching ')'
+    let mut after_check = false;
+    let mut check_depth = 0;
 
     while let Some(current_char) = chars.next() {
 
@@ -59,6 +66,19 @@ pub fn lexer(source: &str) -> Result<Vec<SourceToken>, LexError> {
                 let is_newline = t == Token::Newline;
 
                 partial_token = None;
+
+                let starts_message = t == Token::Comma && check_depth == 1;
+                match t {
+                    Token::Check => after_check = true,
+                    Token::OpenParens if after_check => {
+                        after_check = false;
+                        check_depth = 1;
+                    },
+                    Token::OpenParens if check_depth > 0 => check_depth += 1,
+                    Token::CloseParens if check_depth > 0 => check_depth -= 1,
+                    _ => after_check = false
+                }
+
                 let source_token = SourceToken{
                     token: t,
                     line_number
@@ -68,6 +88,15 @@ pub fn lexer(source: &str) -> Result<Vec<SourceToken>, LexError> {
                 // a newline belongs to the line it ends
                 if is_newline {
                     line_number += 1;
+                }
+
+                if starts_message {
+                    let message_line = line_number;
+                    let message = read_check_message(&mut chars, &mut line_number)
+                        .ok_or_else(|| LexError::new(LexErrorType::UnterminatedCheck, message_line))?;
+                    tokens.push(SourceToken{ token: Token::Text(message), line_number: message_line });
+                    tokens.push(SourceToken{ token: Token::CloseParens, line_number });
+                    check_depth = 0;
                 }
             },
             TokenResult::PartialToken(s) => {
@@ -95,6 +124,32 @@ pub fn lexer(source: &str) -> Result<Vec<SourceToken>, LexError> {
     }
 }
 
+
+// Reads a check message up to the ')' that closes the check. Brackets inside
+// the message must be balanced. Returns None if the check is never closed.
+fn read_check_message(chars: &mut std::iter::Peekable<std::str::Chars>, line_number: &mut u32) -> Option<String> {
+    let mut message = String::new();
+    let mut depth = 0;
+    loop {
+        match chars.next()? {
+            ')' if depth == 0 => break,
+            ')' => {
+                depth -= 1;
+                message.push(')');
+            },
+            '(' => {
+                depth += 1;
+                message.push('(');
+            },
+            '\n' => {
+                *line_number += 1;
+                message.push(' ');
+            },
+            c => message.push(c)
+        }
+    }
+    Some(message.split_whitespace().collect::<Vec<_>>().join(" "))
+}
 
 fn handle_char(partial_token: &Option<String>, current_char: char, next_char: Option<&char>) -> TokenResult {
     match partial_token {

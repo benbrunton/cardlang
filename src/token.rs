@@ -29,7 +29,9 @@ pub enum Token {
     Plus,
     Minus,
     LessThan,
-    Values
+    Values,
+    // free text, e.g. the message in check(rule, message)
+    Text(String)
 }
 
 #[derive(Debug, PartialEq, Clone)]

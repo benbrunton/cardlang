@@ -92,7 +92,9 @@ pub struct Comparison {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct CheckStatement {
-    pub expression: Expression
+    pub expression: Expression,
+    // shown to the player when the check fails, instead of the rule
+    pub message: Option<String>
 }
 
 #[derive(Debug, PartialEq, Clone)]
