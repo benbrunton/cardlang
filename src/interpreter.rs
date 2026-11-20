@@ -30,22 +30,13 @@ impl Game {
         };
 
         let mut callbacks = Callbacks {
-            player_move: None,
-            setup: None,
             definitions: HashMap::new()
         };
 
         for statement in ast.iter() {
             match statement {
-                Statement::Definition(
-                    d
-                ) => {
+                Statement::Definition(d) => {
                     callbacks.definitions.insert(d.name.clone(), d.clone());
-                    match d.name.as_str() {
-                        "setup" => callbacks.setup = Some(d.clone()),
-                        "player_move" => callbacks.player_move = Some(d.clone()),
-                        _ => ()
-                    }
                 },
                 Statement::Declaration(Declaration{
                     key: GlobalKey::Name,

@@ -49,9 +49,9 @@ pub struct InitialValues {
 }
 
 #[derive(Clone, Debug)]
+// The game's functions by name. `setup` and `player_move` are called by
+// the interpreter; the rest are called by the game itself.
 pub struct Callbacks {
-    pub player_move: Option<Definition>,
-    pub setup: Option<Definition>,
     pub definitions: HashMap<String, Definition>
 }
 
@@ -321,7 +321,7 @@ impl Runtime {
             GameState::Active => ()
         }
 
-        let p_move = match self.callbacks.player_move.clone() {
+        let p_move = match self.callbacks.definitions.get("player_move").cloned() {
             Some(m) => m,
             None => return Err("this game does not define player_move".to_string())
         };
@@ -466,7 +466,7 @@ impl Runtime {
 
     pub fn setup(&mut self) {
         self.status = GameState::Active;
-        if let Some(setup) = self.callbacks.setup.clone() {
+        if let Some(setup) = self.callbacks.definitions.get("setup").cloned() {
             self.failure = None;
             self.function_names.push(setup.name.clone());
             let result = self.handle_statements(&setup.body);
@@ -860,8 +860,6 @@ mod test{
         };
 
         let callbacks = Callbacks{
-            player_move: None,
-            setup: None,
             definitions: HashMap::new()
         };
 
@@ -893,8 +891,6 @@ mod test{
         };
 
         let callbacks = Callbacks{
-            player_move: None,
-            setup: None,
             definitions: HashMap::new()
         };
 
@@ -930,8 +926,6 @@ mod test{
         };
 
         let callbacks = Callbacks{
-            player_move: None,
-            setup: None,
             definitions: HashMap::new()
         };
 
@@ -967,8 +961,6 @@ mod test{
         };
 
         let callbacks = Callbacks{
-            player_move: None,
-            setup: None,
             definitions: HashMap::new()
         };
 
