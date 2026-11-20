@@ -58,6 +58,15 @@ pub fn lexer(source: &str) -> Result<Vec<SourceToken>, LexError> {
             line_number += 1;
         }
 
+        // two-character operators
+        if partial_token.is_none() && (current_char == '<' || current_char == '>') && chars.peek() == Some(&'=') {
+            chars.next();
+            let token = if current_char == '<' { Token::LessOrEqual } else { Token::GreaterOrEqual };
+            tokens.push(SourceToken{ token, line_number });
+            after_check = false;
+            continue;
+        }
+
         let next_char = chars.peek();
         let result = handle_char(&partial_token, current_char, next_char);
 
@@ -181,6 +190,8 @@ fn handle_single_chars(current_char: char) -> Option<TokenResult> {
         '+' => Some(TokenResult::Token(Token::Plus)),
         '-' => Some(TokenResult::Token(Token::Minus)),
         '<' => Some(TokenResult::Token(Token::LessThan)),
+        // a ':' on its own; inside a word (p:hand) it's part of the word
+        ':' => Some(TokenResult::Token(Token::Colon)),
         _ => None
     }
 }
@@ -220,6 +231,8 @@ fn handle_keyword(partial_token: &str, next_char: Option<&char>) -> Option<Token
         "or" => Some(TokenResult::Token(Token::Or)),
         "else" => Some(TokenResult::Token(Token::Else)),
         "values" => Some(TokenResult::Token(Token::Values)),
+        "every" => Some(TokenResult::Token(Token::Every)),
+        "in" => Some(TokenResult::Token(Token::In)),
         _ => None
     }
 }

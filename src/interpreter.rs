@@ -34,6 +34,7 @@ fn collect_valid_moves(statements: &[Statement], names: &mut Vec<String>) {
                 collect_valid_moves(&i.body, names);
                 collect_valid_moves(&i.else_body, names);
             },
+            Statement::Every(e) => collect_valid_moves(&e.body, names),
             _ => ()
         }
     }
@@ -2421,5 +2422,134 @@ def drop(player, move){
             play(&mut game, "9d"),
             Err("not allowed: no valid move - nothing to take; check failed in drop: count(move:cards) is 0".to_string())
         );
+    }
+
+    #[test]
+    fn every_player_runs_a_block_for_each_player_in_order() {
+        let mut game = game_from_source("
+players 3
+
+def setup(){
+    every player p {
+        deck > p:hand 2
+        winner(p:id)
+    }
+}
+");
+        game.start();
+
+        assert_eq!(game.show("game"), "active\nwinners: 1, 2, 3");
+        assert_eq!(game.show("players"), "player 1 (cards: 2), player 2 (cards: 2), player 3 (cards: 2)");
+        assert_eq!(game.show("player 1"), "king diamonds, queen diamonds");
+    }
+
+    #[test]
+    fn every_player_as_a_test_is_true_only_if_it_holds_for_all() {
+        let result = winners_of("
+players 3
+
+def setup(){
+    if(every player p: count(p:hand) is 0){
+        winner(1)
+    }
+    deck > players:2:hand
+    if(every player p: count(p:hand) is 0){
+        winner(2)
+    }
+    if(every player p : p:id >= 1 & p:id <= 3){
+        winner(3)
+    }
+}
+");
+        assert_eq!(result, "active\nwinners: 1, 3");
+    }
+
+    #[test]
+    fn every_card_goes_through_the_cards_in_a_pile() {
+        let result = winners_of("
+players 2
+stack middle
+
+def setup(){
+    deck > middle 3
+    every card c in middle {
+        winner(c:value)
+    }
+    if(every card c in middle: c:suit is Diamonds){
+        winner(100)
+    }
+    if(every card c in middle : c:value > 11){
+        winner(200)
+    }
+}
+");
+        // king, queen, jack of diamonds
+        assert_eq!(result, "active\nwinners: 13, 12, 11, 100");
+    }
+
+    #[test]
+    fn every_card_works_with_player_piles() {
+        let mut game = game_from_source("
+players 2
+
+def setup(){
+    deck > players 2
+}
+
+def player_move(player){
+    check(every card c in player:hand: c:suit is Diamonds, all diamonds)
+    end()
+}
+");
+        game.start();
+        game.player_move(1).unwrap();
+        assert_eq!(game.show("game"), "game over");
+    }
+
+    #[test]
+    fn return_and_check_inside_every_end_the_function() {
+        let result = winners_of("
+players 3
+
+def first_with_id_above(n){
+    every player p {
+        if(p:id > n){
+            return(p:id)
+        }
+    }
+    return(0)
+}
+
+def setup(){
+    winner(first_with_id_above(1))
+    winner(first_with_id_above(5))
+    every player p {
+        check(p:id < 2)
+        winner(10)
+    }
+    winner(99)
+}
+");
+        assert_eq!(result, "active\nwinners: 2, 0, 10");
+    }
+
+    #[test]
+    fn players_with_the_most_cards_can_be_found_without_variables() {
+        let result = winners_of("
+players 3
+stack collection per player
+
+def setup(){
+    deck > players:1:collection 2
+    deck > players:2:collection 5
+    deck > players:3:collection 5
+    every player p {
+        if(every player q: count(p:collection) >= count(q:collection)){
+            winner(p:id)
+        }
+    }
+}
+");
+        assert_eq!(result, "active\nwinners: 2, 3");
     }
 }

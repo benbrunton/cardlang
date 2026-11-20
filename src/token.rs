@@ -30,6 +30,11 @@ pub enum Token {
     Minus,
     LessThan,
     Values,
+    Every,
+    In,
+    Colon,
+    LessOrEqual,
+    GreaterOrEqual,
     // free text, e.g. the message in check(rule, message)
     Text(String)
 }
