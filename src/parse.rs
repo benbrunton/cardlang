@@ -515,14 +515,15 @@ fn parse_primary(tokens_iter: &mut std::slice::Iter<SourceToken>) -> Result<Expr
             Ok(cards) if !cards.is_empty() => Expression::Cards(cards),
             _ => return Err(ParseError::new(ParseErrorType::UnexpectedToken, source_token.line_number))
         },
-        Token::Every => {
+        Token::Every | Token::Any => {
             let (kind, variable, has_colon) = build_every_header(tokens_iter, source_token.line_number)?;
             if !has_colon {
-                // as a value, `every` is a test: every player p: <condition>
+                // as a value, `every`/`any` is a test: every player p: <condition>
                 return Err(ParseError::new(ParseErrorType::UnexpectedToken, source_token.line_number));
             }
             let condition = parse_or(tokens_iter)?;
-            Expression::Every(Box::new(EveryTest{ kind, variable, condition }))
+            let any = source_token.token == Token::Any;
+            Expression::Every(Box::new(EveryTest{ any, kind, variable, condition }))
         },
         Token::OpenParens => {
             let inner = parse_or(tokens_iter)?;
@@ -615,12 +616,13 @@ fn build_value_table(tokens_iter: &mut std::slice::Iter<SourceToken>, line_numbe
 fn build_every_header(tokens_iter: &mut std::slice::Iter<SourceToken>, line_number: u32) -> Result<(EveryKind, String, bool), ParseError> {
     let unexpected = || ParseError::new(ParseErrorType::UnexpectedToken, line_number);
 
-    let is_player = match tokens_iter.next() {
-        Some(SourceToken{ token: Token::Symbol(s), .. }) if s == "player" => true,
-        Some(SourceToken{ token: Token::Symbol(s), .. }) if s == "card" => false,
+    // player, card or group
+    let what = match tokens_iter.next() {
+        Some(SourceToken{ token: Token::Symbol(s), .. }) if s == "player" || s == "card" || s == "group" => s.clone(),
         Some(_) => return Err(unexpected()),
         None => return Err(ParseError::new(ParseErrorType::UnexpectedEndOfStream, line_number))
     };
+    let is_player = what == "player";
 
     let (variable, mut has_colon) = match tokens_iter.next() {
         Some(SourceToken{ token: Token::Symbol(s), .. }) => match s.strip_suffix(':') {
@@ -651,7 +653,11 @@ fn build_every_header(tokens_iter: &mut std::slice::Iter<SourceToken>, line_numb
             },
             other => other
         };
-        EveryKind::Card(pile)
+        if what == "group" {
+            EveryKind::Group(pile)
+        } else {
+            EveryKind::Card(pile)
+        }
     };
 
     if !has_colon && peek_token(tokens_iter) == Some(Token::Colon) {
@@ -1751,6 +1757,9 @@ mod test{
     #[test]
     fn incomplete_or_invalid_source_is_a_parse_error_not_a_panic() {
         let cases = [
+            "def setup(){ any player p { } }",
+            "def setup(){ check(any thing x: true) }",
+            "def setup(){ check(any group g: true) }",
             "deck jokers",
             "deck standard without Eleven",
             "deck standard without",

@@ -2677,4 +2677,70 @@ def setup(){
 ");
         assert_eq!(result, "active\nwinners: 6, 4");
     }
+
+    #[test]
+    fn any_is_true_when_at_least_one_matches() {
+        let result = winners_of("
+players 3
+stack middle
+
+def setup(){
+    if(any player p: count(p:hand) > 0){
+        winner(1)
+    }
+    deck > players:2:hand
+    if(any player p: count(p:hand) > 0){
+        winner(2)
+    }
+    if(any card c in middle: true){
+        winner(3)
+    }
+    if(any card c in [7d, kh]: c:rank is King){
+        winner(4)
+    }
+}
+");
+        // any over an empty pile is false
+        assert_eq!(result, "active\nwinners: 2, 4");
+    }
+
+    #[test]
+    fn any_group_tries_every_combination_of_cards() {
+        let result = winners_of("
+players 2
+
+def setup(){
+    .(3 + 7 is 10, but no combination of 3, 7 and 13 makes 12)
+    if(any group g in [3c, 7d, kh]: sum(g) is 10){
+        winner(1)
+    }
+    if(any group g in [3c, 7d, kh]: sum(g) is 12){
+        winner(2)
+    }
+    if(every group g in [3c, 7d]: count(g) >= 1){
+        winner(3)
+    }
+    every group g in [as, 2c] {
+        winner(sum(g))
+    }
+}
+");
+        assert_eq!(result, "active\nwinners: 1, 3, 1, 2, 3");
+    }
+
+    #[test]
+    fn group_refuses_piles_that_are_too_big() {
+        let result = winners_of("
+players 2
+
+def setup(){
+    if(any group g in deck: count(g) is 1){
+        winner(1)
+    }
+    winner(2)
+}
+");
+        // 52 cards would be 2^52 combinations
+        assert_eq!(result, "active\nwinners: 2");
+    }
 }

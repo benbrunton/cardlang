@@ -137,7 +137,9 @@ pub enum BinaryOp {
 pub enum EveryKind {
     Player,
     // the cards in a pile (any expression that gives cards)
-    Card(Expression)
+    Card(Expression),
+    // every combination of one or more cards from a pile
+    Group(Expression)
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -149,6 +151,8 @@ pub struct EveryLoop {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct EveryTest {
+    // `any` (at least one) instead of `every` (all of them)
+    pub any: bool,
     pub kind: EveryKind,
     pub variable: String,
     pub condition: Expression
@@ -199,9 +203,13 @@ impl std::fmt::Display for Expression {
                 let codes: Vec<String> = cards.iter().map(crate::cards::card_code).collect();
                 write!(f, "[{}]", codes.join(", "))
             },
-            Expression::Every(e) => match &e.kind {
-                EveryKind::Player => write!(f, "every player {}: {}", e.variable, e.condition),
-                EveryKind::Card(pile) => write!(f, "every card {} in {}: {}", e.variable, pile, e.condition)
+            Expression::Every(e) => {
+                let word = if e.any { "any" } else { "every" };
+                match &e.kind {
+                    EveryKind::Player => write!(f, "{} player {}: {}", word, e.variable, e.condition),
+                    EveryKind::Card(pile) => write!(f, "{} card {} in {}: {}", word, e.variable, pile, e.condition),
+                    EveryKind::Group(pile) => write!(f, "{} group {} in {}: {}", word, e.variable, pile, e.condition)
+                }
             }
         }
     }

@@ -96,6 +96,42 @@ struct Snapshot {
 }
 
 const INTERNAL_REF: &str = "_ref";
+
+// `group` tries every combination, which doubles with each card, so piles
+// bigger than this are refused (2^20 is about a million combinations)
+const MAX_GROUP_PILE: usize = 20;
+
+// what an `every` / `any` goes through
+enum EveryItems {
+    Objects(Vec<ArgumentValue>),
+    // combinations are made one at a time, as they're needed
+    Groups(Vec<Card>)
+}
+
+impl EveryItems {
+    fn len(&self) -> usize {
+        match self {
+            EveryItems::Objects(objects) => objects.len(),
+            // every non-empty combination
+            EveryItems::Groups(cards) => (1usize << cards.len()) - 1
+        }
+    }
+
+    fn get(&self, i: usize) -> ArgumentValue {
+        match self {
+            EveryItems::Objects(objects) => objects[i].clone(),
+            EveryItems::Groups(cards) => {
+                // the bits of i + 1 say which cards are in this combination
+                let mask = i + 1;
+                let group = cards.iter().enumerate()
+                    .filter(|(n, _)| mask & (1 << n) != 0)
+                    .map(|(_, card)| *card)
+                    .collect();
+                ArgumentValue::Value(PrimitiveValue::Stack(group))
+            }
+        }
+    }
+}
 const MAX_CALL_DEPTH: usize = 256;
 
 #[derive(Clone, Debug)]
@@ -669,16 +705,33 @@ impl Runtime {
         }
     }
 
-    // the players, or the cards in a pile, that `every` goes through
-    fn every_items(&mut self, kind: &EveryKind) -> Vec<ArgumentValue> {
+    // the players, cards or groups of cards that `every` / `any` go through
+    fn every_items(&mut self, kind: &EveryKind) -> EveryItems {
+        let pile_cards = |runtime: &mut Self, pile: &Expression| match runtime.resolve_expression(pile) {
+            PrimitiveValue::Stack(cards) => Some(cards),
+            other => {
+                eprintln!("'{}' is not a pile of cards (got {:?})", pile, other);
+                None
+            }
+        };
         match kind {
-            EveryKind::Player => self.players.clone().into_iter().map(Self::build_player_object).collect(),
-            EveryKind::Card(pile) => match self.resolve_expression(pile) {
-                PrimitiveValue::Stack(cards) => cards.iter().map(|c| self.build_card_object(*c)).collect(),
-                other => {
-                    eprintln!("every card: '{}' is not a pile of cards (got {:?})", pile, other);
-                    vec![]
-                }
+            EveryKind::Player => EveryItems::Objects(
+                self.players.clone().into_iter().map(Self::build_player_object).collect()
+            ),
+            EveryKind::Card(pile) => match pile_cards(self, pile) {
+                Some(cards) => EveryItems::Objects(cards.iter().map(|c| self.build_card_object(*c)).collect()),
+                None => EveryItems::Objects(vec![])
+            },
+            EveryKind::Group(pile) => match pile_cards(self, pile) {
+                Some(cards) if cards.len() > MAX_GROUP_PILE => {
+                    eprintln!(
+                        "'{}' has {} cards - too many to try every group (at most {})",
+                        pile, cards.len(), MAX_GROUP_PILE
+                    );
+                    EveryItems::Objects(vec![])
+                },
+                Some(cards) => EveryItems::Groups(cards),
+                None => EveryItems::Objects(vec![])
             }
         }
     }
@@ -686,9 +739,10 @@ impl Runtime {
     // every player p { ... }: a check, return or failed transfer inside the
     // loop ends the whole function, as it would outside a loop
     fn handle_every_loop(&mut self, every: &EveryLoop) -> Flow {
-        for item in self.every_items(&every.kind) {
+        let items = self.every_items(&every.kind);
+        for i in 0..items.len() {
             let mut frame = HashMap::new();
-            frame.insert(every.variable.clone(), item);
+            frame.insert(every.variable.clone(), items.get(i));
             self.call_stack.push(frame);
             let flow = self.handle_statements(&every.body);
             self.call_stack.pop();
@@ -699,19 +753,24 @@ impl Runtime {
         Flow::Continue
     }
 
-    // every player p: condition - true when it holds for all of them
+    // every ...: true when the condition holds for all of them
+    // any ...: true when it holds for at least one
     fn every_test(&mut self, every: &EveryTest) -> bool {
-        for item in self.every_items(&every.kind) {
+        let items = self.every_items(&every.kind);
+        for i in 0..items.len() {
             let mut frame = HashMap::new();
-            frame.insert(every.variable.clone(), item);
+            frame.insert(every.variable.clone(), items.get(i));
             self.call_stack.push(frame);
             let holds = self.resolve_to_bool(&every.condition);
             self.call_stack.pop();
-            if !holds {
+            if every.any && holds {
+                return true;
+            }
+            if !every.any && !holds {
                 return false;
             }
         }
-        true
+        !every.any
     }
 
     // returns false when the transfer can't happen
