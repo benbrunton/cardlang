@@ -1742,4 +1742,128 @@ def setup(){
 ");
         assert_eq!(result, "active\nwinners: 2");
     }
+
+    #[test]
+    fn a_transfer_count_moves_that_many_cards_to_each_destination() {
+        let mut game = game_from_source("
+players 3
+stack middle
+
+def setup(){
+    deck > middle 4
+    deck > players 3
+}
+");
+        game.start();
+
+        assert_eq!(game.show("middle"), "king diamonds, queen diamonds, jack diamonds, ten diamonds");
+        assert_eq!(game.show("players"), "player 1 (cards: 3), player 2 (cards: 3), player 3 (cards: 3)");
+        assert_eq!(game.show("player 1"), "nine diamonds, six diamonds, three diamonds");
+    }
+
+    #[test]
+    fn a_transfer_count_larger_than_the_source_moves_what_there_is() {
+        let mut game = game_from_source("
+players 2
+stack a
+stack b
+
+def setup(){
+    deck > a 2
+    a > b 5
+}
+");
+        game.start();
+
+        assert_eq!(game.show("a"), "");
+        assert_eq!(game.show("b"), "queen diamonds, king diamonds");
+    }
+
+    #[test]
+    fn taking_moves_exactly_the_given_cards() {
+        let mut game = game_from_source("
+players 2
+stack middle
+stack pile
+
+def is_ace(card){
+    return(card:rank is Ace)
+}
+
+def setup(){
+    deck > middle taking filter(deck, is_ace)
+    middle > pile taking filter(middle, is_ace)
+}
+");
+        game.start();
+
+        assert_eq!(game.show("middle"), "");
+        assert_eq!(game.show("pile"), "ace spades, ace hearts, ace clubs, ace diamonds");
+        assert_eq!(game.show("players"), "player 1 (cards: 0), player 2 (cards: 0)");
+    }
+
+    #[test]
+    fn taking_cards_that_are_not_all_there_moves_nothing_and_stops_the_function() {
+        let mut game = game_from_source("
+players 2
+stack middle
+stack pile
+
+def is_ace(card){
+    return(card:rank is Ace)
+}
+
+def setup(){
+    deck > middle 1
+    middle > pile taking filter(deck, is_ace)
+    end()
+}
+");
+        game.start();
+
+        assert_eq!(game.show("middle"), "king diamonds");
+        assert_eq!(game.show("pile"), "");
+        assert_eq!(game.show("game"), "active");
+    }
+
+    #[test]
+    fn a_transfer_with_an_unknown_stack_stops_the_function() {
+        let mut game = game_from_source("
+players 2
+
+def setup(){
+    deck > nowhere
+    end()
+}
+");
+        game.start();
+
+        assert_eq!(game.show("game"), "active");
+    }
+
+    #[test]
+    fn cards_in_stack_checks_every_card_is_present() {
+        let result = winners_of("
+players 2
+stack middle
+
+def is_king(card){
+    return(card:rank is King)
+}
+
+def setup(){
+    deck > middle 2
+    if(cards_in_stack(filter(middle, is_king), middle)){
+        winner(1)
+    }
+    if(cards_in_stack(filter(deck, is_king), middle)){
+        winner(2)
+    }
+    if(cards_in_stack(middle, deck)){
+        winner(3)
+    }
+}
+");
+        assert_eq!(result, "active\nwinners: 1");
+    }
 }

@@ -64,7 +64,12 @@ pub enum TransferModifier {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum TransferCount {
-    End
+    // every card in the source
+    End,
+    // this many cards to each destination stack
+    Number(usize),
+    // exactly these cards, all or nothing
+    Taking(Expression)
 }
 
 #[derive(Debug, PartialEq, Clone)]

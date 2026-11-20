@@ -150,6 +150,20 @@ impl Runtime {
                 };
                 None
             },
+            "cards_in_stack" => {
+                let cards = f.arguments.get(0).map(|a| self.resolve_expression(a));
+                let stack = f.arguments.get(1).map(|a| self.resolve_expression(a));
+                let result = match (cards, stack) {
+                    (Some(PrimitiveValue::Stack(cards)), Some(PrimitiveValue::Stack(stack))) => {
+                        cards_in_stack(&cards, &stack)
+                    },
+                    _ => {
+                        eprintln!("cards_in_stack: expected two stacks of cards");
+                        false
+                    }
+                };
+                Some(PrimitiveValue::Bool(result))
+            },
             "filter" => {
                 let stack = match f.arguments.get(0).map(|a| self.resolve_expression(a)) {
                     Some(PrimitiveValue::Stack(s)) => s,
@@ -277,7 +291,12 @@ impl Runtime {
     fn handle_statements(&mut self, statements: &[Statement]) -> Flow {
         for statement in statements.iter() {
             match statement {
-                Statement::Transfer(t) => self.handle_transfer(t),
+                Statement::Transfer(t) => {
+                    // a transfer that can't happen stops the function, like a failed check
+                    if !self.handle_transfer(t) {
+                        return Flow::Return(PrimitiveValue::Bool(false));
+                    }
+                },
                 Statement::FunctionCall(f) => {
                     let _ = self.handle_function_call(f);
                 },
@@ -366,25 +385,72 @@ impl Runtime {
         ArgumentValue::Obj(card_object)
     }
 
-    fn handle_transfer(&mut self, t: &Transfer) {
+    // returns false when the transfer can't happen
+    fn handle_transfer(&mut self, t: &Transfer) -> bool {
         let from = self.get_stack(&t.from);
         let to = self.get_stack(&t.to);
 
+        let mut known = true;
         for (name, stack) in [(&t.from, &from), (&t.to, &to)].iter() {
             if stack.is_none() {
-                eprintln!("transfer ignored: unknown stack '{}'", name);
+                eprintln!("transfer failed: unknown stack '{}'", name);
+                known = false;
             }
         }
+        if !known {
+            return false;
+        }
 
-        let transfer_result = transfer(from, to, t.count.as_ref());
+        if let Some(TransferCount::Taking(cards)) = &t.count {
+            return self.transfer_specific_cards(t, from, to, cards);
+        }
 
-        let (new_from, new_to) = match transfer_result {
+        let (new_from, new_to) = match transfer(from, to, t.count.as_ref()) {
             Some((a, b)) => (a, b),
-            _ => return
+            None => return false
         };
 
         self.set_stack(&t.from, new_from);
         self.set_stack(&t.to, new_to);
+        true
+    }
+
+    // `from > to taking cards`: moves exactly these cards, or nothing
+    fn transfer_specific_cards(
+        &mut self,
+        t: &Transfer,
+        from: Option<TransferTarget>,
+        to: Option<TransferTarget>,
+        cards: &Expression
+    ) -> bool {
+        let (mut from_stack, mut to_stack) = match (from, to) {
+            (Some(TransferTarget::Stack(f)), Some(TransferTarget::Stack(t))) => (f, t),
+            _ => {
+                eprintln!("transfer failed: 'taking' needs a single stack on each side");
+                return false;
+            }
+        };
+
+        let wanted = match self.resolve_expression(cards) {
+            PrimitiveValue::Stack(c) => c,
+            other => {
+                eprintln!("transfer failed: 'taking' needs cards, got {:?}", other);
+                return false;
+            }
+        };
+
+        for card in wanted.iter() {
+            match from_stack.iter().position(|c| c == card) {
+                Some(i) => { from_stack.remove(i); },
+                // not all the cards are there, so move none of them
+                None => return false
+            }
+            to_stack.push(*card);
+        }
+
+        self.set_stack(&t.from, TransferTarget::Stack(from_stack));
+        self.set_stack(&t.to, TransferTarget::Stack(to_stack));
+        true
     }
 
     fn handle_if_statement(&mut self, i: &IfStatement) -> Flow {

@@ -239,6 +239,18 @@ fn create_transfer(from: &str, tokens_iter: &mut std::slice::Iter<SourceToken>, 
             tokens_iter.next();
             Some(TransferCount::End)
         },
+        Some(SourceToken{ token: Token::Number(n), line_number: l }) => {
+            tokens_iter.next();
+            if *n < 0.0 || n.fract() != 0.0 {
+                return Err(ParseError::new(ParseErrorType::UnexpectedToken, *l));
+            }
+            Some(TransferCount::Number(*n as usize))
+        },
+        Some(SourceToken{ token: Token::Symbol(s), ..}) if s == "taking" => {
+            tokens_iter.next();
+            let cards = parse_or(tokens_iter).map_err(|e| e.or_line(line_number))?;
+            Some(TransferCount::Taking(cards))
+        },
         _ => None
     };
 
@@ -1551,7 +1563,7 @@ mod test{
             ")",
             "5",
             "name x 5",
-            "def setup(){ deck > middle 4 }",
+            "def setup(){ deck > middle taking }",
             "def setup(){ if true){ end() } }",
             "name",
             "players",
