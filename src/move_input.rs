@@ -28,11 +28,11 @@ pub fn parse_move(line: &str) -> Result<MoveInput, String> {
         rest = rest[word.len()..].trim_start();
     }
 
-    // `move 2` was the old way to move as player 2
-    if input.name.as_deref() == Some("move") && input.player.is_none() {
-        let next = rest.split_whitespace().next().unwrap_or("");
+    // `play 2` (or the old `move 2`): the player number goes first
+    if let (Some(name), None) = (&input.name, input.player) {
+        let next = rest.trim();
         if !next.is_empty() && next.chars().all(|c| c.is_ascii_digit()) {
-            return Err(format!("to move as player {0}, put the number first: '{0} move'", next));
+            return Err(format!("to move as player {0}, put the number first: '{0} {1}'", next, name));
         }
     }
 
@@ -101,8 +101,8 @@ mod test {
         assert!(parse_move("take / 7h").is_err());
         assert!(parse_move("_take").is_err());
         assert_eq!(
-            parse_move("move 2"),
-            Err("to move as player 2, put the number first: '2 move'".to_string())
+            parse_move("play 2"),
+            Err("to move as player 2, put the number first: '2 play'".to_string())
         );
     }
 }

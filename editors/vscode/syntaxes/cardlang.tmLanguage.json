@@ -69,36 +69,29 @@
       "comment": "top-level declarations at the start of a line",
       "patterns": [
         {
-          "match": "^\\s*(stack)\\s+([A-Za-z_]\\w*)(?:\\s+(per)\\s+(player))?",
+          "comment": "player stack collection / player number score",
+          "match": "^\\s*(player)\\s+(stack|number)\\s+([A-Za-z_]\\w*)",
           "captures": {
             "1": {
-              "name": "storage.type.declaration.cardlang"
+              "name": "storage.modifier.player.cardlang"
             },
             "2": {
-              "name": "variable.other.stack.cardlang"
+              "name": "storage.type.declaration.cardlang"
             },
             "3": {
-              "name": "keyword.other.per.cardlang"
-            },
-            "4": {
-              "name": "keyword.other.per.cardlang"
+              "name": "variable.other.declared.cardlang"
             }
           }
         },
         {
-          "match": "^\\s*(var)\\s+([A-Za-z_]\\w*)(?:\\s+(per)\\s+(player))?",
+          "comment": "stack middle / number dealer",
+          "match": "^\\s*(stack|number)\\s+([A-Za-z_]\\w*)",
           "captures": {
             "1": {
               "name": "storage.type.declaration.cardlang"
             },
             "2": {
               "name": "variable.other.declared.cardlang"
-            },
-            "3": {
-              "name": "keyword.other.per.cardlang"
-            },
-            "4": {
-              "name": "keyword.other.per.cardlang"
             }
           }
         },
@@ -146,8 +139,8 @@
       ]
     },
     "function-definition": {
-      "comment": "def name(a, b) - the parameters are highlighted as parameters",
-      "begin": "\\b(def)\\s+([A-Za-z_]\\w*)\\s*(\\()",
+      "comment": "def name(a, b) / move name(player, cards) - the parameters are highlighted as parameters",
+      "begin": "\\b(def|move)\\s+([A-Za-z_]\\w*)\\s*(\\()",
       "end": "\\)",
       "beginCaptures": {
         "1": {
@@ -267,8 +260,8 @@
       ]
     },
     "every": {
-      "comment": "every player p / every card c in pile / any group g in pile",
-      "match": "\\b(every|any)\\s+(player|card|group)\\s+([A-Za-z_]\\w*)(?:\\s+(in)\\b)?",
+      "comment": "every player p / every card c in pile / any group g in pile / most player p",
+      "match": "\\b(every|any|most)\\s+(player|card|group)\\s+([A-Za-z_]\\w*)(?:\\s+(in)\\b)?",
       "captures": {
         "1": {
           "name": "keyword.control.loop.cardlang"
@@ -285,7 +278,7 @@
       }
     },
     "builtin-call": {
-      "begin": "\\b(shuffle|count|sum|filter|cards_in_stack|valid_moves|winner|end|next_player|gather|return)\\s*(\\()",
+      "begin": "\\b(shuffle|count|sum|filter|cards_in_stack|winner|end|next_player|gather|return)\\s*(\\()",
       "end": "\\)",
       "beginCaptures": {
         "1": {
@@ -343,7 +336,7 @@
     "keywords": {
       "patterns": [
         {
-          "match": "\\b(if|else|return|every|any|in)\\b",
+          "match": "\\b(if|else|return|every|any|most|in)\\b",
           "name": "keyword.control.cardlang"
         },
         {
@@ -351,7 +344,7 @@
           "name": "keyword.operator.word.cardlang"
         },
         {
-          "match": "\\b(taking|end|per|without)\\b",
+          "match": "\\b(taking|end|without)\\b",
           "name": "keyword.other.cardlang"
         },
         {
@@ -359,7 +352,7 @@
           "name": "variable.language.cardlang"
         },
         {
-          "match": "\\b(values|var|stack|name|def)\\b",
+          "match": "\\b(values|number|stack|name|def|move)\\b",
           "name": "storage.type.cardlang"
         }
       ]

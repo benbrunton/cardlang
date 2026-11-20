@@ -35,6 +35,15 @@ pub enum Token {
     Colon,
     LessOrEqual,
     GreaterOrEqual,
+    // [7d, kh]: specific cards, as typed
+    Cards(String),
+    Assign,
+    Any,
+    Most,
+    // the `number` declaration keyword
+    NumberType,
+    // `move take(...)`: a definition players can use as a move
+    Move,
     // free text, e.g. the message in check(rule, message)
     Text(String)
 }

@@ -1,9 +1,5 @@
 .(SCOPA
 
-  DRAFT: this file uses proposed syntax that doesn't exist yet, so it doesn't
-  parse. Each new piece is marked DESIGN n. Syntax that works today is unmarked.
-
-
   HOW TO PLAY
 
   Scopa is an Italian card game for two players. You capture cards from the
@@ -69,47 +65,39 @@
 name scopa
 players 2
 
-.(DESIGN 1: a deck declaration that removes ranks)
+.(a normal deck without the 8s, 9s and 10s: 40 cards)
 deck standard without Eight Nine Ten
 
 values { Jack 8, Queen 9, King 10 }
 
-.(DESIGN 9: a second, named value table. Each card gets a field with the
-  table's name, so a card's primiera value is card:primiera)
+.(the special values used for the primiera; each card gets card:primiera)
 values primiera {
     Seven 21, Six 18, Ace 16, Five 15, Four 14, Three 13, Two 12
     Jack 10, Queen 10, King 10
 }
 
 stack middle
-stack collection per player
+player stack collection
 
-.(DESIGN 2: variables - for the whole game, or one per player.
-  Numbers start at 0.)
-var dealer
-var last_capturer
-var score per player
-var scopas per player
-var primiera_total per player
+number dealer
+number last_capturer
+player number score
+player number scopas
+
 
 def setup(){
-    dealer = 2
+    dealer = 1
     new_hand()
 }
 
 def new_hand(){
-    .(DESIGN 3: gather() puts every card from every pile back in the deck)
     gather()
     shuffle(deck)
+    last_capturer = 0
     every player p {
         p:scopas = 0
     }
-    if(dealer is 1){
-        dealer = 2
-    } else {
-        dealer = 1
-    }
-    .(DESIGN 2: assigning current_player, so the player after the dealer starts)
+    .(the player who didn't deal goes first)
     if(dealer is 1){
         current_player = 2
     } else {
@@ -119,53 +107,50 @@ def new_hand(){
     deck > players 3
 }
 
-def player_move(player, move){
-    check(player:id is current_player, it's not your turn)
-    valid_moves(take, drop)
-    after_move()
-    next_player()
-}
 
-def take(player, move){
-    check(count(move:cards) is 1, play one card from your hand, e.g. take 5d / 2c 3s)
-    check(count(move:target) > 0, put a / before the cards you're capturing, e.g. take 5d / 2c 3s)
-    check(cards_in_stack(move:cards, player:hand), you can only play a card from your hand)
-    check(cards_in_stack(move:target, middle), you can only capture cards from the middle)
-    check(sum(move:target) is sum(move:cards), the cards you capture must add up to the card you play)
+.(Moves)
 
-    .(DESIGN 4: "any" - true if the condition holds for at least one)
-    if(any card c in middle: c:value is sum(move:cards)){
-        check(count(move:target) is 1, a card in the middle matches yours - you must take that card on its own)
+move take(player, played, captured){
+    check(count(played) is 1, play one card from your hand, e.g. take 5d / 2c 3s)
+    check(count(captured) > 0, put a / before the cards you're capturing, e.g. take 5d / 2c 3s)
+    check(cards_in_stack(played, player:hand), you can only play a card from your hand)
+    check(cards_in_stack(captured, middle), you can only capture cards from the middle)
+    check(sum(captured) is sum(played), the cards you capture must add up to the card you play)
+    if(any card c in middle: c:value is sum(played)){
+        check(count(captured) is 1, a card in the middle matches yours - you must take that card on its own)
     }
 
-    middle > player:collection taking move:target
-    player:hand > player:collection taking move:cards
+    middle > player:collection taking captured
+    player:hand > player:collection taking played
     last_capturer = player:id
 
-    .(a scopa, unless this was the last play of the hand)
+    .(clearing the middle is a scopa, unless it was the last play of the hand)
     if(count(middle) is 0 & is_last_play() is false){
         player:scopas = player:scopas + 1
     }
 }
 
-def drop(player, move){
-    check(count(move:cards) is 1, drop one card, e.g. drop 5d)
-    check(count(move:target) is 0, to capture cards use take, e.g. take 5d / 2c 3s)
+move drop(player, played){
+    check(count(played) is 1, drop one card, e.g. drop 5d)
+    check(cards_in_stack(played, player:hand), you can only drop a card from your hand)
     check(can_capture(player) is false, you can capture, so you must - use take)
-    player:hand > middle taking move:cards
+    player:hand > middle taking played
 }
 
-.(DESIGN 5: "group" - every combination of cards from a pile, for
-  "can any cards in the middle add up to this card?")
+.(true if any card in the hand can capture: some cards in the middle add up to it)
 def can_capture(player){
     return(any card c in player:hand: any group g in middle: sum(g) is c:value)
 }
+
+
+.(The end of a hand)
 
 .(true once the deck and every hand are empty)
 def is_last_play(){
     return(count(deck) is 0 & every player p: count(p:hand) is 0)
 }
 
+.(after_move runs after every successful move)
 def after_move(){
     if(every player p: count(p:hand) is 0){
         if(count(deck) > 0){
@@ -177,74 +162,65 @@ def after_move(){
 }
 
 def end_hand(){
-    .(the last player to capture takes what's left in the middle)
+    .(whoever captured last takes what's left in the middle)
     every player p {
         if(p:id is last_capturer){
             middle > p:collection end
         }
     }
 
-    score_most(is_any_card)
-    score_most(is_diamond)
-    score_primiera()
+    give_point(most player p: count(p:collection))
+    give_point(most player p: count(filter(p:collection, is_diamond)))
+    give_point(most player p: primiera(p:collection))
     every player p {
-        .(DESIGN 6: a card literal, [7d], for one specific card)
+        .(the settebello)
         if(cards_in_stack([7d], p:collection)){
             p:score = p:score + 1
         }
         p:score = p:score + p:scopas
     }
 
-    if(any player p: p:score >= 11){
-        end_game()
+    .(first to 11 wins; if tied for the lead, play another hand)
+    if((any player p: p:score >= 11) & (most player p: p:score) > 0){
+        winner(most player p: p:score)
+        end()
     } else {
-        new_hand()
+        next_hand()
     }
 }
 
-.(1 point to the player with the most cards of a kind; a tie scores nothing.
-  DESIGN 8: passing a function (is_diamond) as an argument, for filter)
-def score_most(kind){
-    every player p {
-        if(every player q: q:id is p:id or count(filter(p:collection, kind)) > count(filter(q:collection, kind))){
-            p:score = p:score + 1
-        }
+def next_hand(){
+    if(dealer is 1){
+        dealer = 2
+    } else {
+        dealer = 1
     }
-}
-
-def end_game(){
-    every player p {
-        if(every player q: q:id is p:id or p:score > q:score){
-            winner(p:id)
-            end()
-            return(true)
-        }
-    }
-    .(tied for the lead: play another hand)
     new_hand()
 }
 
-def is_any_card(card){
-    return(true)
+
+.(Scoring)
+
+.(1 point to a player; nobody scores when id is 0, which is what most gives for a tie)
+def give_point(id){
+    every player p {
+        if(p:id is id){
+            p:score = p:score + 1
+        }
+    }
 }
 
 def is_diamond(card){
     return(card:suit is Diamonds)
 }
 
-.(Primiera: each player's best card in each suit, by primiera value,
-  added together. A player missing a suit can't win it.)
-def score_primiera(){
-    .(DESIGN 10: a line break inside brackets doesn't end the statement)
-    every player p {
-        p:primiera_total = (best_in_suit(p:collection, Spades) + best_in_suit(p:collection, Hearts)
-            + best_in_suit(p:collection, Clubs) + best_in_suit(p:collection, Diamonds))
+.(the best card of each suit by primiera value, added up; 0 without all four suits)
+def primiera(pile){
+    if(has_every_suit(pile) is false){
+        return(0)
     }
-    every player p {
-        if(has_every_suit(p:collection) & every player q: q:id is p:id or p:primiera_total > q:primiera_total){
-            p:score = p:score + 1
-        }
-    }
+    return(best_in_suit(pile, Spades) + best_in_suit(pile, Hearts)
+        + best_in_suit(pile, Clubs) + best_in_suit(pile, Diamonds))
 }
 
 .(the highest primiera value among the cards of one suit, or 0 if there are none)
@@ -261,7 +237,3 @@ def has_every_suit(pile){
     return(best_in_suit(pile, Spades) > 0 & best_in_suit(pile, Hearts) > 0
         & best_in_suit(pile, Clubs) > 0 & best_in_suit(pile, Diamonds) > 0)
 }
-
-.(DESIGN 7: the table shows per-player variables, e.g.
-    score: player 1: 4, player 2: 6
-    scopas: player 1: 1, player 2: 0)

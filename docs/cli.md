@@ -33,7 +33,7 @@ In a terminal, press **Tab** to complete what you're typing. Press it twice to l
 | `show ` | what can be shown: `game`, `players`, the game's piles … then player numbers and their piles |
 | a move | cards in the current player's hand, then after a `/` the cards on the table, as short codes (`7h`) |
 
-Move names come from the game's `valid_moves(...)` calls.
+Move names are the game's `move` definitions.
 
 **Up** and **Down** go through the lines you've typed, so you can repeat or edit a move. **Ctrl-C** clears the line and **Ctrl-D** quits.
 
@@ -64,9 +64,9 @@ Any other line is a move:
 | Part | Meaning | Example |
 |---|---|---|
 | player | Optional. The number of the player making the move. Without it, the move is for the current player. | `2 drop 9d` |
-| name | Optional. Which move to make; the game's `valid_moves` decides what's allowed. | `take`, `drop` |
-| cards | Optional. The cards being played. They become `move:cards`. | `9d` |
-| `/ cards` | Optional. A second group of cards, such as what you're capturing. They become `move:target`. | `/ 4c 5s` |
+| name | Optional. Which of the game's moves to make. Without it, the moves are tried in the order the game declares them. | `take`, `drop` |
+| cards | Optional. The cards being played: the move's first group of cards. | `9d` |
+| `/ cards` | Optional. More groups of cards, such as what you're capturing. Each `/` starts the next group. | `/ 4c 5s` |
 
 Examples from [Simple Scopa](../examples/simple_scopa.card):
 
@@ -77,7 +77,9 @@ Examples from [Simple Scopa](../examples/simple_scopa.card):
 > 2 drop 8h              make a move as player 2
 ```
 
-For games where a move needs no name or cards, such as [Race](../examples/race.card), type any word: `move`, or `2 move` for player 2.
+For a move without cards, such as [Race](../examples/race.card)'s `play`, just type its name: `play`, or `2 play` for player 2.
+
+Only the current player can move, and after a successful move the turn passes on automatically. A number in front is for checking whose move it is: `2 play` is rejected with `it's not your turn` unless it's player 2's turn.
 
 **Writing cards.** Separate cards with spaces or commas. Each card can be written as:
 - a short code: rank then suit. Ranks are `a`, `2`–`10` (or `t`), `j`, `q`, `k`; suits are `s`, `h`, `c`, `d`. For example `7h`, `10d`, `ks`, `AS`.
@@ -91,17 +93,19 @@ After `start` and after every accepted move, the CLI shows the state of the game
 
 ```
 player 2 to play
-  deck: 42 cards
-  middle: three hearts, ten clubs, ace clubs, ten diamonds
-  player 2 hand: six clubs, ace diamonds, eight hearts
-  collection: player 1: 0 cards, player 2: 2 cards
+  deck: 24 cards
+  middle: 3c, 7d, kh
+  player 1: score 4, scopas 1, collection 12 cards
+  player 2: score 6, scopas 0, collection 9 cards
+  your hand (player 2): 5s, 2h, 7c
 ```
 
 - the first line says whose turn it is, or `game over - winners: …`
 - the deck shows only how many cards are left, because it's face down
 - every pile declared with `stack` is listed; a pile with more than 10 cards shows its size and top card
+- if the game declares `player number` or `player stack` fields, each player gets a line with their numbers and how many cards are in their piles
 - the current player's hand is shown in full, so the CLI works for players passing the keyboard round
-- piles declared with `stack <name> per player` show how many cards each player has
+- cards are shown as codes (`7h`, `10d`, `ks`), the same way you type them in moves
 
 The `show` commands below give more detail.
 
@@ -113,15 +117,17 @@ A move either happens completely or not at all. If it's rejected, nothing in the
 |---|---|
 | before `start` | `move ignored: the game has not started - use 'start'` |
 | after the game has ended | `move ignored: the game is over` |
-| the game has no `player_move` function | `move ignored: this game does not define player_move` |
+| the game has no moves | `move ignored: this game has no moves - declare them with 'move'` |
+| it's another player's turn | `move ignored: it's not your turn` |
+| more groups of cards than the move takes | `move ignored: drop takes one group of cards, without a /` |
 | no such player (e.g. `0 move`, or `3 move` with 2 players) | `move ignored: there is no player 3 (players: 2)` |
 | a `check` with a [message](language-reference.md#check-messages) fails | `move ignored: put a / before the cards you're capturing, e.g. take 9d / 4c 5s` |
-| a `check` without a message fails | `move ignored: not allowed: check failed in take: sum(move:target) is sum(move:cards)` |
-| a transfer can't happen | `move ignored: not allowed: transfer failed in drop: player:hand > middle taking move:cards (king clubs is not in player:hand)` |
+| a `check` without a message fails | `move ignored: not allowed: check failed in take: sum(captured) is sum(played)` |
+| a transfer can't happen | `move ignored: not allowed: transfer failed in drop: player:hand > middle taking played (king clubs is not in player:hand)` |
 | no move name given, and no move works | `move ignored: not allowed: no valid move - check failed in take: …; check failed in drop: …` (one reason per move tried) |
-| an unknown move name | `move ignored: not allowed: unknown move 'play' - valid moves: take, drop` |
+| an unknown move name | `move ignored: unknown move 'play' - the moves are: take, drop` |
 | something that isn't a card | `'7x' is not a card (try 7h, 10d, ks or 'seven hearts')` |
-| the old `move 2` syntax | `to move as player 2, put the number first: '2 move'` |
+| a player number after the move name | `to move as player 2, put the number first: '2 play'` |
 
 Games can give their own messages, as Simple Scopa does. Otherwise the reason shows the game's rule as written in the `.card` file.
 
@@ -133,9 +139,10 @@ Games can give their own messages, as Simple Scopa does. Otherwise the reason sh
 | `show name` | the game's `name` | `race` |
 | `show players` | every player and how many cards are in their hand | `player 1 (cards: 26), player 2 (cards: 26)` |
 | `show player <n>` | player `n`'s hand | `king diamonds, jack clubs` |
-| `show player <n> <stack>` | one of player `n`'s own stacks (`hand`, or one declared with `stack <name> per player`) | `jack spades, jack diamonds` |
+| `show player <n> <field>` | one of player `n`'s piles (`hand`, or one declared with `player stack`) or numbers (`player number`) | `jack spades, jack diamonds` or `4` |
 | `show current_player` | whose turn it is | `2` |
 | `show deck` | the cards in the deck | `ace spades, two spades, …` |
 | `show <pile>` | the cards in a pile declared with `stack` | `four hearts` |
+| `show <number>` | a number declared with `number` | `2` |
 
-Cards are listed bottom first, so the **last** card shown is the top of the pile. An empty pile prints a blank line. An unknown name prints `<name> not found`. `show player` without a valid number prints `usage: show player <number>`. A player that doesn't exist prints `there is no player <n>`, and an unknown stack prints `player 1 has no stack '<name>'`.
+Cards are listed bottom first, so the **last** card shown is the top of the pile. An empty pile prints a blank line. An unknown name prints `<name> not found`. `show player` without a valid number prints `usage: show player <number>`. A player that doesn't exist prints `there is no player <n>`, and an unknown field prints `player 1 has no stack or number '<name>'`.

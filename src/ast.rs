@@ -2,15 +2,21 @@
 pub enum Statement {
     Declaration(Declaration),
     Definition(Definition),
+    // move take(player, played, captured) { ... }: something a player can do
+    MoveDefinition(Definition),
     Transfer(Transfer),
     FunctionCall(FunctionCall),
     IfStatement(IfStatement),
     CheckStatement(CheckStatement),
     ReturnStatement(ReturnStatement),
-    // `values { Jack 8, Queen 9 }`: card values by rank
-    ValueTable(Vec<(String, f64)>),
+    // `values { Jack 8 }` or `values primiera { Seven 21 }`: card values by rank
+    ValueTable(ValueTable),
+    // `deck standard without Eight Nine Ten`: the ranks left out of the deck
+    DeckWithout(Vec<String>),
     // every player p { ... } / every card c in pile { ... }
     Every(EveryLoop),
+    // dealer = 2, p:score = p:score + 1, current_player = 1
+    Assign(Assignment),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -24,7 +30,11 @@ pub enum Expression {
     Or(Box<Or>),
     Binary(Box<Binary>),
     // every player p: condition / every card c in pile: condition
-    Every(Box<EveryTest>)
+    Every(Box<EveryTest>),
+    // [7d, kh]: specific cards
+    Cards(Vec<crate::cards::Card>),
+    // most player p: <number> - the id of the player with the highest value, or 0 if tied
+    Most(Box<MostExpression>)
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -34,8 +44,12 @@ pub enum GlobalKey {
     Stack,
     Deck,
     CurrentPlayer,
-    // a stack that every player has, e.g. `stack collection per player`
-    PlayerStack
+    // a stack that every player has: `player stack collection`
+    PlayerStack,
+    // a number for the whole game: `number dealer`
+    Number,
+    // a number that every player has: `player number score`
+    PlayerNumber
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -133,7 +147,9 @@ pub enum BinaryOp {
 pub enum EveryKind {
     Player,
     // the cards in a pile (any expression that gives cards)
-    Card(Expression)
+    Card(Expression),
+    // every combination of one or more cards from a pile
+    Group(Expression)
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -145,6 +161,8 @@ pub struct EveryLoop {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct EveryTest {
+    // `any` (at least one) instead of `every` (all of them)
+    pub any: bool,
     pub kind: EveryKind,
     pub variable: String,
     pub condition: Expression
@@ -191,9 +209,18 @@ impl std::fmt::Display for Expression {
                 };
                 write!(f, "{} {} {}", b.left, op, b.right)
             },
-            Expression::Every(e) => match &e.kind {
-                EveryKind::Player => write!(f, "every player {}: {}", e.variable, e.condition),
-                EveryKind::Card(pile) => write!(f, "every card {} in {}: {}", e.variable, pile, e.condition)
+            Expression::Most(m) => write!(f, "most player {}: {}", m.variable, m.value),
+            Expression::Cards(cards) => {
+                let codes: Vec<String> = cards.iter().map(crate::cards::card_code).collect();
+                write!(f, "[{}]", codes.join(", "))
+            },
+            Expression::Every(e) => {
+                let word = if e.any { "any" } else { "every" };
+                match &e.kind {
+                    EveryKind::Player => write!(f, "{} player {}: {}", word, e.variable, e.condition),
+                    EveryKind::Card(pile) => write!(f, "{} card {} in {}: {}", word, e.variable, pile, e.condition),
+                    EveryKind::Group(pile) => write!(f, "{} group {} in {}: {}", word, e.variable, pile, e.condition)
+                }
             }
         }
     }
@@ -209,4 +236,27 @@ impl std::fmt::Display for Transfer {
             Some(TransferCount::Taking(cards)) => write!(f, " taking {}", cards)
         }
     }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct ValueTable {
+    // None for the main table (card:value), or a name such as primiera (card:primiera)
+    pub name: Option<String>,
+    pub entries: Vec<(String, f64)>
+}
+
+// the decks a game can use
+pub const DECK_NAMES: [&str; 1] = ["standard"];
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct Assignment {
+    // a number's name, a player field (p:score, players:2:score) or current_player
+    pub target: String,
+    pub value: Expression
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct MostExpression {
+    pub variable: String,
+    pub value: Expression
 }

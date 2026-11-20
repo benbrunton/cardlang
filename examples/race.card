@@ -14,12 +14,11 @@ def is_out(p){
     return(count(p:hand) is 0)
 }
 
-def player_move(player){
-    check(player:id is current_player)
+.(the only move: type 'play' to play your top card)
+move play(player){
     player:hand > middle
     if(is_out(player)){
         winner(player:id)
         end()
     }
-    next_player()
 }

@@ -27,6 +27,8 @@ jobs:
         run: |
           cargo run --quiet -- test examples/race.card
           cargo run --quiet -- test examples/turns.card
+          cargo run --quiet -- test examples/simple_scopa.card
+          cargo run --quiet -- test examples/scopa.card
 
       - name: Clippy
         run: cargo clippy --locked --all-targets -- -D warnings

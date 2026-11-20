@@ -1,5 +1,5 @@
 name turns
-deck StandardDeck
+deck standard
 players 2
 current_player 1
 stack middle
@@ -9,15 +9,13 @@ def setup(){
     deck > players end
 }
 
-def player_move(player){
-    check(player:id is current_player)
+move play(player){
     player:hand > middle
 
     if(count(player:hand) is 0){
         winner(player:id)
         end()
     }
-    next_player()
 }
 
 .test(

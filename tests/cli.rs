@@ -78,36 +78,36 @@ fn commands_before_build_explain_what_to_do() {
 #[test]
 fn bad_moves_are_reported_and_do_not_crash() {
     let output = run_interactive(
-        "build ./examples/race.card\nmove\nstart\nmove 2\n0 move\n3 move\ntake 7x\nshow player\nshow player 9\n2 move\nmove\nshow current_player\nexit\n"
+        "build ./examples/race.card\nplay\nstart\nplay 2\n0 play\n3 play\ntake 7x\nshow player\nshow player 9\n2 play\nplay\nshow current_player\nexit\n"
     );
     let stdout = stdout_of(&output);
 
     assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
     assert!(stdout.contains("move ignored: the game has not started"));
-    assert!(stdout.contains("to move as player 2, put the number first: '2 move'"));
+    assert!(stdout.contains("to move as player 2, put the number first: '2 play'"));
     assert!(stdout.contains("move ignored: there is no player 0"));
     assert!(stdout.contains("move ignored: there is no player 3"));
     assert!(stdout.contains("'7x' is not a card"));
     assert!(stdout.contains("usage: show player <number>"));
     assert!(stdout.contains("there is no player 9"));
     // player 2 can't move out of turn...
-    assert!(stdout.contains("move ignored: not allowed"));
+    assert!(stdout.contains("move ignored: it's not your turn"));
     // ...but the current player can, so it's now player 2's turn
     assert!(stdout.contains("> 2\n"));
 }
 
 #[test]
-fn moving_in_a_game_without_player_move_is_reported() {
+fn moving_in_a_game_without_moves_is_reported() {
     let dir = std::env::temp_dir().join(format!("cardlang-cli-test-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let file = dir.join("no_moves.card");
     std::fs::write(&file, "name no_moves\nplayers 2\n").unwrap();
 
-    let output = run_interactive(&format!("build {}\nstart\nmove\nexit\n", file.display()));
+    let output = run_interactive(&format!("build {}\nstart\nplay\nexit\n", file.display()));
     std::fs::remove_dir_all(&dir).ok();
 
     assert!(output.status.success());
-    assert!(stdout_of(&output).contains("move ignored: this game does not define player_move"));
+    assert!(stdout_of(&output).contains("move ignored: this game has no moves - declare them with 'move'"));
 }
 
 #[test]
@@ -133,9 +133,9 @@ fn the_table_is_shown_after_start_and_after_each_move() {
     assert!(stdout.contains("player 1 to play"));
     assert!(stdout.contains("  deck: 42 cards"));
     assert!(stdout.contains("  middle: "));
-    assert!(stdout.contains("  player 1 hand: "));
-    assert!(stdout.contains("  collection: player 1: 0 cards, player 2: 0 cards"));
-
+    assert!(stdout.contains("  player 1: collection 0 cards"));
+    assert!(stdout.contains("  player 2: collection 0 cards"));
+    assert!(stdout.contains("  your hand (player 1): "));
 }
 
 #[test]
@@ -153,16 +153,16 @@ fn the_table_after_a_move_shows_the_next_player() {
     std::fs::remove_dir_all(&dir).ok();
     let stdout = stdout_of(&output);
 
-    assert!(stdout.contains("  player 1 hand: nine diamonds, seven diamonds, five diamonds"));
+    assert!(stdout.contains("  your hand (player 1): 9d, 7d, 5d"));
     assert!(stdout.contains("player 2 to play"));
-    assert!(stdout.contains("  middle: king diamonds, queen diamonds, jack diamonds, ten diamonds, nine diamonds"));
-    assert!(stdout.contains("  player 2 hand: eight diamonds, six diamonds, four diamonds"));
+    assert!(stdout.contains("  middle: kd, qd, jd, 10d, 9d"));
+    assert!(stdout.contains("  your hand (player 2): 8d, 6d, 4d"));
 }
 
 #[test]
 fn a_rejected_move_says_why() {
     let output = run_interactive("build ./examples/simple_scopa.card\nstart\nplay 7h\nexit\n");
-    assert!(stdout_of(&output).contains("move ignored: not allowed: unknown move 'play' - valid moves: take, drop"));
+    assert!(stdout_of(&output).contains("move ignored: unknown move 'play' - the moves are: take, drop"));
 }
 
 fn run_with_args(args: &[&str], input: &str) -> Output {

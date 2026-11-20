@@ -14,7 +14,7 @@ name simple_scopa
 players 2
 current_player 1
 stack middle
-stack collection per player
+player stack collection
 
 def setup(){
     shuffle(deck)
@@ -22,33 +22,26 @@ def setup(){
     deck > players 3
 }
 
-def player_move(player, move){
-    check(player:id is current_player, it's not your turn)
-    valid_moves(take, drop)
-    after_move()
-    next_player()
+move take(player, played, captured){
+    check(count(played) is 1, play one card from your hand, e.g. take 9d / 4c 5s)
+    check(count(captured) > 0, put a / before the cards you're capturing, e.g. take 9d / 4c 5s)
+    check(cards_in_stack(played, player:hand), you can only play a card from your hand)
+    check(cards_in_stack(captured, middle), you can only capture cards from the middle)
+    check(sum(captured) is sum(played), the cards you capture must add up to the card you play)
+    middle > player:collection taking captured
+    player:hand > player:collection taking played
 }
 
-def take(player, move){
-    check(count(move:cards) is 1, play one card from your hand, e.g. take 9d / 4c 5s)
-    check(count(move:target) > 0, put a / before the cards you're capturing, e.g. take 9d / 4c 5s)
-    check(cards_in_stack(move:cards, player:hand), you can only play a card from your hand)
-    check(cards_in_stack(move:target, middle), you can only capture cards from the middle)
-    check(sum(move:target) is sum(move:cards), the cards you capture must add up to the card you play)
-    middle > player:collection taking move:target
-    player:hand > player:collection taking move:cards
-}
-
-def drop(player, move){
-    check(count(move:cards) is 1, drop one card, e.g. drop 9d)
-    check(count(move:target) is 0, to capture cards use take, e.g. take 9d / 4c 5s)
-    player:hand > middle taking move:cards
+move drop(player, played){
+    check(count(played) is 1, drop one card, e.g. drop 9d)
+    player:hand > middle taking played
 }
 
 def hands_empty(){
     return(every player p: count(p:hand) is 0)
 }
 
+.(after_move runs after every successful move)
 def after_move(){
     if(hands_empty() & count(deck) is 0){
         end_game()

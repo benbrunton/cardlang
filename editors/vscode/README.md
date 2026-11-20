@@ -2,27 +2,27 @@
 
 Syntax highlighting for cardlang `.card` files. It covers:
 - comments, `.( … )`, including nested brackets
-- declarations: `name`, `players`, `stack … per player`, `values { … }`, and the proposed `var` and `deck … without`
-- functions and calls, built-ins, and fields such as `p:hand` or `players:2:collection`
+- declarations: `name`, `players`, `deck standard without …`, `stack`, `number`, `player stack`, `player number`, `values` and `values <name>`
+- functions and calls, built-ins, assignment (`p:score = …`), and fields such as `p:hand` or `players:2:collection`
 - `check(rule, message)`, with the message shown as text
-- `every` loops and tests, and the proposed `any` and `group`
-- card ranks and suits, and the proposed `[7d]` card literals
+- `every`, `any` and `most`, including `group`
+- card ranks and suits, and card literals such as `[7d]`
 
 Brackets auto-close, and the "toggle block comment" command uses `.( … )`.
 
 ## Install
 
-The extension isn't on the VS Code Marketplace. Build it from this folder and install the file:
+The extension isn't on the VS Code Marketplace. You build it from this folder and install it in one command. It needs Node.js, and `code` on your PATH:
 
 ```sh
 cd editors/vscode
-npx @vscode/vsce package --skip-license      # creates cardlang-0.1.0.vsix
-code --install-extension cardlang-0.1.0.vsix
+npm install                    # once
+npm run install-extension      # build cardlang.vsix and install it
 ```
 
-Then open any `.card` file. If `code` isn't on your PATH, use **Extensions → … → Install from VSIX…** in VS Code instead.
+Run `npm run install-extension` again whenever the grammar changes, then reload VS Code (**Developer: Reload Window**). From the repo root, the same command is `npm --prefix editors/vscode run install-extension`.
 
-To update after changing the grammar, run the same two commands again and reload the window (**Developer: Reload Window**).
+If `code` isn't on your PATH, run `npm run package` to build `cardlang.vsix`, then use **Extensions → … → Install from VSIX…** in VS Code. On a Mac, Cmd+Shift+P → **Shell Command: Install 'code' command in PATH** adds `code`.
 
 ## Changing the grammar
 

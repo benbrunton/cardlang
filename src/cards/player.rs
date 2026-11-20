@@ -6,14 +6,46 @@ use std::fmt;
 pub struct Player {
     id: u32,
     hand: Vec<Card>,
-    // stacks declared with `stack <name> per player`
-    stacks: HashMap<String, Vec<Card>>
+    // stacks declared with `player stack <name>`
+    stacks: HashMap<String, Vec<Card>>,
+    // numbers declared with `player number <name>`, starting at 0
+    numbers: HashMap<String, f64>
 }
 
 impl Player{
-    pub fn with_stacks(id: u32, stack_names: &[String]) -> Player {
+    pub fn with_fields(id: u32, stack_names: &[String], number_names: &[String]) -> Player {
         let stacks = stack_names.iter().map(|name| (name.clone(), vec![])).collect();
-        Player { hand: vec![], id, stacks }
+        let numbers = number_names.iter().map(|name| (name.clone(), 0.0)).collect();
+        Player { hand: vec![], id, stacks, numbers }
+    }
+
+    // empties the hand and every stack, returning their cards
+    pub fn take_all_cards(&mut self) -> Vec<Card> {
+        let mut cards = std::mem::take(&mut self.hand);
+        let mut names: Vec<String> = self.stacks.keys().cloned().collect();
+        // a fixed order, so games are repeatable
+        names.sort();
+        for name in names {
+            if let Some(stack) = self.stacks.get_mut(&name) {
+                cards.append(stack);
+            }
+        }
+        cards
+    }
+
+    pub fn get_number(&self, name: &str) -> Option<f64> {
+        self.numbers.get(name).copied()
+    }
+
+    // returns false if the player has no number with this name
+    pub fn set_number(&mut self, name: &str, value: f64) -> bool {
+        match self.numbers.get_mut(name) {
+            Some(n) => {
+                *n = value;
+                true
+            },
+            None => false
+        }
     }
 
     pub fn get_hand(&self) -> Vec<Card> {

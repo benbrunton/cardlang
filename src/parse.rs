@@ -57,6 +57,15 @@ pub fn parse(tokens: &[SourceToken]) -> Result<Vec<Statement>, ParseError> {
                 // players can only receive cards, not be the source of a transfer
                 return Err(ParseError::new(ParseErrorType::UnexpectedToken, *line_number));
             },
+            Some(SourceToken{ token: Token::CurrentPlayer, line_number })
+                if peek_token(&tokens_iter) == Some(Token::Assign) => {
+                tokens_iter.next();
+                ast.push(build_assignment("current_player", &mut tokens_iter, *line_number)?);
+            },
+            Some(SourceToken{ token: Token::NumberType, line_number }) => {
+                let name = declared_name(&mut tokens_iter, *line_number)?;
+                ast.push(Statement::Declaration(Declaration{ key: GlobalKey::Number, value: Expression::Symbol(name) }));
+            },
             Some(SourceToken{ token: declaration_token @ (Token::Name | Token::Players | Token::CurrentPlayer | Token::Stack), line_number }) => {
                 let key = match get_key(declaration_token) {
                     Some(k) => k,
@@ -78,25 +87,6 @@ pub fn parse(tokens: &[SourceToken]) -> Result<Vec<Statement>, ParseError> {
                     None => return Err(ParseError::new(ParseErrorType::UnexpectedToken, next_token.line_number))
                 };
 
-                // `stack <name> per player` gives every player their own stack
-                let mut key = key;
-                let mut lookahead = tokens_iter.clone();
-                if key == GlobalKey::Stack {
-                    if let (
-                        Some(SourceToken{ token: Token::Symbol(per), .. }),
-                        Some(SourceToken{ token: Token::Symbol(player), .. })
-                    ) = (lookahead.next(), lookahead.next()) {
-                        if per == "per" && player == "player" {
-                            if value == Expression::Symbol("hand".to_string()) {
-                                // every player already has a hand
-                                return Err(ParseError::new(ParseErrorType::UnexpectedToken, next_token.line_number));
-                            }
-                            tokens_iter = lookahead;
-                            key = GlobalKey::PlayerStack;
-                        }
-                    }
-                }
-
                 let declaration = Declaration{ key, value };
                 let statement = Statement::Declaration(declaration);
                 ast.push(statement);
@@ -104,12 +94,34 @@ pub fn parse(tokens: &[SourceToken]) -> Result<Vec<Statement>, ParseError> {
             Some(SourceToken{ token: Token::Deck, line_number }) => {
                 let next_token_result = tokens_iter.next();
                 match next_token_result {
-                    Some(SourceToken{ token: Token::Symbol(deck_name), ..}) => {
+                    Some(SourceToken{ token: Token::Symbol(deck_name), line_number: l }) => {
+                        if !DECK_NAMES.contains(&deck_name.as_str()) {
+                            return Err(ParseError::new(ParseErrorType::UnexpectedToken, *l));
+                        }
                         let key = GlobalKey::Deck;
                         let value = Expression::Symbol(deck_name.to_owned());
                         let declaration = Declaration{ key, value };
                         let statement = Statement::Declaration(declaration);
                         ast.push(statement);
+
+                        // deck standard without Eight Nine Ten
+                        if let Some(SourceToken{ token: Token::Symbol(w), .. }) = tokens_iter.clone().next() {
+                            if w == "without" {
+                                tokens_iter.next();
+                                let mut ranks = vec![];
+                                while let Some(SourceToken{ token: Token::Symbol(rank), line_number: l }) = tokens_iter.clone().next() {
+                                    if !RANK_NAMES.contains(&rank.as_str()) {
+                                        return Err(ParseError::new(ParseErrorType::UnexpectedToken, *l));
+                                    }
+                                    tokens_iter.next();
+                                    ranks.push(rank.to_owned());
+                                }
+                                if ranks.is_empty() {
+                                    return Err(ParseError::new(ParseErrorType::UnexpectedEndOfStream, *line_number));
+                                }
+                                ast.push(Statement::DeckWithout(ranks));
+                            }
+                        }
                     },
                     Some(SourceToken{ token: Token::Transfer, ..}) => {
                         ast.push(create_transfer("deck", &mut tokens_iter, *line_number)?)
@@ -123,10 +135,23 @@ pub fn parse(tokens: &[SourceToken]) -> Result<Vec<Statement>, ParseError> {
                 }
             },
             Some(SourceToken{ token: Token::Values, line_number }) => {
-                let table = build_value_table(&mut tokens_iter, *line_number)?;
-                ast.push(Statement::ValueTable(table));
+                // values { ... } or values <name> { ... }
+                let name = match tokens_iter.clone().next() {
+                    Some(SourceToken{ token: Token::Symbol(n), .. }) => {
+                        // a named table becomes a card field, so it can't hide a built-in one
+                        if ["rank", "suit", "value"].contains(&n.as_str()) {
+                            return Err(ParseError::new(ParseErrorType::UnexpectedToken, *line_number));
+                        }
+                        tokens_iter.next();
+                        Some(n.to_owned())
+                    },
+                    _ => None
+                };
+                let entries = build_value_table(&mut tokens_iter, *line_number)?;
+                ast.push(Statement::ValueTable(ValueTable{ name, entries }));
             },
-            Some(SourceToken{ token: Token::Define, line_number }) => {
+            Some(SourceToken{ token: definition_token @ (Token::Define | Token::Move), line_number }) => {
+                let is_move = *definition_token == Token::Move;
                 let next_token = match tokens_iter.next() {
                     Some(t) => t,
                     None => return Err(ParseError::new(ParseErrorType::UnexpectedEndOfStream, *line_number))
@@ -134,6 +159,10 @@ pub fn parse(tokens: &[SourceToken]) -> Result<Vec<Statement>, ParseError> {
                 let name = match &next_token.token {
                     // the CLI's own commands can't be used as function (move) names
                     Token::Symbol(s) if crate::move_input::RESERVED_WORDS.contains(&s.as_str()) => {
+                        return Err(ParseError::new(ParseErrorType::UnexpectedToken, next_token.line_number))
+                    },
+                    // a move name that reads as a card (as, seven, 10) couldn't be typed at the CLI
+                    Token::Symbol(s) if is_move && crate::cards::starts_a_card(s) => {
                         return Err(ParseError::new(ParseErrorType::UnexpectedToken, next_token.line_number))
                     },
                     Token::Symbol(s) => s.to_owned(),
@@ -154,11 +183,23 @@ pub fn parse(tokens: &[SourceToken]) -> Result<Vec<Statement>, ParseError> {
                 let body = build_block(&mut tokens_iter)?;
 
                 let definition = Definition{ arguments, name, body };
-                let statement = Statement::Definition(definition);
-                ast.push(statement);
+                ast.push(if is_move { Statement::MoveDefinition(definition) } else { Statement::Definition(definition) });
             },
             Some(SourceToken{token: Token::Symbol(name), line_number }) => {
                 match tokens_iter.next() {
+                    // player stack collection / player number score
+                    Some(SourceToken{ token: kind @ (Token::Stack | Token::NumberType), ..}) if name == "player" => {
+                        let field = declared_name(&mut tokens_iter, *line_number)?;
+                        // every player already has a hand and an id
+                        if field == "hand" || field == "id" {
+                            return Err(ParseError::new(ParseErrorType::UnexpectedToken, *line_number));
+                        }
+                        let key = if *kind == Token::Stack { GlobalKey::PlayerStack } else { GlobalKey::PlayerNumber };
+                        ast.push(Statement::Declaration(Declaration{ key, value: Expression::Symbol(field) }));
+                    },
+                    Some(SourceToken{ token: Token::Assign, ..}) => {
+                        ast.push(build_assignment(name, &mut tokens_iter, *line_number)?);
+                    },
                     Some(SourceToken{ token: Token::OpenParens, ..}) => {
                         ast.push(create_function(name, &mut tokens_iter)?);
                     },
@@ -477,14 +518,28 @@ fn parse_primary(tokens_iter: &mut std::slice::Iter<SourceToken>) -> Result<Expr
                 Expression::Symbol(s.to_string())
             }
         },
-        Token::Every => {
+        Token::Cards(text) => match crate::cards::parse_cards(text) {
+            Ok(cards) if !cards.is_empty() => Expression::Cards(cards),
+            _ => return Err(ParseError::new(ParseErrorType::UnexpectedToken, source_token.line_number))
+        },
+        Token::Most => {
+            // most player p: <number>
+            let (kind, variable, has_colon) = build_every_header(tokens_iter, source_token.line_number)?;
+            if kind != EveryKind::Player || !has_colon {
+                return Err(ParseError::new(ParseErrorType::UnexpectedToken, source_token.line_number));
+            }
+            let value = parse_or(tokens_iter)?;
+            Expression::Most(Box::new(MostExpression{ variable, value }))
+        },
+        Token::Every | Token::Any => {
             let (kind, variable, has_colon) = build_every_header(tokens_iter, source_token.line_number)?;
             if !has_colon {
-                // as a value, `every` is a test: every player p: <condition>
+                // as a value, `every`/`any` is a test: every player p: <condition>
                 return Err(ParseError::new(ParseErrorType::UnexpectedToken, source_token.line_number));
             }
             let condition = parse_or(tokens_iter)?;
-            Expression::Every(Box::new(EveryTest{ kind, variable, condition }))
+            let any = source_token.token == Token::Any;
+            Expression::Every(Box::new(EveryTest{ any, kind, variable, condition }))
         },
         Token::OpenParens => {
             let inner = parse_or(tokens_iter)?;
@@ -577,12 +632,13 @@ fn build_value_table(tokens_iter: &mut std::slice::Iter<SourceToken>, line_numbe
 fn build_every_header(tokens_iter: &mut std::slice::Iter<SourceToken>, line_number: u32) -> Result<(EveryKind, String, bool), ParseError> {
     let unexpected = || ParseError::new(ParseErrorType::UnexpectedToken, line_number);
 
-    let is_player = match tokens_iter.next() {
-        Some(SourceToken{ token: Token::Symbol(s), .. }) if s == "player" => true,
-        Some(SourceToken{ token: Token::Symbol(s), .. }) if s == "card" => false,
+    // player, card or group
+    let what = match tokens_iter.next() {
+        Some(SourceToken{ token: Token::Symbol(s), .. }) if s == "player" || s == "card" || s == "group" => s.clone(),
         Some(_) => return Err(unexpected()),
         None => return Err(ParseError::new(ParseErrorType::UnexpectedEndOfStream, line_number))
     };
+    let is_player = what == "player";
 
     let (variable, mut has_colon) = match tokens_iter.next() {
         Some(SourceToken{ token: Token::Symbol(s), .. }) => match s.strip_suffix(':') {
@@ -613,7 +669,11 @@ fn build_every_header(tokens_iter: &mut std::slice::Iter<SourceToken>, line_numb
             },
             other => other
         };
-        EveryKind::Card(pile)
+        if what == "group" {
+            EveryKind::Group(pile)
+        } else {
+            EveryKind::Card(pile)
+        }
     };
 
     if !has_colon && peek_token(tokens_iter) == Some(Token::Colon) {
@@ -621,6 +681,21 @@ fn build_every_header(tokens_iter: &mut std::slice::Iter<SourceToken>, line_numb
         has_colon = true;
     }
     Ok((kind, variable, has_colon))
+}
+
+// the name after `number`, `player stack` or `player number`
+fn declared_name(tokens_iter: &mut std::slice::Iter<SourceToken>, line_number: u32) -> Result<String, ParseError> {
+    match tokens_iter.next() {
+        Some(SourceToken{ token: Token::Symbol(name), .. }) if !name.contains(':') => Ok(name.clone()),
+        Some(SourceToken{ line_number: l, .. }) => Err(ParseError::new(ParseErrorType::ExpectedSymbol, *l)),
+        None => Err(ParseError::new(ParseErrorType::UnexpectedEndOfStream, line_number))
+    }
+}
+
+// <target> = <expression>, after the '='
+fn build_assignment(target: &str, tokens_iter: &mut std::slice::Iter<SourceToken>, line_number: u32) -> Result<Statement, ParseError> {
+    let value = parse_or(tokens_iter).map_err(|e| e.or_line(line_number))?;
+    Ok(Statement::Assign(Assignment{ target: target.to_string(), value }))
 }
 
 fn skip_parens_group(tokens_iter: &mut std::slice::Iter<SourceToken>, line_number: u32) -> Result<(), ParseError> {
@@ -792,7 +867,7 @@ mod test{
             Token::Players,
             Token::Number(2.0),
             Token::Deck,
-            Token::Symbol("StandardDeck".to_string()),
+            Token::Symbol("standard".to_string()),
             Token::CurrentPlayer,
             Token::Number(1.0),
             Token::Stack,
@@ -815,7 +890,7 @@ mod test{
         expected.push(statement);
 
         let key = GlobalKey::Deck;
-        let value = Expression::Symbol("StandardDeck".to_string());
+        let value = Expression::Symbol("standard".to_string());
         let declaration = Declaration{ key, value };
 
         let statement = Statement::Declaration(declaration);
@@ -1713,6 +1788,18 @@ mod test{
     #[test]
     fn incomplete_or_invalid_source_is_a_parse_error_not_a_panic() {
         let cases = [
+            "def setup(){ winner(most card c in deck: 1) }",
+            "def setup(){ winner(most player p) }",
+            "def setup(){ any player p { } }",
+            "def setup(){ check(any thing x: true) }",
+            "def setup(){ check(any group g: true) }",
+            "deck jokers",
+            "deck standard without Eleven",
+            "deck standard without",
+            "values rank { Ace 1 }",
+            "values suit { Ace 1 }",
+            "def setup(){ deck > middle taking [7x] }",
+            "def setup(){ deck > middle taking [] }",
             "def setup(){ every player p }",
             "def setup(){ every player p: true }",
             "def setup(){ every card c middle { } }",
@@ -1726,7 +1813,12 @@ mod test{
             "values King 10",
             "def setup(){ check(1 + ) }",
             "def setup(){ check(1 < 2 < 3) }",
-            "stack hand per player",
+            "player stack hand",
+            "player number id",
+            "stack collection per player",
+            "number",
+            "player number",
+            "def setup(){ x = }",
             "def setup() }",
             "def setup() x { }",
             "}",
@@ -1776,7 +1868,9 @@ mod test{
             Token::Return, Token::Test, Token::Not, Token::Or, Token::Else,
             Token::Plus, Token::Minus, Token::LessThan, Token::Values,
             Token::Text("some text".to_string()), Token::Every, Token::In, Token::Colon,
-            Token::LessOrEqual, Token::GreaterOrEqual, Token::Symbol("p:".to_string())
+            Token::LessOrEqual, Token::GreaterOrEqual, Token::Symbol("p:".to_string()),
+            Token::Cards("7d, kh".to_string()), Token::Cards("nonsense".to_string()), Token::Assign,
+            Token::Any, Token::Most, Token::NumberType
         ];
 
         // simple deterministic pseudo random generator, so failures are reproducible
@@ -1843,7 +1937,7 @@ mod test{
 
     #[test]
     fn it_parses_per_player_stacks() {
-        let result = parse_source("stack middle\nstack collection per player").unwrap();
+        let result = parse_source("stack middle\nplayer stack collection").unwrap();
 
         assert_eq!(result, vec!(
             Statement::Declaration(Declaration{ key: GlobalKey::Stack, value: Expression::Symbol("middle".to_string()) }),
@@ -1875,11 +1969,11 @@ mod test{
     #[test]
     fn it_parses_a_value_table() {
         let result = parse_source("values {\n    Ace 11, King 10\n    Two -1\n}").unwrap();
-        let expected = vec![Statement::ValueTable(vec!(
+        let expected = vec![Statement::ValueTable(ValueTable{ name: None, entries: vec!(
             ("Ace".to_string(), 11.0),
             ("King".to_string(), 10.0),
             ("Two".to_string(), -1.0)
-        ))];
+        )})];
         assert_eq!(result, expected);
     }
 
@@ -1944,5 +2038,17 @@ mod test{
             Statement::ReturnStatement(r) => assert_eq!(r.expression.to_string(), "a >= 1 & b <= 2"),
             other => panic!("expected a return, got {:?}", other)
         }
+    }
+
+    #[test]
+    fn line_numbers_stay_right_after_a_line_break_inside_brackets() {
+        let source = "def setup(){\n    winner(add(1,\n        2))\n    oops oops\n}";
+        let error = parse_source(source).unwrap_err();
+        assert_eq!(error.line_number, 4);
+    }
+
+    #[test]
+    fn an_unclosed_card_list_is_an_error() {
+        assert!(crate::lex::lexer("check(cards_in_stack([7d, p:hand))").is_err());
     }
 }
