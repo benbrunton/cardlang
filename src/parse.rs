@@ -1694,7 +1694,8 @@ mod test{
             Token::OpenBracket, Token::CloseBracket, Token::Transfer, Token::Check, Token::Is,
             Token::If, Token::Newline, Token::True, Token::False, Token::Ampersand,
             Token::Return, Token::Test, Token::Not, Token::Or, Token::Else,
-            Token::Plus, Token::Minus, Token::LessThan, Token::Values
+            Token::Plus, Token::Minus, Token::LessThan, Token::Values,
+            Token::Text("some text".to_string())
         ];
 
         // simple deterministic pseudo random generator, so failures are reproducible
