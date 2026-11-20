@@ -57,6 +57,15 @@ pub fn parse(tokens: &[SourceToken]) -> Result<Vec<Statement>, ParseError> {
                 // players can only receive cards, not be the source of a transfer
                 return Err(ParseError::new(ParseErrorType::UnexpectedToken, *line_number));
             },
+            Some(SourceToken{ token: Token::CurrentPlayer, line_number })
+                if peek_token(&tokens_iter) == Some(Token::Assign) => {
+                tokens_iter.next();
+                ast.push(build_assignment("current_player", &mut tokens_iter, *line_number)?);
+            },
+            Some(SourceToken{ token: Token::NumberType, line_number }) => {
+                let name = declared_name(&mut tokens_iter, *line_number)?;
+                ast.push(Statement::Declaration(Declaration{ key: GlobalKey::Number, value: Expression::Symbol(name) }));
+            },
             Some(SourceToken{ token: declaration_token @ (Token::Name | Token::Players | Token::CurrentPlayer | Token::Stack), line_number }) => {
                 let key = match get_key(declaration_token) {
                     Some(k) => k,
@@ -77,25 +86,6 @@ pub fn parse(tokens: &[SourceToken]) -> Result<Vec<Statement>, ParseError> {
                     Some(v) => v,
                     None => return Err(ParseError::new(ParseErrorType::UnexpectedToken, next_token.line_number))
                 };
-
-                // `stack <name> per player` gives every player their own stack
-                let mut key = key;
-                let mut lookahead = tokens_iter.clone();
-                if key == GlobalKey::Stack {
-                    if let (
-                        Some(SourceToken{ token: Token::Symbol(per), .. }),
-                        Some(SourceToken{ token: Token::Symbol(player), .. })
-                    ) = (lookahead.next(), lookahead.next()) {
-                        if per == "per" && player == "player" {
-                            if value == Expression::Symbol("hand".to_string()) {
-                                // every player already has a hand
-                                return Err(ParseError::new(ParseErrorType::UnexpectedToken, next_token.line_number));
-                            }
-                            tokens_iter = lookahead;
-                            key = GlobalKey::PlayerStack;
-                        }
-                    }
-                }
 
                 let declaration = Declaration{ key, value };
                 let statement = Statement::Declaration(declaration);
@@ -193,6 +183,19 @@ pub fn parse(tokens: &[SourceToken]) -> Result<Vec<Statement>, ParseError> {
             },
             Some(SourceToken{token: Token::Symbol(name), line_number }) => {
                 match tokens_iter.next() {
+                    // player stack collection / player number score
+                    Some(SourceToken{ token: kind @ (Token::Stack | Token::NumberType), ..}) if name == "player" => {
+                        let field = declared_name(&mut tokens_iter, *line_number)?;
+                        // every player already has a hand and an id
+                        if field == "hand" || field == "id" {
+                            return Err(ParseError::new(ParseErrorType::UnexpectedToken, *line_number));
+                        }
+                        let key = if *kind == Token::Stack { GlobalKey::PlayerStack } else { GlobalKey::PlayerNumber };
+                        ast.push(Statement::Declaration(Declaration{ key, value: Expression::Symbol(field) }));
+                    },
+                    Some(SourceToken{ token: Token::Assign, ..}) => {
+                        ast.push(build_assignment(name, &mut tokens_iter, *line_number)?);
+                    },
                     Some(SourceToken{ token: Token::OpenParens, ..}) => {
                         ast.push(create_function(name, &mut tokens_iter)?);
                     },
@@ -665,6 +668,21 @@ fn build_every_header(tokens_iter: &mut std::slice::Iter<SourceToken>, line_numb
         has_colon = true;
     }
     Ok((kind, variable, has_colon))
+}
+
+// the name after `number`, `player stack` or `player number`
+fn declared_name(tokens_iter: &mut std::slice::Iter<SourceToken>, line_number: u32) -> Result<String, ParseError> {
+    match tokens_iter.next() {
+        Some(SourceToken{ token: Token::Symbol(name), .. }) if !name.contains(':') => Ok(name.clone()),
+        Some(SourceToken{ line_number: l, .. }) => Err(ParseError::new(ParseErrorType::ExpectedSymbol, *l)),
+        None => Err(ParseError::new(ParseErrorType::UnexpectedEndOfStream, line_number))
+    }
+}
+
+// <target> = <expression>, after the '='
+fn build_assignment(target: &str, tokens_iter: &mut std::slice::Iter<SourceToken>, line_number: u32) -> Result<Statement, ParseError> {
+    let value = parse_or(tokens_iter).map_err(|e| e.or_line(line_number))?;
+    Ok(Statement::Assign(Assignment{ target: target.to_string(), value }))
 }
 
 fn skip_parens_group(tokens_iter: &mut std::slice::Iter<SourceToken>, line_number: u32) -> Result<(), ParseError> {
@@ -1780,7 +1798,12 @@ mod test{
             "values King 10",
             "def setup(){ check(1 + ) }",
             "def setup(){ check(1 < 2 < 3) }",
-            "stack hand per player",
+            "player stack hand",
+            "player number id",
+            "stack collection per player",
+            "number",
+            "player number",
+            "def setup(){ x = }",
             "def setup() }",
             "def setup() x { }",
             "}",
@@ -1899,7 +1922,7 @@ mod test{
 
     #[test]
     fn it_parses_per_player_stacks() {
-        let result = parse_source("stack middle\nstack collection per player").unwrap();
+        let result = parse_source("stack middle\nplayer stack collection").unwrap();
 
         assert_eq!(result, vec!(
             Statement::Declaration(Declaration{ key: GlobalKey::Stack, value: Expression::Symbol("middle".to_string()) }),

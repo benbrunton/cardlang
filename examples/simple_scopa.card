@@ -14,7 +14,7 @@ name simple_scopa
 players 2
 current_player 1
 stack middle
-stack collection per player
+player stack collection
 
 def setup(){
     shuffle(deck)

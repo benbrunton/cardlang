@@ -13,6 +13,8 @@ pub enum Statement {
     DeckWithout(Vec<String>),
     // every player p { ... } / every card c in pile { ... }
     Every(EveryLoop),
+    // dealer = 2, p:score = p:score + 1, current_player = 1
+    Assign(Assignment),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -38,8 +40,12 @@ pub enum GlobalKey {
     Stack,
     Deck,
     CurrentPlayer,
-    // a stack that every player has, e.g. `stack collection per player`
-    PlayerStack
+    // a stack that every player has: `player stack collection`
+    PlayerStack,
+    // a number for the whole game: `number dealer`
+    Number,
+    // a number that every player has: `player number score`
+    PlayerNumber
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -236,3 +242,10 @@ pub struct ValueTable {
 
 // the decks a game can use
 pub const DECK_NAMES: [&str; 1] = ["standard"];
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct Assignment {
+    // a number's name, a player field (p:score, players:2:score) or current_player
+    pub target: String,
+    pub value: Expression
+}

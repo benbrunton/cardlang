@@ -61,6 +61,8 @@ impl Game {
         let mut initial_values = InitialValues{ 
             players: 1,
             player_stacks: vec![],
+            player_numbers: vec![],
+            numbers: vec![],
             card_values: vec![],
             named_values: vec![],
             deck_without: vec![],
@@ -113,6 +115,18 @@ impl Game {
                     value: Expression::Symbol(s)
                 }) => {
                     initial_values.player_stacks.push(s.to_string());
+                },
+                Statement::Declaration(Declaration{
+                    key: GlobalKey::PlayerNumber,
+                    value: Expression::Symbol(s)
+                }) => {
+                    initial_values.player_numbers.push(s.to_string());
+                },
+                Statement::Declaration(Declaration{
+                    key: GlobalKey::Number,
+                    value: Expression::Symbol(s)
+                }) => {
+                    initial_values.numbers.push(s.to_string());
                 },
                 _ => ()
             }
@@ -281,9 +295,10 @@ impl Game {
         };
         let stack_name = args.get(2).copied().unwrap_or("hand");
         match self.runtime.get_player(player_num - 1) {
-            Some(player) => match player.get_stack(stack_name) {
-                Some(cards) => Self::display_list(&cards),
-                None => format!("player {} has no stack '{}'", player_num, stack_name)
+            Some(player) => match (player.get_stack(stack_name), player.get_number(stack_name)) {
+                (Some(cards), _) => Self::display_list(&cards),
+                (None, Some(n)) => n.to_string(),
+                (None, None) => format!("player {} has no stack or number '{}'", player_num, stack_name)
             },
             None => format!("there is no player {}", player_num)
         }
@@ -301,6 +316,9 @@ impl Game {
     }
 
     fn find_custom_item(&self, key: &str) -> String {
+        if let Some(n) = self.runtime.get_number(key) {
+            return n.to_string();
+        }
         match self.runtime.find_custom_item(key) {
             Some(v) => Self::display_list(&v),
             _ => format!("{} not found", key)
@@ -2028,7 +2046,7 @@ def setup(){
     fn per_player_stacks_can_be_used_through_a_player_object() {
         let mut game = game_from_source("
 players 2
-stack collection per player
+player stack collection
 
 def setup(){
     deck > players 2
@@ -2054,7 +2072,7 @@ def player_move(player){
     fn any_player_can_be_addressed_by_number() {
         let mut game = game_from_source("
 players 2
-stack collection per player
+player stack collection
 
 def setup(){
     deck > players:2:collection 3
@@ -2084,7 +2102,7 @@ def setup(){
         game.start();
 
         assert_eq!(game.show("game"), "active");
-        assert_eq!(game.show("player 1 collection"), "player 1 has no stack 'collection'");
+        assert_eq!(game.show("player 1 collection"), "player 1 has no stack or number 'collection'");
     }
 
     #[test]
@@ -2168,7 +2186,7 @@ def setup(){
     const MOVES_GAME: &str = "
 players 2
 stack middle
-stack collection per player
+player stack collection
 values { Ten 9 }
 
 def setup(){
@@ -2578,7 +2596,7 @@ def setup(){
     fn players_with_the_most_cards_can_be_found_without_variables() {
         let result = winners_of("
 players 3
-stack collection per player
+player stack collection
 
 def setup(){
     deck > players:1:collection 2
@@ -2742,5 +2760,99 @@ def setup(){
 ");
         // 52 cards would be 2^52 combinations
         assert_eq!(result, "active\nwinners: 2");
+    }
+
+    #[test]
+    fn numbers_can_be_declared_read_and_assigned() {
+        let mut game = game_from_source("
+players 3
+number dealer
+player number score
+
+def setup(){
+    winner(dealer)
+    dealer = 2
+    dealer = dealer + 1
+    winner(dealer)
+}
+");
+        game.start();
+        // numbers start at 0
+        assert_eq!(game.show("game"), "active\nwinners: 0, 3");
+        assert_eq!(game.show("dealer"), "3");
+    }
+
+    #[test]
+    fn player_numbers_belong_to_each_player() {
+        let mut game = game_from_source("
+players 3
+player number score
+
+def setup(){
+    every player p {
+        p:score = p:id + 10
+    }
+    players:2:score = players:2:score + 5
+    winner(players:1:score)
+    winner(players:2:score)
+    winner(players:3:score)
+}
+");
+        game.start();
+        assert_eq!(game.show("game"), "active\nwinners: 11, 17, 13");
+        assert_eq!(game.show("player 2 score"), "17");
+    }
+
+    #[test]
+    fn current_player_can_be_assigned() {
+        let mut game = game_from_source("
+players 3
+
+def setup(){
+    current_player = 3
+}
+
+def player_move(player){
+    current_player = 7
+}
+");
+        game.start();
+        assert_eq!(game.show("current_player"), "3");
+        assert_eq!(
+            game.player_move(3),
+            Err("not allowed: assignment failed in player_move: current_player = 7 (there is no player 7)".to_string())
+        );
+    }
+
+    #[test]
+    fn assigning_something_undeclared_or_not_a_number_fails() {
+        let mut game = game_from_source("
+players 2
+number total
+
+def player_move(player){
+    total = 5
+    missing = 1
+}
+");
+        game.start();
+        assert_eq!(
+            game.player_move(1),
+            Err("not allowed: assignment failed in player_move: missing = 1 ('missing' isn't a declared number)".to_string())
+        );
+        // the failed move is undone, including the earlier assignment
+        assert_eq!(game.show("total"), "0");
+
+        let mut game = game_from_source("
+players 2
+number total
+
+def setup(){
+    total = deck
+    winner(1)
+}
+");
+        game.start();
+        assert_eq!(game.show("game"), "active");
     }
 }

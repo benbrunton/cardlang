@@ -42,6 +42,10 @@ pub enum ArgumentValue {
 pub struct InitialValues {
     pub players: u32,
     pub player_stacks: Vec<String>,
+    // `player number <name>` declarations
+    pub player_numbers: Vec<String>,
+    // `number <name>` declarations
+    pub numbers: Vec<String>,
     // overrides from a `values { ... }` table, by rank name
     pub card_values: Vec<(String, f64)>,
     // named tables from `values <name> { ... }`, each a card field
@@ -92,7 +96,8 @@ struct Snapshot {
     winners: Vec<f64>,
     current_player: usize,
     players: Vec<Player>,
-    card_stacks: HashMap<String, Vec<Card>>
+    card_stacks: HashMap<String, Vec<Card>>,
+    numbers: HashMap<String, f64>
 }
 
 const INTERNAL_REF: &str = "_ref";
@@ -144,6 +149,8 @@ pub struct Runtime {
     players: Vec<Player>,
     card_stacks: HashMap<String, Vec<Card>>,
     card_values: HashMap<String, f64>,
+    // `number <name>` values for the whole game
+    numbers: HashMap<String, f64>,
     named_values: HashMap<String, HashMap<String, f64>>,
     call_stack: Vec<HashMap<String, ArgumentValue>>,
     // the player and move objects of the move being made, for valid_moves
@@ -181,7 +188,8 @@ impl Runtime {
             named_values: initial_values.named_values.iter()
                 .map(|(name, entries)| (name.clone(), entries.iter().cloned().collect()))
                 .collect(),
-            players: Self::generate_players(initial_values.players, &initial_values.player_stacks),
+            players: Self::generate_players(initial_values.players, &initial_values.player_stacks, &initial_values.player_numbers),
+            numbers: initial_values.numbers.iter().map(|name| (name.clone(), 0.0)).collect(),
             callbacks
         }
     }
@@ -442,7 +450,8 @@ impl Runtime {
             winners: self.winners.clone(),
             current_player: self.current_player,
             players: self.players.clone(),
-            card_stacks: self.card_stacks.clone()
+            card_stacks: self.card_stacks.clone(),
+            numbers: self.numbers.clone()
         }
     }
 
@@ -453,6 +462,7 @@ impl Runtime {
         self.current_player = snapshot.current_player;
         self.players = snapshot.players;
         self.card_stacks = snapshot.card_stacks;
+        self.numbers = snapshot.numbers;
     }
 
     // valid_moves(take, drop): runs the move the player named, or if they
@@ -568,6 +578,12 @@ impl Runtime {
                         return Flow::Return(v);
                     }
                 },
+                Statement::Assign(a) => {
+                    // an assignment that can't be made stops the function, like a failed check
+                    if !self.assign(a) {
+                        return Flow::Return(PrimitiveValue::Bool(false));
+                    }
+                },
                 Statement::CheckStatement(c) => {
                     if !self.resolve_to_bool(&c.expression) {
                         match &c.message {
@@ -631,6 +647,7 @@ impl Runtime {
                         }
                     },
                     Some(ArgumentValue::Value(v)) if components.len() == 1 => v,
+                    _ if self.numbers.contains_key(s.as_str()) => PrimitiveValue::Number(self.numbers[s.as_str()]),
                     _ if s == "deck" => PrimitiveValue::Stack(self.deck.clone()),
                     _ => match self.card_stacks.get(s) {
                         Some(stack) => PrimitiveValue::Stack(stack.clone()),
@@ -650,8 +667,8 @@ impl Runtime {
         }
     }
 
-    fn generate_players(n: u32, stack_names: &[String]) -> Vec<Player>{
-        (0..n).map(|i| Player::with_stacks(i + 1, stack_names)).collect()
+    fn generate_players(n: u32, stack_names: &[String], number_names: &[String]) -> Vec<Player>{
+        (0..n).map(|i| Player::with_fields(i + 1, stack_names, number_names)).collect()
     }
 
     fn build_player_object(player: Player) -> ArgumentValue {
@@ -930,7 +947,61 @@ impl Runtime {
         if field == "id" {
             return Some(PrimitiveValue::Number(player.get_id() as f64));
         }
+        if let Some(n) = player.get_number(field) {
+            return Some(PrimitiveValue::Number(n));
+        }
         player.get_stack(field).map(PrimitiveValue::Stack)
+    }
+
+    // the player (by index) and number field that p:score or players:2:score refers to
+    fn player_number_ref(&self, target: &str) -> Option<(usize, String)> {
+        let parts: Vec<&str> = target.split(':').collect();
+        let (index, field) = match parts.as_slice() {
+            ["players", n, field] => (n.parse::<usize>().ok()?.checked_sub(1)?, *field),
+            [object, field] => (self.player_index_in_scope(object)?, *field),
+            _ => return None
+        };
+        self.players.get(index)?.get_number(field)?;
+        Some((index, field.to_string()))
+    }
+
+    // dealer = 2, p:score = p:score + 1, current_player = 1
+    // returns false (and records why) when the assignment can't be made
+    fn assign(&mut self, assignment: &Assignment) -> bool {
+        let target = assignment.target.as_str();
+        let value = match self.resolve_expression(&assignment.value) {
+            PrimitiveValue::Number(n) => n,
+            other => {
+                self.fail("assignment failed", format!("{} = {} (expected a number, got {:?})", target, assignment.value, other));
+                return false;
+            }
+        };
+
+        if target == "current_player" {
+            if value.fract() != 0.0 || value < 1.0 || value as usize > self.players.len() {
+                self.fail("assignment failed", format!("current_player = {} (there is no player {})", assignment.value, value));
+                return false;
+            }
+            self.current_player = value as usize;
+            return true;
+        }
+
+        if let Some(n) = self.numbers.get_mut(target) {
+            *n = value;
+            return true;
+        }
+
+        if let Some((index, field)) = self.player_number_ref(target) {
+            self.players[index].set_number(&field, value);
+            return true;
+        }
+
+        self.fail("assignment failed", format!("{} = {} ('{}' isn't a declared number)", target, assignment.value, target));
+        false
+    }
+
+    pub fn get_number(&self, name: &str) -> Option<f64> {
+        self.numbers.get(name).copied()
     }
 
     pub fn find_custom_item(&self, key: &str) -> Option<Vec<Card>> {
@@ -993,6 +1064,8 @@ mod test{
         let initial_values = InitialValues{
             players: 1,
             player_stacks: vec![],
+            player_numbers: vec![],
+            numbers: vec![],
             card_values: vec![],
             named_values: vec![],
             deck_without: vec![],
@@ -1026,6 +1099,8 @@ mod test{
         let initial_values = InitialValues{
             players: 1,
             player_stacks: vec![],
+            player_numbers: vec![],
+            numbers: vec![],
             card_values: vec![],
             named_values: vec![],
             deck_without: vec![],
@@ -1063,6 +1138,8 @@ mod test{
         let initial_values = InitialValues{
             players: 1,
             player_stacks: vec![],
+            player_numbers: vec![],
+            numbers: vec![],
             card_values: vec![],
             named_values: vec![],
             deck_without: vec![],
@@ -1100,6 +1177,8 @@ mod test{
         let initial_values = InitialValues{
             players: 1,
             player_stacks: vec![],
+            player_numbers: vec![],
+            numbers: vec![],
             card_values: vec![],
             named_values: vec![],
             deck_without: vec![],
