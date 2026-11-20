@@ -1,6 +1,7 @@
 use crate::ast::*;
 use std::fmt::Display;
 use std::collections::HashMap;
+use crate::cards::Card;
 use crate::runtime::{
     MoveInput,
     Runtime,
@@ -122,6 +123,70 @@ impl Game {
     pub fn start(&mut self) {
         self.runtime = Runtime::new(self.initial_values.clone(), self.callbacks.clone());
         self.runtime.setup();
+    }
+
+    pub fn is_started(&self) -> bool {
+        self.runtime.get_status() != "pending"
+    }
+
+    // A summary of the table, shown after `start` and after each move:
+    // whose turn it is, the deck, the shared piles, the current player's
+    // hand and how many cards are in each player's own piles.
+    pub fn table(&self) -> String {
+        let mut lines = vec!();
+
+        let winners = self.runtime.get_winners();
+        if self.runtime.get_status() == "game over" {
+            if winners.is_empty() {
+                lines.push("game over".to_string());
+            } else {
+                lines.push(format!("game over - winners: {}", Self::display_list(&winners)));
+            }
+        } else {
+            lines.push(format!("player {} to play", self.runtime.get_current_player()));
+        }
+
+        // the deck is face down, so only its size is shown
+        let deck = self.runtime.get_deck();
+        if !deck.is_empty() {
+            lines.push(format!("  deck: {}", Self::plural(deck.len(), "card")));
+        }
+
+        for name in self.initial_values.card_stacks.iter() {
+            if let Some(cards) = self.runtime.find_custom_item(name) {
+                lines.push(format!("  {}: {}", name, Self::cards_or_count(&cards)));
+            }
+        }
+
+        let current = self.runtime.get_current_player();
+        if self.runtime.get_status() != "game over" {
+            if let Some(player) = self.runtime.get_player(current.wrapping_sub(1)) {
+                lines.push(format!("  player {} hand: {}", current, Self::display_list(&player.get_hand())));
+            }
+        }
+
+        for name in self.initial_values.player_stacks.iter() {
+            let counts: Vec<String> = self.runtime.get_players().iter().map(|p| {
+                let size = p.get_stack(name).map_or(0, |cards| cards.len());
+                format!("player {}: {}", p.get_id(), Self::plural(size, "card"))
+            }).collect();
+            lines.push(format!("  {}: {}", name, counts.join(", ")));
+        }
+
+        lines.join("\n")
+    }
+
+    // long piles are summarised so the table stays readable
+    fn cards_or_count(cards: &Vec<Card>) -> String {
+        match cards.len() {
+            0 => "empty".to_string(),
+            1..=10 => Self::display_list(cards),
+            n => format!("{} cards, top: {}", n, cards[n - 1])
+        }
+    }
+
+    fn plural(n: usize, word: &str) -> String {
+        if n == 1 { format!("1 {}", word) } else { format!("{} {}s", n, word) }
     }
 
     // a move with no name or cards, as a specific player

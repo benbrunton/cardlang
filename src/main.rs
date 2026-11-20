@@ -138,11 +138,19 @@ moves:
 fn handle_game_command(command: CommandResult, game: &mut Option<Game>) {
     match game {
         Some(ref mut g) => match command {
+            // before `start` nothing has been dealt, so piles would look empty
+            CommandResult::Show(c) if !g.is_started() && c != "game" && c != "name" => {
+                println!("the game hasn't started - type 'start' to deal");
+            },
             CommandResult::Show(c) => println!("{}", g.show(&c)),
-            CommandResult::Start => g.start(),
+            CommandResult::Start => {
+                g.start();
+                println!("{}", g.table());
+            },
             CommandResult::Move(input) => {
-                if let Err(e) = g.make_move(input) {
-                    println!("move ignored: {}", e);
+                match g.make_move(input) {
+                    Ok(()) => println!("{}", g.table()),
+                    Err(e) => println!("move ignored: {}", e)
                 }
             },
             _ => ()
