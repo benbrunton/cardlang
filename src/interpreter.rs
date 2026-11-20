@@ -93,7 +93,7 @@ impl Game {
             "players" => Self::display_list(&self.runtime.get_players()),
             "game" => {
                 let winner_list = self.runtime.get_winners();
-                let winners = if winner_list.len() > 0 {
+                let winners = if !winner_list.is_empty() {
                     let w = Self::display_list(&winner_list);
                     format!("\nwinners: {}", w)
                 } else {
@@ -166,7 +166,7 @@ impl Game {
     }
 
     // long piles are summarised so the table stays readable
-    fn cards_or_count(cards: &Vec<Card>) -> String {
+    fn cards_or_count(cards: &[Card]) -> String {
         match cards.len() {
             0 => "empty".to_string(),
             1..=10 => Self::display_list(cards),
@@ -218,7 +218,7 @@ impl Game {
          }
     }
 
-    fn display_list<D: Display>(list: &Vec<D>) -> String {
+    fn display_list<D: Display>(list: &[D]) -> String {
         list.iter().map(|x|x.to_string()).collect::<Vec<String>>().join(", ")
     }
 

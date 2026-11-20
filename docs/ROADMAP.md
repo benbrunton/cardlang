@@ -59,19 +59,19 @@ Bugs that gave game authors wrong results without any error.
 3. Specific cards are moved with a trailing `taking`: `middle > player:collection taking move:target`.
 4. Card values have built-in defaults (Ace 1 … King 13), an optional `values` table, `sum()`, and `+ - < >`.
 
-## Milestone 4: code health
-
-Spread across the other milestones rather than done in one go.
+## Milestone 4: code health ✅
 
 | # | Item | Status |
 |---|---|---|
-| 27 | Fix the 2 compiler warnings (unused `Peekable` import, unused `Game.ast` field) | ⬜ |
-| 28 | Fix the ~40 clippy warnings (mostly mechanical: `?`, `if let`, `&[T]` instead of `&Vec<T>`), then make clippy warnings fatal in CI | ⬜ |
-| 29 | Move from Rust edition 2018 to 2021 | ⬜ |
-| 30 | Remove the duplication in `Callbacks`: `setup` and `player_move` are stored separately from `definitions` | ⬜ |
-| 31 | Replace the remaining `.expect()` calls in the lexer and `main.rs` with error handling (none can currently be triggered, but they're fragile) | ⬜ |
+| 27 | Fix the compiler warnings (unused `Peekable` import, unused `Game.ast` field) | ✅ |
+| 28 | Fix the clippy warnings, then make clippy warnings fatal in CI | ✅ `cargo clippy --all-targets -- -D warnings` |
+| 29 | Move from Rust edition 2018 to 2021 | ✅ |
+| 30 | Remove the duplication in `Callbacks`: `setup` and `player_move` were stored separately from `definitions` | ✅ |
+| 31 | Replace the remaining check-then-`expect()` patterns in the lexer, `main.rs` and transfers | ✅ |
 | 32 | CLI tests | ✅ `tests/cli.rs` |
 | 33 | One list of known work: this file replaces the README todo list | ✅ |
+
+CI uses the latest stable Rust, so a new Rust release can add clippy lints that fail the build. When that happens, fix the new warnings, or pin a toolchain with a `rust-toolchain.toml` if it becomes a nuisance.
 
 ## Milestone 5: towards full Scopa and multi-round games
 

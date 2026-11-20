@@ -148,7 +148,7 @@ impl Runtime {
                 None
             },
             "winner" => {
-                let argument = match f.arguments.get(0) {
+                let argument = match f.arguments.first() {
                     Some(a) => a,
                     None => {
                         eprintln!("winner: expected a player id");
@@ -167,7 +167,7 @@ impl Runtime {
                 None
             },
             "count" => {
-                let c = match f.arguments.get(0) {
+                let c = match f.arguments.first() {
                     Some(a) => {
                         let stack_to_count = self.resolve_expression(a);
                         count(stack_to_count)
@@ -185,7 +185,7 @@ impl Runtime {
                 None
             },
             "sum" => {
-                let total = match f.arguments.get(0).map(|a| self.resolve_expression(a)) {
+                let total = match f.arguments.first().map(|a| self.resolve_expression(a)) {
                     Some(PrimitiveValue::Stack(cards)) => cards.iter().map(|c| self.card_value(c)).sum(),
                     _ => {
                         eprintln!("sum: expected a stack of cards");
@@ -196,7 +196,7 @@ impl Runtime {
             },
             "valid_moves" => Some(PrimitiveValue::Bool(self.valid_moves(&f.arguments))),
             "cards_in_stack" => {
-                let cards = f.arguments.get(0).map(|a| self.resolve_expression(a));
+                let cards = f.arguments.first().map(|a| self.resolve_expression(a));
                 let stack = f.arguments.get(1).map(|a| self.resolve_expression(a));
                 let result = match (cards, stack) {
                     (Some(PrimitiveValue::Stack(cards)), Some(PrimitiveValue::Stack(stack))) => {
@@ -210,7 +210,7 @@ impl Runtime {
                 Some(PrimitiveValue::Bool(result))
             },
             "filter" => {
-                let stack = match f.arguments.get(0).map(|a| self.resolve_expression(a)) {
+                let stack = match f.arguments.first().map(|a| self.resolve_expression(a)) {
                     Some(PrimitiveValue::Stack(s)) => s,
                     _ => return Some(PrimitiveValue::Stack(vec!()))
                 };
@@ -239,7 +239,7 @@ impl Runtime {
         }
     }
 
-    fn call_user_function(&mut self, definition: &Definition, arguments: &Vec<Expression>) -> Option<PrimitiveValue> {
+    fn call_user_function(&mut self, definition: &Definition, arguments: &[Expression]) -> Option<PrimitiveValue> {
         if self.call_stack.len() >= MAX_CALL_DEPTH {
             eprintln!("maximum call depth exceeded in '{}'", definition.name);
             return None;
@@ -339,7 +339,7 @@ impl Runtime {
         let move_object = Self::build_move_object(&input);
 
         let mut call_stack_frame = HashMap::new();
-        if let Some(arg) = p_move.arguments.get(0) {
+        if let Some(arg) = p_move.arguments.first() {
             call_stack_frame.insert(arg.clone(), player.clone());
         }
         if let Some(arg) = p_move.arguments.get(1) {
@@ -570,7 +570,7 @@ impl Runtime {
                     }
                 }
             },
-            Expression::FunctionCall(f) => self.handle_function_call(&f).unwrap_or(PrimitiveValue::Bool(false)),
+            Expression::FunctionCall(f) => self.handle_function_call(f).unwrap_or(PrimitiveValue::Bool(false)),
             Expression::Number(n) => PrimitiveValue::Number(*n),
             Expression::Bool(_)
                 | Expression::Comparison(_)
@@ -788,31 +788,24 @@ impl Runtime {
     }
 
     pub fn find_custom_item(&self, key: &str) -> Option<Vec<Card>> {
-        match self.card_stacks.get(key) {
-            Some(v) => Some(v.to_vec()),
-            None    => None
-        }
+        self.card_stacks.get(key).map(|v| v.to_vec())
     }
 
     fn find_in_call_stack(&self, key: &str) -> Option<ArgumentValue> {
         for frame in self.call_stack.iter().rev(){
             let result = frame.get(key);
-            match result {
-                Some(r)  => return Some(r.clone()),
-                _ => ()
-
-            }
+            if let Some(r) = result { return Some(r.clone()) }
         }
         None
     }
 
     fn filter(&mut self, stack: Vec<Card>, function: Definition) -> Vec<Card> {
-        let card_arg = match function.arguments.get(0) {
+        let card_arg = match function.arguments.first() {
             Some(arg) => arg,
             None => "card"
         }.to_string();
 
-        return stack.iter().filter(|&card|{
+        stack.iter().filter(|&card|{
             let mut call_stack_frame = HashMap::new();
             let card_obj = self.build_card_object(*card);
             call_stack_frame.insert(card_arg.clone(), card_obj);
@@ -825,7 +818,7 @@ impl Runtime {
                 PrimitiveValue::Bool(b) => b,
                 _ => false
             }
-        }).map(|&card| card.clone()).collect()
+        }).copied().collect()
     }
 }
 

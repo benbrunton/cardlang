@@ -45,7 +45,7 @@ impl std::fmt::Display for ParseError {
     }
 }
 
-pub fn parse(tokens: &Vec<SourceToken>) -> Result<Vec<Statement>, ParseError> {
+pub fn parse(tokens: &[SourceToken]) -> Result<Vec<Statement>, ParseError> {
     let mut ast = vec!();
     let mut tokens_iter = tokens.iter();
 
@@ -112,11 +112,7 @@ pub fn parse(tokens: &Vec<SourceToken>) -> Result<Vec<Statement>, ParseError> {
                         ast.push(statement);
                     },
                     Some(SourceToken{ token: Token::Transfer, ..}) => {
-                        let transfer_result = create_transfer("deck", &mut tokens_iter, *line_number);
-                        if transfer_result.is_err() {
-                            return Err(transfer_result.unwrap_err());
-                        }
-                        ast.push(transfer_result.unwrap())
+                        ast.push(create_transfer("deck", &mut tokens_iter, *line_number)?)
                     },
                     None => {
                         return Err(ParseError::new(ParseErrorType::UnexpectedEndOfStream, *line_number));
@@ -153,15 +149,9 @@ pub fn parse(tokens: &Vec<SourceToken>) -> Result<Vec<Statement>, ParseError> {
                 // parens
                 tokens_iter.next();
 
-                let arguments = match build_args_list(&mut tokens_iter){
-                    Ok(args) => args,
-                    Err(e) => return Err(e)
-                };
+                let arguments = build_args_list(&mut tokens_iter)?;
 
-                let body = match build_block(&mut tokens_iter) {
-                    Ok(b) => b,
-                    Err(e) => return Err(e)
-                };
+                let body = build_block(&mut tokens_iter)?;
 
                 let definition = Definition{ arguments, name, body };
                 let statement = Statement::Definition(definition);
@@ -170,19 +160,10 @@ pub fn parse(tokens: &Vec<SourceToken>) -> Result<Vec<Statement>, ParseError> {
             Some(SourceToken{token: Token::Symbol(name), line_number }) => {
                 match tokens_iter.next() {
                     Some(SourceToken{ token: Token::OpenParens, ..}) => {
-                        let func_result = create_function(name, &mut tokens_iter);
-                        if func_result.is_err() {
-                            return Err(func_result.unwrap_err());
-                        }
-                        ast.push(func_result.unwrap());
+                        ast.push(create_function(name, &mut tokens_iter)?);
                     },
                     Some(SourceToken{ token: Token::Transfer, ..}) => {
-                        let transfer_result = create_transfer(name, &mut tokens_iter, *line_number);
-                        if transfer_result.is_err() {
-                            return Err(transfer_result.unwrap_err());
-                        }
-                        ast.push(transfer_result.unwrap())
-
+                        ast.push(create_transfer(name, &mut tokens_iter, *line_number)?)
                     },
                     _ => return Err(ParseError::new(ParseErrorType::UnexpectedToken, *line_number))
                 }
@@ -352,7 +333,7 @@ fn build_block(tokens_iter: &mut std::slice::Iter<SourceToken>) -> Result<Vec<St
         }
     }
 
-    return parse(&body_tokens)
+    parse(&body_tokens)
 }
 
 // Expression grammar, lowest precedence first:

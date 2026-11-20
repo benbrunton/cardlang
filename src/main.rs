@@ -12,7 +12,8 @@ mod move_input;
 use interpreter::Game;
 
 enum CommandResult {
-    Game(Game),
+    // boxed: a game is much larger than the other variants
+    Game(Box<Game>),
     CommandFailed,
     Exit,
     Show(String),
@@ -88,7 +89,7 @@ fn interactive() {
 
         // handle global commands
         match command_result {
-            CommandResult::Game(ref g) => game = Some(g.clone()),
+            CommandResult::Game(ref g) => game = Some((**g).clone()),
             CommandResult::Exit => break,
             _ => ()
         }
@@ -179,7 +180,7 @@ fn build_game(command: Vec<&str>) -> CommandResult {
     };
 
     match parse_game(source) {
-        Some(g) => CommandResult::Game(g),
+        Some(g) => CommandResult::Game(Box::new(g)),
         None => CommandResult::CommandFailed
     }
 }

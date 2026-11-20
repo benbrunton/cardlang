@@ -49,9 +49,8 @@ pub fn transfer(
 
     while count > 0 {
 
-        if to.is_none() {
-            return None;
-        }
+        // nothing to transfer into
+        to.as_ref()?;
 
         // running out of cards early is fine: move as many as there are
         let card = match from {
@@ -78,10 +77,7 @@ pub fn transfer(
     }
 
     match from {
-        Some(f) => match to {
-            Some(t) => Some((f, t)),
-            _  => None
-        },
+        Some(f) => to.map(|t| (f, t)),
         _ => None
     }
 }
