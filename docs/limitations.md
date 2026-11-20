@@ -17,7 +17,7 @@ error: line 2: unexpected word or symbol
 | `a comment is never closed` | a `.(` comment with no matching `)` |
 | `unexpected word or symbol` | a multi-word `name`; a declaration with the wrong kind of value (`players two`, `name 5`); a missing `(` after `check`, `return` or `if`; a chained comparison (`a is b is c`); `else` without an `if`; a number after a transfer (`deck > middle 4`); anything left over at the top level of the file |
 | `unexpected end of statement` | something is missing: an unclosed `{` or `(`, an unfinished comparison (`check(a is)`), or a transfer with no destination (`deck >`) |
-| `expected a name` | `define` not followed by a function name, or something other than names in a function's parameter list |
+| `expected a name` | `def` not followed by a function name, or something other than names in a function's parameter list |
 
 The message says what the parser found, but not yet what it expected.
 
@@ -37,7 +37,6 @@ The message says what the parser found, but not yet what it expected.
 
 ## Syntax used in `examples/simple_scopa.card` that doesn't exist yet
 
-- `def` (use `define`)
 - removing specific cards in a transfer: `a > b - move:cards`
 - `valid_moves(...)`, `cards_in_stack(...)`
 - `deck filter(StandardDeck, not_royal)` as a declaration

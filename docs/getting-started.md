@@ -43,7 +43,7 @@ Every game also starts with a standard 52-card deck called `deck`.
 The `setup` function runs when the game starts. Add:
 
 ```
-define setup(){
+def setup(){
     shuffle(deck)
     deck > players end
 }
@@ -57,11 +57,11 @@ define setup(){
 The `player_move` function runs every time a player makes a move. It receives that player as its argument.
 
 ```
-define is_out(p){
+def is_out(p){
     return(count(p:hand) is 0)
 }
 
-define player_move(player){
+def player_move(player){
     check(player:id is current_player)
     player:hand > middle
     if(is_out(player)){

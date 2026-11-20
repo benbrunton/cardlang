@@ -19,7 +19,7 @@ A cardlang file (`.card`) contains **declarations**, which set up the table, and
 | Words (symbols) | Start with a letter. Can contain letters, digits, `_` and `:`. Case-sensitive. |
 | Numbers | Whole numbers only, such as `2` or `26`. |
 | Whitespace | Spaces, tabs and newlines. Windows (`\r\n`) line endings are fine. |
-| Keywords | `name`, `deck`, `players`, `current_player`, `stack`, `define`, `if`, `else`, `check`, `return`, `is`, `not`, `or`, `true`, `false` |
+| Keywords | `name`, `deck`, `players`, `current_player`, `stack`, `def`, `if`, `else`, `check`, `return`, `is`, `not`, `or`, `true`, `false` |
 
 Write one statement per line.
 
@@ -42,12 +42,12 @@ Every game has a standard 52-card deck called `deck`. It starts unshuffled, in o
 ## Functions
 
 ```
-define name(arg1, arg2){
+def name(arg1, arg2){
     statements…
 }
 ```
 
-Parameters can be separated by commas or spaces. A body can be on one line: `define setup(){ next_player() }`.
+Parameters can be separated by commas or spaces. A body can be on one line: `def setup(){ next_player() }`.
 
 Two names are special. The interpreter calls them for you:
 
@@ -147,11 +147,11 @@ Equality compares type as well as value: the number `1` is not equal to the text
 `filter` example:
 
 ```
-define is_heart(card){
+def is_heart(card){
     return(card:suit is Hearts)
 }
 
-define setup(){
+def setup(){
     if(count(filter(deck, is_heart)) is 13){
         end()
     }

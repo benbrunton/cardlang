@@ -1279,12 +1279,12 @@ mod test{
         let mut game = game_from_source("
 players 2
 
-define finish(id){
+def finish(id){
     winner(id)
     end()
 }
 
-define setup(){
+def setup(){
     finish(2)
 }
 ");
@@ -1298,11 +1298,11 @@ define setup(){
         let mut game = game_from_source("
 players 2
 
-define has_no_cards(p){
+def has_no_cards(p){
     return(count(p:hand) is 0)
 }
 
-define player_move(player){
+def player_move(player){
     check(has_no_cards(player) is true)
     end()
 }
@@ -1318,15 +1318,15 @@ define player_move(player){
         let mut game = game_from_source("
 players 2
 
-define has_no_cards(p){
+def has_no_cards(p){
     return(count(p:hand) is 0)
 }
 
-define setup(){
+def setup(){
     deck > players end
 }
 
-define player_move(player){
+def player_move(player){
     check(has_no_cards(player) is true)
     end()
 }
@@ -1343,15 +1343,15 @@ define player_move(player){
 players 2
 stack middle
 
-define discard(p){
+def discard(p){
     p:hand > middle
 }
 
-define setup(){
+def setup(){
     deck > players
 }
 
-define player_move(player){
+def player_move(player){
     discard(player)
 }
 ");
@@ -1367,16 +1367,16 @@ define player_move(player){
         let mut game = game_from_source("
 players 2
 
-define inner(id){
+def inner(id){
     winner(id)
 }
 
-define outer(id){
+def outer(id){
     inner(1)
     winner(id)
 }
 
-define setup(){
+def setup(){
     outer(2)
 }
 ");
@@ -1388,11 +1388,11 @@ define setup(){
     #[test]
     fn filter_can_be_called_with_a_user_defined_function() {
         let mut game = game_from_source("
-define is_ace(card){
+def is_ace(card){
     return(card:rank is Ace)
 }
 
-define setup(){
+def setup(){
     if(count(filter(deck, is_ace)) is 4){
         end()
     }
@@ -1406,11 +1406,11 @@ define setup(){
     #[test]
     fn filter_can_use_negative_comparisons() {
         let mut game = game_from_source("
-define not_ace(card){
+def not_ace(card){
     return(card:rank is not Ace)
 }
 
-define setup(){
+def setup(){
     if(count(filter(deck, not_ace)) is 48){
         end()
     }
@@ -1426,7 +1426,7 @@ define setup(){
         let mut game = game_from_source("
 stack middle
 
-define setup(){
+def setup(){
     deck > middle
     if(count(middle) is 1){
         end()
@@ -1441,11 +1441,11 @@ define setup(){
     #[test]
     fn infinite_recursion_is_stopped() {
         let mut game = game_from_source("
-define forever(){
+def forever(){
     forever()
 }
 
-define setup(){
+def setup(){
     forever()
     end()
 }
@@ -1461,11 +1461,11 @@ define setup(){
 players 2
 stack middle
 
-define setup(){
+def setup(){
     deck > players
 }
 
-define player_move(player){
+def player_move(player){
     player:hand > middle
     if(count(player:hand) is 0){
         end()
@@ -1483,7 +1483,7 @@ define player_move(player){
         let mut game = game_from_source("
 players 2
 
-define setup(){
+def setup(){
     winner()
     if(count() is 0){
         end()
@@ -1500,7 +1500,7 @@ define setup(){
         let mut game = game_from_source("
 players 2
 
-define setup(){
+def setup(){
     nowhere > deck end
 }
 ");
@@ -1524,7 +1524,7 @@ players 2
         let mut game = game_from_source("
 players 2
 
-define player_move(player){
+def player_move(player){
     end()
 }
 ");
@@ -1560,14 +1560,14 @@ players 2
         let result = winners_of("
 players 2
 
-define pick(a, b){
+def pick(a, b){
     if(a is 1){
         return(10)
     }
     return(b)
 }
 
-define setup(){
+def setup(){
     winner(pick(1, 20))
     winner(pick(2, 30))
 }
@@ -1580,7 +1580,7 @@ define setup(){
         let result = winners_of("
 players 2
 
-define setup(){
+def setup(){
     if(true){
         check(false)
     }
@@ -1595,7 +1595,7 @@ define setup(){
         let result = winners_of("
 players 2
 
-define setup(){
+def setup(){
     if(1 is 1 & 2 is 2){
         winner(1)
     }
@@ -1615,7 +1615,7 @@ define setup(){
         let result = winners_of("
 players 2
 
-define setup(){
+def setup(){
     if(1 is 2 or 3 is 3){
         winner(1)
     }
@@ -1638,15 +1638,15 @@ define setup(){
         let result = winners_of("
 players 2
 
-define yes(){
+def yes(){
     return(true)
 }
 
-define no(){
+def no(){
     return(false)
 }
 
-define setup(){
+def setup(){
     if(yes()){
         winner(1)
     }
@@ -1671,11 +1671,11 @@ define setup(){
         let result = winners_of("
 players 2
 
-define one(){
+def one(){
     return(1)
 }
 
-define setup(){
+def setup(){
     if(one()){
         winner(1)
     }
@@ -1689,7 +1689,7 @@ define setup(){
         let result = winners_of("
 players 2
 
-define setup(){
+def setup(){
     if(1 is 2){
         winner(1)
     } else {
@@ -1711,7 +1711,7 @@ define setup(){
         let result = winners_of("
 players 2
 
-define classify(n){
+def classify(n){
     if(n is 1){
         return(10)
     } else if(n is 2){
@@ -1721,7 +1721,7 @@ define classify(n){
     }
 }
 
-define setup(){
+def setup(){
     winner(classify(1))
     winner(classify(2))
     winner(classify(3))
@@ -1735,7 +1735,7 @@ define setup(){
         let result = winners_of("
 players 2
 
-define setup(){
+def setup(){
     winner(nobody)
     winner(2)
 }

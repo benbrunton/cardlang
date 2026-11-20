@@ -1296,7 +1296,7 @@ mod test{
     #[test]
     fn it_can_parse_a_multiline_if_block_inside_a_func() {
         /*
-        define player_move(player){
+        def player_move(player){
             if(count(player:hand) is 0){
                 winner(player:id)
                 end()
@@ -1545,14 +1545,14 @@ mod test{
     #[test]
     fn incomplete_or_invalid_source_is_a_parse_error_not_a_panic() {
         let cases = [
-            "define setup() }",
-            "define setup() x { }",
+            "def setup() }",
+            "def setup() x { }",
             "}",
             ")",
             "5",
             "name x 5",
-            "define setup(){ deck > middle 4 }",
-            "define setup(){ if true){ end() } }",
+            "def setup(){ deck > middle 4 }",
+            "def setup(){ if true){ end() } }",
             "name",
             "players",
             "stack",
@@ -1563,13 +1563,13 @@ mod test{
             "stack 3",
             "current_player first",
             "players > deck end",
-            "define",
-            "define setup(){ check(1 is) }",
-            "define setup(){ check(1 &) }",
-            "define setup(){ check(1 is not) }",
-            "define setup(){ x > }",
-            "define setup(){ deck > }",
-            "define setup(){ deck > 5 }",
+            "def",
+            "def setup(){ check(1 is) }",
+            "def setup(){ check(1 &) }",
+            "def setup(){ check(1 is not) }",
+            "def setup(){ x > }",
+            "def setup(){ deck > }",
+            "def setup(){ deck > 5 }",
         ];
 
         for case in cases.iter() {
@@ -1579,7 +1579,7 @@ mod test{
 
     #[test]
     fn an_unfinished_transfer_reports_its_line() {
-        let result = parse_source("name x\ndefine setup(){\n    deck >\n}");
+        let result = parse_source("name x\ndef setup(){\n    deck >\n}");
         assert_eq!(result.unwrap_err().line_number, 3);
     }
 
@@ -1643,12 +1643,12 @@ mod test{
     #[test]
     fn invalid_expressions_and_else_are_parse_errors() {
         let cases = [
-            "define setup(){ check(1 is 2 is 3) }",
-            "define setup(){ check(or true) }",
-            "define setup(){ check(true &) }",
-            "define setup(){ check((true) }",
-            "define setup(){ if(true){ } else }",
-            "define setup(){ else { } }",
+            "def setup(){ check(1 is 2 is 3) }",
+            "def setup(){ check(or true) }",
+            "def setup(){ check(true &) }",
+            "def setup(){ check((true) }",
+            "def setup(){ if(true){ } else }",
+            "def setup(){ else { } }",
         ];
 
         for case in cases.iter() {

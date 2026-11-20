@@ -160,7 +160,7 @@ fn handle_keyword(partial_token: &str, next_char: Option<&char>) -> Option<Token
         "deck" => Some(TokenResult::Token(Token::Deck)),
         "players" => Some(TokenResult::Token(Token::Players)),
         "current_player" => Some(TokenResult::Token(Token::CurrentPlayer)),
-        "define" => Some(TokenResult::Token(Token::Define)),
+        "def" => Some(TokenResult::Token(Token::Define)),
         "check" => Some(TokenResult::Token(Token::Check)),
         "is" => Some(TokenResult::Token(Token::Is)),
         "if" => Some(TokenResult::Token(Token::If)),
@@ -266,7 +266,7 @@ mod test{
 
     #[test]
     fn it_recognises_keywords(){
-        let src = "deck players stack current_player define";
+        let src = "deck players stack current_player def";
         let result = lexer(&src).unwrap();
 
         assert_eq!(result[0].token, Token::Deck);
