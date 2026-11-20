@@ -273,7 +273,10 @@ impl Runtime {
     fn resolve_to_bool(&mut self, expression: &Expression) -> bool {
         match expression {
             Expression::Bool(b) => *b,
-            Expression::Comparison(c) => self.resolve_expression(&c.left) == self.resolve_expression(&c.right),
+            Expression::Comparison(c) => {
+                let equal = self.resolve_expression(&c.left) == self.resolve_expression(&c.right);
+                equal != c.negative
+            },
             Expression::And(c) => self.resolve_to_bool(&c.left) && self.resolve_to_bool(&c.right),
             _ => false
         }
@@ -514,5 +517,39 @@ mod test{
         let filtered_cards = runtime.filter(cards, func);
 
         assert_eq!(filtered_cards.len(), 4);
+    }
+
+    #[test]
+    fn negative_comparisons_invert_the_result() {
+        let cards = standard_deck();
+        let expression = Expression::Comparison(Box::new(Comparison{
+            left: Expression::Symbol("card:rank".to_string()),
+            right: Expression::Symbol("Ace".to_string()),
+            negative: true
+        }));
+
+        let return_statement = Statement::ReturnStatement(ReturnStatement{ expression });
+        let func = Definition{
+            name: "_".to_string(),
+            arguments: vec!("card".to_string()),
+            body: vec!(return_statement)
+        };
+
+        let initial_values = InitialValues{
+            players: 1,
+            card_stacks: vec!(),
+            current_player: 1,
+        };
+
+        let callbacks = Callbacks{
+            player_move: None,
+            setup: None
+        };
+
+        let mut runtime = Runtime::new(initial_values, callbacks);
+
+        let filtered_cards = runtime.filter(cards, func);
+
+        assert_eq!(filtered_cards.len(), 48);
     }
 }
