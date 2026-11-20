@@ -42,6 +42,11 @@ impl Card {
     pub fn get_rank_str(&self) -> String {
         format!("{:?}", self.rank)
     }
+
+    // Ace 1, Two 2 ... Jack 11, Queen 12, King 13
+    pub fn default_value(&self) -> f64 {
+        (self.rank as usize + 1) as f64
+    }
 }
 
 impl fmt::Display for Card {

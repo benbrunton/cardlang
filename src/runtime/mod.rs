@@ -42,6 +42,8 @@ pub enum ArgumentValue {
 pub struct InitialValues {
     pub players: u32,
     pub player_stacks: Vec<String>,
+    // overrides from a `values { ... }` table, by rank name
+    pub card_values: Vec<(String, f64)>,
     pub card_stacks: Vec<String>,
     pub current_player: usize,
 }
@@ -81,6 +83,7 @@ pub struct Runtime {
     current_player: usize,
     players: Vec<Player>,
     card_stacks: HashMap<String, Vec<Card>>,
+    card_values: HashMap<String, f64>,
     call_stack: Vec<HashMap<String, ArgumentValue>>
 }
 
@@ -99,6 +102,7 @@ impl Runtime {
             current_player: initial_values.current_player,
             call_stack: vec!(),
             card_stacks,
+            card_values: initial_values.card_values.iter().cloned().collect(),
             players: Self::generate_players(initial_values.players, &initial_values.player_stacks),
             callbacks
         }
@@ -150,6 +154,16 @@ impl Runtime {
                     1
                 };
                 None
+            },
+            "sum" => {
+                let total = match f.arguments.get(0).map(|a| self.resolve_expression(a)) {
+                    Some(PrimitiveValue::Stack(cards)) => cards.iter().map(|c| self.card_value(c)).sum(),
+                    _ => {
+                        eprintln!("sum: expected a stack of cards");
+                        0.0
+                    }
+                };
+                Some(PrimitiveValue::Number(total))
             },
             "cards_in_stack" => {
                 let cards = f.arguments.get(0).map(|a| self.resolve_expression(a));
@@ -370,7 +384,8 @@ impl Runtime {
             Expression::Bool(_)
                 | Expression::Comparison(_)
                 | Expression::And(_)
-                | Expression::Or(_) => PrimitiveValue::Bool(self.resolve_to_bool(expression))
+                | Expression::Or(_) => PrimitiveValue::Bool(self.resolve_to_bool(expression)),
+            Expression::Binary(b) => self.evaluate_binary(b)
         }
     }
 
@@ -388,11 +403,38 @@ impl Runtime {
         ArgumentValue::Obj(player_object)
     }
 
-    fn build_card_object(card: Card) -> ArgumentValue {
+    fn build_card_object(&self, card: Card) -> ArgumentValue {
         let mut card_object = HashMap::new();
         card_object.insert("rank".to_string(), PrimitiveValue::String(card.get_rank_str()));
         card_object.insert("suit".to_string(), PrimitiveValue::String(card.get_suit_str()));
+        card_object.insert("value".to_string(), PrimitiveValue::Number(self.card_value(&card)));
         ArgumentValue::Obj(card_object)
+    }
+
+    // Ace 1 ... King 13, unless the game's `values` table says otherwise
+    fn card_value(&self, card: &Card) -> f64 {
+        match self.card_values.get(&card.get_rank_str()) {
+            Some(v) => *v,
+            None => card.default_value()
+        }
+    }
+
+    fn evaluate_binary(&mut self, b: &Binary) -> PrimitiveValue {
+        let left = self.resolve_expression(&b.left);
+        let right = self.resolve_expression(&b.right);
+        let (l, r) = match (&left, &right) {
+            (PrimitiveValue::Number(l), PrimitiveValue::Number(r)) => (*l, *r),
+            _ => {
+                eprintln!("{:?} needs two numbers, got {:?} and {:?}", b.op, left, right);
+                return PrimitiveValue::Bool(false);
+            }
+        };
+        match b.op {
+            BinaryOp::Add => PrimitiveValue::Number(l + r),
+            BinaryOp::Subtract => PrimitiveValue::Number(l - r),
+            BinaryOp::LessThan => PrimitiveValue::Bool(l < r),
+            BinaryOp::GreaterThan => PrimitiveValue::Bool(l > r)
+        }
     }
 
     // returns false when the transfer can't happen
@@ -578,7 +620,7 @@ impl Runtime {
 
         return stack.iter().filter(|&card|{
             let mut call_stack_frame = HashMap::new();
-            let card_obj = Self::build_card_object(*card);
+            let card_obj = self.build_card_object(*card);
             call_stack_frame.insert(card_arg.clone(), card_obj);
             self.call_stack.push(call_stack_frame);
             let keep_card = self.handle_statements(&function.body).value();
@@ -616,6 +658,7 @@ mod test{
         let initial_values = InitialValues{
             players: 1,
             player_stacks: vec!(),
+            card_values: vec!(),
             card_stacks: vec!(),
             current_player: 1,
         };
@@ -648,6 +691,7 @@ mod test{
         let initial_values = InitialValues{
             players: 1,
             player_stacks: vec!(),
+            card_values: vec!(),
             card_stacks: vec!(),
             current_player: 1,
         };
@@ -684,6 +728,7 @@ mod test{
         let initial_values = InitialValues{
             players: 1,
             player_stacks: vec!(),
+            card_values: vec!(),
             card_stacks: vec!(),
             current_player: 1,
         };
@@ -720,6 +765,7 @@ mod test{
         let initial_values = InitialValues{
             players: 1,
             player_stacks: vec!(),
+            card_values: vec!(),
             card_stacks: vec!(),
             current_player: 1,
         };

@@ -23,6 +23,7 @@ impl Game {
         let mut initial_values = InitialValues{ 
             players: 1,
             player_stacks: vec!(),
+            card_values: vec!(),
             card_stacks: vec!(),
             current_player: 1 
         };
@@ -68,6 +69,9 @@ impl Game {
                     value: Expression::Symbol(s)
                 }) => {
                     initial_values.card_stacks.push(s.to_string());
+                },
+                Statement::ValueTable(table) => {
+                    initial_values.card_values.extend(table.iter().cloned());
                 },
                 Statement::Declaration(Declaration{
                     key: GlobalKey::PlayerStack,
@@ -1939,5 +1943,83 @@ def setup(){
 
         assert_eq!(game.show("game"), "active");
         assert_eq!(game.show("player 1 collection"), "player 1 has no stack 'collection'");
+    }
+
+    #[test]
+    fn cards_have_default_values_from_ace_1_to_king_13() {
+        let result = winners_of("
+players 2
+
+def is_spade(card){
+    return(card:suit is Spades)
+}
+
+def setup(){
+    winner(sum(filter(deck, is_spade)))
+}
+");
+        assert_eq!(result, "active\nwinners: 91");
+    }
+
+    #[test]
+    fn a_value_table_overrides_card_values() {
+        let result = winners_of("
+players 2
+values {
+    Jack 8, Queen 9
+    King 10
+}
+
+def is_royal(card){
+    return(card:rank is Jack or card:rank is Queen or card:rank is King)
+}
+
+def is_spade(card){
+    return(card:suit is Spades)
+}
+
+def setup(){
+    winner(sum(filter(filter(deck, is_spade), is_royal)))
+    winner(sum(filter(deck, is_spade)))
+}
+");
+        // royals 8 + 9 + 10; all spades 1..10 + 27
+        assert_eq!(result, "active\nwinners: 27, 82");
+    }
+
+    #[test]
+    fn arithmetic_and_ordering_work_on_numbers() {
+        let result = winners_of("
+players 2
+
+def setup(){
+    winner(1 + 2 - 4)
+    if(3 > 2 & 2 < 3 & 1 + 1 is 2){
+        winner(10)
+    }
+    if(3 < 2 or 2 > 3){
+        winner(20)
+    }
+    if(count(deck) - 2 is 50){
+        winner(30)
+    }
+}
+");
+        assert_eq!(result, "active\nwinners: -1, 10, 30");
+    }
+
+    #[test]
+    fn arithmetic_on_non_numbers_is_not_true() {
+        let result = winners_of("
+players 2
+
+def setup(){
+    if(deck > 3){
+        winner(1)
+    }
+    winner(2)
+}
+");
+        assert_eq!(result, "active\nwinners: 2");
     }
 }

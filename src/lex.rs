@@ -30,7 +30,7 @@ impl std::fmt::Display for LexError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let message = match self.error_type {
             LexErrorType::EmptySpecification => "the file is empty",
-            LexErrorType::ParseError => "unrecognised character (for example '-', '\"' or a decimal number)",
+            LexErrorType::ParseError => "unrecognised character (for example '\"' or a decimal number)",
             LexErrorType::UnterminatedComment => "a comment is never closed - missing ')'"
         };
         write!(f, "line {}: {}", self.line_number, message)
@@ -131,6 +131,9 @@ fn handle_single_chars(current_char: char) -> Option<TokenResult> {
         '\n' => Some(TokenResult::Token(Token::Newline)),
         '.' => Some(TokenResult::PartialToken(current_char.to_string())),
         '&' => Some(TokenResult::Token(Token::Ampersand)),
+        '+' => Some(TokenResult::Token(Token::Plus)),
+        '-' => Some(TokenResult::Token(Token::Minus)),
+        '<' => Some(TokenResult::Token(Token::LessThan)),
         _ => None
     }
 }
@@ -171,6 +174,7 @@ fn handle_keyword(partial_token: &str, next_char: Option<&char>) -> Option<Token
         "not" => Some(TokenResult::Token(Token::Not)),
         "or" => Some(TokenResult::Token(Token::Or)),
         "else" => Some(TokenResult::Token(Token::Else)),
+        "values" => Some(TokenResult::Token(Token::Values)),
         _ => None
     }
 }
