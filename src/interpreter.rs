@@ -2911,4 +2911,152 @@ def setup(){
         game.start();
         assert_eq!(game.show("game"), "active\nwinners: 48, 0");
     }
+
+    // Scopa values: Ace 1 ... 7, Jack 8, Queen 9, King 10
+    fn scopa_value(card: &str) -> usize {
+        match card.split(' ').next().unwrap() {
+            "ace" => 1, "two" => 2, "three" => 3, "four" => 4, "five" => 5,
+            "six" => 6, "seven" => 7, "jack" => 8, "queen" => 9, "king" => 10,
+            other => panic!("unexpected card {}", other)
+        }
+    }
+
+    // a capture for this card: a single matching card if there is one
+    // (the rules require it), otherwise any group adding up to its value
+    fn find_capture(card: &str, middle: &[String]) -> Option<Vec<String>> {
+        let value = scopa_value(card);
+        if let Some(single) = middle.iter().find(|m| scopa_value(m) == value) {
+            return Some(vec![single.clone()]);
+        }
+        for mask in 1..(1usize << middle.len()) {
+            let group: Vec<String> = middle.iter().enumerate()
+                .filter(|(i, _)| mask & (1 << i) != 0)
+                .map(|(_, c)| c.clone())
+                .collect();
+            if group.iter().map(|c| scopa_value(c)).sum::<usize>() == value {
+                return Some(group);
+            }
+        }
+        None
+    }
+
+    fn play_scopa_game() {
+        let mut game = game_from_source(include_str!("../examples/scopa.card"));
+        game.start();
+        assert_eq!(cards_shown(&game, "middle").len(), 4);
+        assert_eq!(cards_shown(&game, "deck").len(), 30);
+
+        let mut moves = 0;
+        while !game.show("game").starts_with("game over") {
+            moves += 1;
+            assert!(moves < 2000, "the game should end");
+
+            let current = game.show("current_player");
+            let hand = cards_shown(&game, &format!("player {}", current));
+            let middle = cards_shown(&game, "middle");
+
+            let capture = hand.iter().find_map(|card| find_capture(card, &middle).map(|group| (card.clone(), group)));
+            match capture {
+                Some((card, group)) => {
+                    // a capture is possible, so dropping isn't allowed
+                    assert_eq!(
+                        play(&mut game, &format!("drop {}", hand[0])),
+                        Err("you can capture, so you must - use take".to_string())
+                    );
+                    play(&mut game, &format!("take {} / {}", card, group.join(", "))).unwrap();
+                },
+                None => play(&mut game, &format!("drop {}", hand[0])).unwrap()
+            }
+        }
+
+        // the winner reached 11 and is ahead of the other player
+        let score = |n: usize| game.show(&format!("player {} score", n)).parse::<usize>().unwrap();
+        let (one, two) = (score(1), score(2));
+        let winner = if one > two { 1 } else { 2 };
+        assert!(one.max(two) >= 11, "scores {} and {}", one, two);
+        assert_ne!(one, two);
+        assert_eq!(game.show("game"), format!("game over\nwinners: {}", winner));
+
+        // all 40 cards are still in the game
+        let total: usize = ["deck", "middle", "player 1 collection", "player 2 collection", "player 1", "player 2"]
+            .iter().map(|w| cards_shown(&game, w).len()).sum();
+        assert_eq!(total, 40);
+    }
+
+    #[test]
+    fn scopa_can_be_played_to_11_points() {
+        for _ in 0..3 {
+            play_scopa_game();
+        }
+    }
+
+    // Scopa with a test setup (a later def replaces the game's own) that
+    // gives each player a known collection and then scores the hand
+    fn scopa_scored(extra_setup: &str) -> Game {
+        let source = format!("{}\ndef setup(){{\n    dealer = 1\n{}\n    end_hand()\n}}\n",
+            include_str!("../examples/scopa.card"), extra_setup);
+        let mut game = game_from_source(&source);
+        game.start();
+        game
+    }
+
+    #[test]
+    fn scopa_scores_a_hand() {
+        let game = scopa_scored("
+    deck > players:1:collection taking [7d, 7s, 7h, 7c, 6d]
+    deck > players:2:collection taking [ad, 2d, 3d, 5s, ks, kh]
+    players:1:scopas = 2
+");
+        // player 1: primiera (four 7s; player 2 has no clubs), settebello, 2 scopas
+        // player 2: most cards (6 to 5), most diamonds (3 to 2)
+        assert_eq!(game.show("player 1 score"), "4");
+        assert_eq!(game.show("player 2 score"), "2");
+        // and the next hand has been dealt, with player 2 dealing
+        assert_eq!(game.show("dealer"), "2");
+        assert_eq!(game.show("current_player"), "1");
+        assert_eq!(cards_shown(&game, "middle").len(), 4);
+        assert_eq!(game.show("game"), "active");
+    }
+
+    #[test]
+    fn scopa_gives_nobody_a_tied_point() {
+        let game = scopa_scored("
+    deck > players:1:collection taking [7s, 6h, 5c, 4d]
+    deck > players:2:collection taking [7h, 6s, 5d, 4c]
+");
+        // same number of cards, one diamond each, the same primiera (21 + 18 + 15 + 14)
+        assert_eq!(game.show("player 1 score"), "0");
+        assert_eq!(game.show("player 2 score"), "0");
+    }
+
+    #[test]
+    fn scopa_ends_at_11_with_a_single_leader() {
+        let game = scopa_scored("
+    players:1:score = 10
+    deck > players:1:collection taking [7d]
+");
+        assert_eq!(game.show("game"), "game over\nwinners: 1");
+    }
+
+    #[test]
+    fn scopa_plays_on_when_tied_for_the_lead() {
+        let game = scopa_scored("
+    players:1:score = 11
+    players:2:score = 11
+");
+        // nothing captured, so no points this hand: both on 11, so another hand is dealt
+        assert_eq!(game.show("game"), "active");
+        assert_eq!(cards_shown(&game, "middle").len(), 4);
+    }
+
+    #[test]
+    fn scopa_gives_the_last_capturer_what_is_left() {
+        let game = scopa_scored("
+    deck > middle taking [3c, 4c]
+    deck > players:2:collection taking [as]
+    last_capturer = 2
+");
+        // player 2 ends the hand with 3 cards against 0: most cards
+        assert_eq!(game.show("player 2 score"), "1");
+    }
 }
