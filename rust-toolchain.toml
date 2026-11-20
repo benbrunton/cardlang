@@ -1,0 +1,6 @@
+# The Rust version used locally and in CI. Pinned so a new Rust release
+# can't add clippy warnings that fail the build; bump it deliberately.
+[toolchain]
+channel = "1.100.0"
+components = ["clippy"]
+profile = "minimal"
