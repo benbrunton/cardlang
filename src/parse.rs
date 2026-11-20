@@ -170,6 +170,15 @@ pub fn parse(tokens: &[SourceToken]) -> Result<Vec<Statement>, ParseError> {
 
  
             },
+            Some(SourceToken{ token: Token::Every, line_number }) => {
+                // as a statement, `every` runs a block: every player p { ... }
+                let (kind, variable, has_colon) = build_every_header(&mut tokens_iter, *line_number)?;
+                if has_colon {
+                    return Err(ParseError::new(ParseErrorType::UnexpectedToken, *line_number));
+                }
+                let body = build_block(&mut tokens_iter)?;
+                ast.push(Statement::Every(EveryLoop{ kind, variable, body }));
+            },
             Some(SourceToken{ token: Token::If, line_number }) => {
                 let if_statement = build_if(&mut tokens_iter, *line_number)?;
                 ast.push(Statement::IfStatement(if_statement));
@@ -183,10 +192,28 @@ pub fn parse(tokens: &[SourceToken]) -> Result<Vec<Statement>, ParseError> {
                     })
                 }
 
-                let expression = build_expression(&mut tokens_iter)
-                    .map_err(|e| e.or_line(*line_number))?;
+                let expression = parse_or(&mut tokens_iter).map_err(|e| e.or_line(*line_number))?;
 
-                let check_statement = CheckStatement{ expression };
+                // check(rule) or check(rule, message)
+                let message = match tokens_iter.next() {
+                    Some(SourceToken{ token: Token::CloseParens, ..}) => None,
+                    Some(SourceToken{ token: Token::Comma, ..}) => {
+                        let text = match tokens_iter.next() {
+                            Some(SourceToken{ token: Token::Text(t), ..}) => t.clone(),
+                            _ => return Err(ParseError::new(ParseErrorType::UnexpectedToken, *line_number))
+                        };
+                        match tokens_iter.next() {
+                            Some(SourceToken{ token: Token::CloseParens, ..}) => Some(text),
+                            _ => return Err(ParseError::new(ParseErrorType::UnexpectedToken, *line_number))
+                        }
+                    },
+                    Some(SourceToken{ line_number: l, .. }) => {
+                        return Err(ParseError::new(ParseErrorType::UnexpectedToken, *l))
+                    },
+                    None => return Err(ParseError::new(ParseErrorType::UnexpectedEndOfStream, *line_number))
+                };
+
+                let check_statement = CheckStatement{ expression, message };
                 let statement = Statement::CheckStatement(check_statement);
                 ast.push(statement);
             },
@@ -390,6 +417,8 @@ fn parse_comparison(tokens_iter: &mut std::slice::Iter<SourceToken>) -> Result<E
     let left = parse_additive(tokens_iter)?;
     let op = match peek_token(tokens_iter) {
         Some(Token::LessThan) => BinaryOp::LessThan,
+        Some(Token::LessOrEqual) => BinaryOp::LessOrEqual,
+        Some(Token::GreaterOrEqual) => BinaryOp::GreaterOrEqual,
         // inside an expression '>' means greater than, not a transfer
         Some(Token::Transfer) => BinaryOp::GreaterThan,
         Some(Token::Is) => {
@@ -447,6 +476,15 @@ fn parse_primary(tokens_iter: &mut std::slice::Iter<SourceToken>) -> Result<Expr
             } else {
                 Expression::Symbol(s.to_string())
             }
+        },
+        Token::Every => {
+            let (kind, variable, has_colon) = build_every_header(tokens_iter, source_token.line_number)?;
+            if !has_colon {
+                // as a value, `every` is a test: every player p: <condition>
+                return Err(ParseError::new(ParseErrorType::UnexpectedToken, source_token.line_number));
+            }
+            let condition = parse_or(tokens_iter)?;
+            Expression::Every(Box::new(EveryTest{ kind, variable, condition }))
         },
         Token::OpenParens => {
             let inner = parse_or(tokens_iter)?;
@@ -531,6 +569,58 @@ fn build_value_table(tokens_iter: &mut std::slice::Iter<SourceToken>, line_numbe
         }
     }
     Ok(table)
+}
+
+// After `every`: `player p` or `card c in <pile>`, optionally followed by ':'.
+// The lexer keeps a ':' that touches a word as part of it (`p:`, `middle:`),
+// so a trailing ':' on the last word also counts as the colon.
+fn build_every_header(tokens_iter: &mut std::slice::Iter<SourceToken>, line_number: u32) -> Result<(EveryKind, String, bool), ParseError> {
+    let unexpected = || ParseError::new(ParseErrorType::UnexpectedToken, line_number);
+
+    let is_player = match tokens_iter.next() {
+        Some(SourceToken{ token: Token::Symbol(s), .. }) if s == "player" => true,
+        Some(SourceToken{ token: Token::Symbol(s), .. }) if s == "card" => false,
+        Some(_) => return Err(unexpected()),
+        None => return Err(ParseError::new(ParseErrorType::UnexpectedEndOfStream, line_number))
+    };
+
+    let (variable, mut has_colon) = match tokens_iter.next() {
+        Some(SourceToken{ token: Token::Symbol(s), .. }) => match s.strip_suffix(':') {
+            Some(name) if !name.is_empty() && !name.contains(':') => (name.to_string(), true),
+            None if !s.contains(':') => (s.to_string(), false),
+            _ => return Err(unexpected())
+        },
+        _ => return Err(ParseError::new(ParseErrorType::ExpectedSymbol, line_number))
+    };
+
+    let kind = if is_player {
+        EveryKind::Player
+    } else {
+        if has_colon {
+            return Err(unexpected());
+        }
+        match tokens_iter.next() {
+            Some(SourceToken{ token: Token::In, .. }) => (),
+            _ => return Err(unexpected())
+        }
+        let pile = match parse_primary(tokens_iter).map_err(|e| e.or_line(line_number))? {
+            Expression::Symbol(s) => match s.strip_suffix(':') {
+                Some(name) => {
+                    has_colon = true;
+                    Expression::Symbol(name.to_string())
+                },
+                None => Expression::Symbol(s)
+            },
+            other => other
+        };
+        EveryKind::Card(pile)
+    };
+
+    if !has_colon && peek_token(tokens_iter) == Some(Token::Colon) {
+        tokens_iter.next();
+        has_colon = true;
+    }
+    Ok((kind, variable, has_colon))
 }
 
 fn skip_parens_group(tokens_iter: &mut std::slice::Iter<SourceToken>, line_number: u32) -> Result<(), ParseError> {
@@ -1024,7 +1114,7 @@ mod test{
             right: Expression::Bool(true),
             negative: false
         }));
-        let expected = Ok(vec![Statement::CheckStatement(CheckStatement{ expression })]);
+        let expected = Ok(vec![Statement::CheckStatement(CheckStatement{ expression, message: None })]);
 
         assert_eq!(parse(&tokens), expected);
     }
@@ -1465,7 +1555,7 @@ mod test{
         ];
 
         let expected = vec![
-            Statement::CheckStatement(CheckStatement{
+            Statement::CheckStatement(CheckStatement{ message: None,
                 expression: Expression::Bool(true)
             })
         ];
@@ -1510,7 +1600,7 @@ mod test{
         }));
 
         let expected = vec![
-            Statement::CheckStatement(CheckStatement{ expression })
+            Statement::CheckStatement(CheckStatement{ expression, message: None })
         ];
 
         let result = parse(&tokens);
@@ -1623,6 +1713,14 @@ mod test{
     #[test]
     fn incomplete_or_invalid_source_is_a_parse_error_not_a_panic() {
         let cases = [
+            "def setup(){ every player p }",
+            "def setup(){ every player p: true }",
+            "def setup(){ every card c middle { } }",
+            "def setup(){ every card c: in middle { } }",
+            "def setup(){ every thing x { } }",
+            "def setup(){ every player { } }",
+            "def setup(){ check(every player p) }",
+            "def setup(){ check(every player p { }) }",
             "values { Joker 1 }",
             "values { King }",
             "values King 10",
@@ -1676,7 +1774,9 @@ mod test{
             Token::OpenBracket, Token::CloseBracket, Token::Transfer, Token::Check, Token::Is,
             Token::If, Token::Newline, Token::True, Token::False, Token::Ampersand,
             Token::Return, Token::Test, Token::Not, Token::Or, Token::Else,
-            Token::Plus, Token::Minus, Token::LessThan, Token::Values
+            Token::Plus, Token::Minus, Token::LessThan, Token::Values,
+            Token::Text("some text".to_string()), Token::Every, Token::In, Token::Colon,
+            Token::LessOrEqual, Token::GreaterOrEqual, Token::Symbol("p:".to_string())
         ];
 
         // simple deterministic pseudo random generator, so failures are reproducible
@@ -1781,5 +1881,68 @@ mod test{
             ("Two".to_string(), -1.0)
         ))];
         assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn a_check_message_is_free_text() {
+        let result = parse_source("check(a is 1, don't do that (please), or else / ok)").unwrap();
+        let expected = vec![Statement::CheckStatement(CheckStatement{
+            expression: Expression::Comparison(Box::new(Comparison{
+                left: Expression::Symbol("a".to_string()),
+                right: Expression::Number(1.0),
+                negative: false
+            })),
+            message: Some("don't do that (please), or else / ok".to_string())
+        })];
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn commas_inside_the_rule_are_not_the_message() {
+        let result = parse_source("check(same(a, b), not the same)").unwrap();
+        match &result[0] {
+            Statement::CheckStatement(c) => {
+                assert_eq!(c.expression.to_string(), "same(a, b)");
+                assert_eq!(c.message, Some("not the same".to_string()));
+            },
+            other => panic!("expected a check, got {:?}", other)
+        }
+    }
+
+    #[test]
+    fn a_check_message_can_span_lines_and_line_numbers_stay_right() {
+        let source = "def setup(){\n    check(false, a long\n        message)\n    oops oops\n}";
+        let tokens = crate::lex::lexer(source).unwrap();
+        let error = parse(&tokens).unwrap_err();
+        assert_eq!(error.line_number, 4);
+    }
+
+    #[test]
+    fn an_unclosed_check_message_is_an_error() {
+        assert!(crate::lex::lexer("check(a is 1, never closed").is_err());
+        assert!(crate::lex::lexer("check(a is 1, unbalanced ( bracket)").is_err());
+    }
+
+    #[test]
+    fn every_can_be_written_with_or_without_a_space_before_the_colon() {
+        let joined = parse_source("return(every card c in p:hand: c:value > 1)").unwrap();
+        let spaced = parse_source("return(every card c in p:hand : c:value > 1)").unwrap();
+        assert_eq!(joined, spaced);
+
+        match &joined[0] {
+            Statement::ReturnStatement(r) => {
+                assert_eq!(r.expression.to_string(), "every card c in p:hand: c:value > 1");
+            },
+            other => panic!("expected a return, got {:?}", other)
+        }
+    }
+
+    #[test]
+    fn it_parses_greater_or_equal_and_less_or_equal() {
+        let result = parse_source("return(a >= 1 & b <= 2)").unwrap();
+        match &result[0] {
+            Statement::ReturnStatement(r) => assert_eq!(r.expression.to_string(), "a >= 1 & b <= 2"),
+            other => panic!("expected a return, got {:?}", other)
+        }
     }
 }

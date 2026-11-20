@@ -110,7 +110,9 @@ pub struct Runtime {
     // names of the game functions being run, innermost last
     function_names: Vec<String>,
     // why the most recent check, transfer or move failed
-    failure: Option<String>
+    failure: Option<String>,
+    // true when the failure is the game's own message from check(rule, message)
+    failure_is_message: bool
 }
 
 impl Runtime {
@@ -130,6 +132,7 @@ impl Runtime {
             current_move: None,
             function_names: vec![],
             failure: None,
+            failure_is_message: false,
             card_stacks,
             card_values: initial_values.card_values.iter().cloned().collect(),
             players: Self::generate_players(initial_values.players, &initial_values.player_stacks),
@@ -359,6 +362,11 @@ impl Runtime {
 
         if Self::failed(&result) {
             self.restore(before);
+            if self.failure_is_message {
+                if let Some(message) = self.failure.take() {
+                    return Err(message);
+                }
+            }
             return Err(match self.failure.take() {
                 Some(reason) => format!("not allowed: {}", reason),
                 None => "not allowed".to_string()
@@ -444,6 +452,7 @@ impl Runtime {
                 None => {
                     let names: Vec<String> = moves.iter().map(|d| d.name.clone()).collect();
                     self.failure = Some(format!("unknown move '{}' - valid moves: {}", name, names.join(", ")));
+                    self.failure_is_message = false;
                     false
                 }
             },
@@ -459,6 +468,7 @@ impl Runtime {
                     reasons.push(self.failure.take().unwrap_or_else(|| format!("{} failed", definition.name)));
                 }
                 self.failure = Some(format!("no valid move - {}", reasons.join("; ")));
+                self.failure_is_message = false;
                 false
             }
         }
@@ -483,6 +493,7 @@ impl Runtime {
     fn fail(&mut self, what: &str, detail: String) {
         let function = self.function_names.last().cloned().unwrap_or_else(|| "game".to_string());
         self.failure = Some(format!("{} in {}: {}", what, function, detail));
+        self.failure_is_message = false;
     }
 
     fn handle_statements(&mut self, statements: &[Statement]) -> Flow {
@@ -506,9 +517,20 @@ impl Runtime {
                         return Flow::Return(v);
                     }
                 },
+                Statement::Every(e) => {
+                    if let Flow::Return(v) = self.handle_every_loop(e) {
+                        return Flow::Return(v);
+                    }
+                },
                 Statement::CheckStatement(c) => {
                     if !self.resolve_to_bool(&c.expression) {
-                        self.fail("check failed", c.expression.to_string());
+                        match &c.message {
+                            Some(message) => {
+                                self.failure = Some(message.clone());
+                                self.failure_is_message = true;
+                            },
+                            None => self.fail("check failed", c.expression.to_string())
+                        }
                         return Flow::Return(PrimitiveValue::Bool(false));
                     }
                 },
@@ -575,7 +597,8 @@ impl Runtime {
             Expression::Bool(_)
                 | Expression::Comparison(_)
                 | Expression::And(_)
-                | Expression::Or(_) => PrimitiveValue::Bool(self.resolve_to_bool(expression)),
+                | Expression::Or(_)
+                | Expression::Every(_) => PrimitiveValue::Bool(self.resolve_to_bool(expression)),
             Expression::Binary(b) => self.evaluate_binary(b)
         }
     }
@@ -624,8 +647,55 @@ impl Runtime {
             BinaryOp::Add => PrimitiveValue::Number(l + r),
             BinaryOp::Subtract => PrimitiveValue::Number(l - r),
             BinaryOp::LessThan => PrimitiveValue::Bool(l < r),
-            BinaryOp::GreaterThan => PrimitiveValue::Bool(l > r)
+            BinaryOp::GreaterThan => PrimitiveValue::Bool(l > r),
+            BinaryOp::LessOrEqual => PrimitiveValue::Bool(l <= r),
+            BinaryOp::GreaterOrEqual => PrimitiveValue::Bool(l >= r)
         }
+    }
+
+    // the players, or the cards in a pile, that `every` goes through
+    fn every_items(&mut self, kind: &EveryKind) -> Vec<ArgumentValue> {
+        match kind {
+            EveryKind::Player => self.players.clone().into_iter().map(Self::build_player_object).collect(),
+            EveryKind::Card(pile) => match self.resolve_expression(pile) {
+                PrimitiveValue::Stack(cards) => cards.iter().map(|c| self.build_card_object(*c)).collect(),
+                other => {
+                    eprintln!("every card: '{}' is not a pile of cards (got {:?})", pile, other);
+                    vec![]
+                }
+            }
+        }
+    }
+
+    // every player p { ... }: a check, return or failed transfer inside the
+    // loop ends the whole function, as it would outside a loop
+    fn handle_every_loop(&mut self, every: &EveryLoop) -> Flow {
+        for item in self.every_items(&every.kind) {
+            let mut frame = HashMap::new();
+            frame.insert(every.variable.clone(), item);
+            self.call_stack.push(frame);
+            let flow = self.handle_statements(&every.body);
+            self.call_stack.pop();
+            if let Flow::Return(v) = flow {
+                return Flow::Return(v);
+            }
+        }
+        Flow::Continue
+    }
+
+    // every player p: condition - true when it holds for all of them
+    fn every_test(&mut self, every: &EveryTest) -> bool {
+        for item in self.every_items(&every.kind) {
+            let mut frame = HashMap::new();
+            frame.insert(every.variable.clone(), item);
+            self.call_stack.push(frame);
+            let holds = self.resolve_to_bool(&every.condition);
+            self.call_stack.pop();
+            if !holds {
+                return false;
+            }
+        }
+        true
     }
 
     // returns false when the transfer can't happen
@@ -716,6 +786,7 @@ impl Runtime {
             },
             Expression::And(c) => self.resolve_to_bool(&c.left) && self.resolve_to_bool(&c.right),
             Expression::Or(c) => self.resolve_to_bool(&c.left) || self.resolve_to_bool(&c.right),
+            Expression::Every(e) => self.every_test(e),
             // values and function calls count as true only when they are the boolean true
             _ => self.resolve_expression(expression) == PrimitiveValue::Bool(true)
         }

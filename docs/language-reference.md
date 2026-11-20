@@ -7,6 +7,7 @@ A cardlang file (`.card`) contains **declarations**, which set up the table, and
 - [Functions](#functions)
 - [Moves](#moves)
 - [Statements](#statements)
+- [Loops: every](#loops-every)
 - [Transfers](#transfers)
 - [Expressions and values](#expressions-and-values)
 - [Built-in functions](#built-in-functions)
@@ -19,9 +20,9 @@ A cardlang file (`.card`) contains **declarations**, which set up the table, and
 | Comments | `.( any text )`. They can span lines, and nested parentheses are allowed: `.(a (b) c)`. |
 | Words (symbols) | Start with a letter. Can contain letters, digits, `_` and `:`. Case-sensitive. |
 | Numbers | Whole numbers only, such as `2` or `26`. Write negative numbers as `-1`. |
-| Operators | `>` (transfer, or greater than inside an expression), `<`, `+`, `-`, `&` |
+| Operators | `>` (transfer, or greater than inside an expression), `<`, `>=`, `<=`, `+`, `-`, `&`, `:` (after `every … `) |
 | Whitespace | Spaces, tabs and newlines. Windows (`\r\n`) line endings are fine. |
-| Keywords | `name`, `deck`, `players`, `current_player`, `stack`, `values`, `def`, `if`, `else`, `check`, `return`, `is`, `not`, `or`, `true`, `false` |
+| Keywords | `name`, `deck`, `players`, `current_player`, `stack`, `values`, `def`, `if`, `else`, `every`, `in`, `check`, `return`, `is`, `not`, `or`, `true`, `false` |
 
 Write one statement per line.
 
@@ -121,10 +122,73 @@ def drop(player, move){
 | `if(condition){ … }` | Run the block when the condition is true. |
 | `if(condition){ … } else { … }` | Run the first block when the condition is true, otherwise the second. `else` can go on the line after the `}`. |
 | `if(a){ … } else if(b){ … } else { … }` | Run the block for the first condition that is true. |
-| `check(condition)` | When the condition is false, stop the function and return `false`. This works inside `if` blocks too. |
+| `check(condition)` | When the condition is false, stop the function and return `false`. This works inside `if` and `every` blocks too. |
+| `check(condition, message)` | The same, and if this rejects a move, the player sees `message` instead of the rule. See [check messages](#check-messages). |
+| `every player p { … }` | Run the block once for each player. See [Loops](#loops-every). |
 | `return(expression)` | Stop the function and give back the value. This works inside `if` blocks too. |
 
 A **condition** (in `if` and `check`) is true only when it evaluates to the boolean `true`. A function call or parameter can be used directly: `if(is_out(player))`. A number, text or stack is never true, so `if(count(deck))` is false. Write `if(count(deck) > 0)`.
+
+### Check messages
+
+```
+check(count(move:target) > 0, put a / before the cards you're capturing, e.g. take 9d / 4c 5s)
+```
+
+Everything after the **first** comma, up to the `)` that closes the `check`, is the message, exactly as written. No quotes are needed:
+- later commas are part of the message
+- any characters can be used, including `/`, apostrophes and words like `is` or `or`
+- brackets inside the message must be balanced: `(like this)` is fine, but a lone `)` ends the message
+- a message can continue onto the next line; extra spaces and line breaks become single spaces
+
+When a move is rejected by a `check` with a message, the CLI prints `move ignored: <message>`. Without a message, it prints the rule that failed.
+
+## Loops: every
+
+`every` goes through each player, or each card in a pile. It has two forms.
+
+**Run a block for each one:**
+
+```
+every player p {
+    deck > p:hand 3
+}
+
+every card c in middle {
+    winner(c:value)
+}
+```
+
+Players are visited in order, 1, 2, 3 …. A `check`, `return` or failed transfer inside the block ends the whole function, just as it would outside the loop.
+
+**Test whether something is true for all of them** with a colon:
+
+```
+def hands_empty(){
+    return(every player p: count(p:hand) is 0)
+}
+```
+
+`every player p: <condition>` is `true` when the condition is true for every player (and for no players at all). It can be used anywhere a value is expected: in `if`, `check`, `return`, or combined with `&` and `or`. The condition runs to the end of the enclosing brackets, so `every player p: a & b` tests `a & b` for each player.
+
+To test whether something is true for *at least one*, test that it isn't false for all: `if((every player p: count(p:hand) is 0) is false)`.
+
+Two loops together can compare players with each other. For example, everyone with the most cards wins:
+
+```
+every player p {
+    if(every player q: count(p:collection) >= count(q:collection)){
+        winner(p:id)
+    }
+}
+```
+
+| Form | Goes through |
+|---|---|
+| `every player p` | each player, as a [player object](#objects-players-cards-and-moves) |
+| `every card c in <pile>` | each card in the pile, as a [card object](#objects-players-cards-and-moves), bottom first. `<pile>` can be any expression that gives cards: `middle`, `p:hand`, `players:2:collection`, `filter(deck, is_ace)` |
+
+The colon can touch the word before it or stand alone: `every player p: …` and `every card c in middle : …` both work.
 
 ## Transfers
 
@@ -177,16 +241,17 @@ Values are numbers, booleans (`true` / `false`), text, and stacks (lists of card
 | any other word, e.g. `Ace` | the word as text |
 | `f(a, b)` | the function's return value |
 | `a + b`, `a - b` | arithmetic on numbers |
-| `a < b`, `a > b` | `true` if `a` is less / greater than `b` (numbers only) |
+| `a < b`, `a > b`, `a <= b`, `a >= b` | compare numbers |
+| `every player p: …` | `true` if the condition holds for every player; see [Loops](#loops-every) |
 | `a is b` | `true` if the values are equal |
 | `a is not b` | `true` if the values differ |
 | `a & b` | `true` if both are `true` |
 | `a or b` | `true` if either is `true` |
 | `( … )` | grouping |
 
-**Precedence**, tightest first: `+` `-`, then `is` / `is not` / `<` / `>`, then `&`, then `or`. So `a + 1 > b & c is 2 or d` means `(((a + 1) > b) & (c is 2)) or d`. Use parentheses to group differently. Comparisons can't be chained: `a < b < c` is a parse error.
+**Precedence**, tightest first: `+` `-`, then `is` / `is not` / `<` / `>` / `<=` / `>=`, then `&`, then `or`. So `a + 1 > b & c is 2 or d` means `(((a + 1) > b) & (c is 2)) or d`. Use parentheses to group differently. Comparisons can't be chained: `a < b < c` is a parse error.
 
-Arithmetic and `<` / `>` need numbers. With anything else they print a message to stderr and give `false`.
+Arithmetic and `<` / `>` / `<=` / `>=` need numbers. With anything else they print a message to stderr and give `false`.
 
 Equality compares type as well as value: the number `1` is not equal to the text `1`. Two stacks are equal when they hold the same cards in the same order.
 

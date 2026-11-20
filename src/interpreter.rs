@@ -34,6 +34,7 @@ fn collect_valid_moves(statements: &[Statement], names: &mut Vec<String>) {
                 collect_valid_moves(&i.body, names);
                 collect_valid_moves(&i.else_body, names);
             },
+            Statement::Every(e) => collect_valid_moves(&e.body, names),
             _ => ()
         }
     }
@@ -1168,7 +1169,7 @@ mod test{
     #[test]
     fn check_stops_a_function_executing_when_expression_is_false() {
         let body = vec![
-            Statement::CheckStatement(CheckStatement{
+            Statement::CheckStatement(CheckStatement{ message: None,
                 expression: Expression::Bool(false)
             }),
             Statement::FunctionCall(
@@ -1201,7 +1202,7 @@ mod test{
     #[test]
     fn check_passes_through_when_expression_is_true() {
         let body = vec![
-            Statement::CheckStatement(CheckStatement{
+            Statement::CheckStatement(CheckStatement{ message: None,
                 expression: Expression::Bool(true)
             }),
             Statement::FunctionCall(
@@ -2271,12 +2272,17 @@ def drop(player, move){
         game.show(what).split(", ").filter(|c| !c.is_empty()).map(|c| c.to_string()).collect()
     }
 
-    #[test]
-    fn simple_scopa_can_be_played_to_the_end() {
-        let mut game = game_from_source(include_str!("../examples/simple_scopa.card"));
+    // Plays a whole game of Simple Scopa with `players` players: capture a
+    // single card of the same value if possible, otherwise drop.
+    fn play_simple_scopa(players: usize) {
+        let source = include_str!("../examples/simple_scopa.card")
+            .replace("players 2", &format!("players {}", players));
+        let mut game = game_from_source(&source);
         game.start();
         assert_eq!(cards_shown(&game, "middle").len(), 4);
-        assert_eq!(game.show("players"), "player 1 (cards: 3), player 2 (cards: 3)");
+        for n in 1..=players {
+            assert_eq!(cards_shown(&game, &format!("player {}", n)).len(), 3);
+        }
 
         let mut moves = 0;
         let mut captures = 0;
@@ -2284,18 +2290,19 @@ def drop(player, move){
             moves += 1;
             assert!(moves <= 52, "the game should end after 48 cards are played");
 
-            let current = game.show("current_player");
-            let other = if current == "1" { "2" } else { "1" };
+            let current: usize = game.show("current_player").parse().unwrap();
             let hand = cards_shown(&game, &format!("player {}", current));
             let middle = cards_shown(&game, "middle");
 
-            // moving out of turn is rejected
-            let other_hand = cards_shown(&game, &format!("player {}", other));
-            if let Some(card) = other_hand.first() {
-                assert!(play(&mut game, &format!("{} drop {}", other, card)).is_err());
+            // moving out of turn is rejected, with the game's message
+            let other = current % players + 1;
+            if let Some(card) = cards_shown(&game, &format!("player {}", other)).first() {
+                assert_eq!(
+                    play(&mut game, &format!("{} drop {}", other, card)),
+                    Err("it's not your turn".to_string())
+                );
             }
 
-            // capture a single card of the same value if possible, otherwise drop
             let mut played = false;
             'search: for card in hand.iter() {
                 for target in middle.iter() {
@@ -2311,23 +2318,52 @@ def drop(player, move){
             }
         }
 
+        // all 48 cards dealt to players are played, however many players there are
         assert_eq!(moves, 48);
-        let collected_1 = cards_shown(&game, "player 1 collection").len();
-        let collected_2 = cards_shown(&game, "player 2 collection").len();
-        let middle = cards_shown(&game, "middle").len();
+        let collected: Vec<usize> = (1..=players)
+            .map(|n| cards_shown(&game, &format!("player {} collection", n)).len())
+            .collect();
+        let total: usize = collected.iter().sum();
         // every card is accounted for: each capture collects two cards
-        assert_eq!(collected_1 + collected_2, captures * 2);
-        assert_eq!(collected_1 + collected_2 + middle, 52);
+        assert_eq!(total, captures * 2);
+        assert_eq!(total + cards_shown(&game, "middle").len(), 52);
         assert_eq!(cards_shown(&game, "deck").len(), 0);
 
-        let expected_winners = if collected_1 > collected_2 {
-            "1"
-        } else if collected_2 > collected_1 {
-            "2"
-        } else {
-            "1, 2"
-        };
-        assert_eq!(game.show("game"), format!("game over\nwinners: {}", expected_winners));
+        // everyone with the most cards wins
+        let most = *collected.iter().max().unwrap();
+        let winners: Vec<String> = (1..=players)
+            .filter(|n| collected[n - 1] == most)
+            .map(|n| n.to_string())
+            .collect();
+        assert_eq!(game.show("game"), format!("game over\nwinners: {}", winners.join(", ")));
+    }
+
+    #[test]
+    fn simple_scopa_can_be_played_to_the_end() {
+        play_simple_scopa(2);
+    }
+
+    #[test]
+    fn simple_scopa_works_for_three_and_four_players() {
+        play_simple_scopa(3);
+        play_simple_scopa(4);
+    }
+
+    #[test]
+    fn simple_scopa_explains_mistakes() {
+        // without the shuffle: middle K Q J 10 of diamonds; player 1 has 9 7 5 of diamonds
+        let source = include_str!("../examples/simple_scopa.card").replace("    shuffle(deck)\n", "");
+        let mut game = game_from_source(&source);
+        game.start();
+
+        assert_eq!(play(&mut game, "take 9d 10d"), Err("play one card from your hand, e.g. take 9d / 4c 5s".to_string()));
+        assert_eq!(play(&mut game, "take 9d"), Err("put a / before the cards you're capturing, e.g. take 9d / 4c 5s".to_string()));
+        assert_eq!(play(&mut game, "take 8d / 10d"), Err("you can only play a card from your hand".to_string()));
+        assert_eq!(play(&mut game, "take 9d / 3c"), Err("you can only capture cards from the middle".to_string()));
+        assert_eq!(play(&mut game, "take 9d / 10d"), Err("the cards you capture must add up to the card you play".to_string()));
+        assert_eq!(play(&mut game, "drop 9d / 10d"), Err("to capture cards use take, e.g. take 9d / 4c 5s".to_string()));
+        assert_eq!(play(&mut game, "2 drop 8d"), Err("it's not your turn".to_string()));
+        play(&mut game, "drop 9d").unwrap();
     }
 
     #[test]
@@ -2372,5 +2408,183 @@ def drop(player, move){
             Err("not allowed: transfer failed in drop: player:hand > middle taking move:cards \
                  (king clubs is not in player:hand)".to_string())
         );
+    }
+
+    #[test]
+    fn a_check_message_is_shown_instead_of_the_rule() {
+        let mut game = game_from_source("
+players 2
+stack middle
+
+def setup(){
+    deck > players 3
+}
+
+def player_move(player, move){
+    check(count(move:target) > 0, put a / before the cards you're capturing, e.g. take 7h / 7c)
+    end()
+}
+");
+        game.start();
+
+        assert_eq!(
+            play(&mut game, "take 9d"),
+            Err("put a / before the cards you're capturing, e.g. take 7h / 7c".to_string())
+        );
+        assert_eq!(game.show("game"), "active");
+    }
+
+    #[test]
+    fn check_messages_without_a_name_are_listed_with_the_other_reasons() {
+        let mut game = game_from_source("
+players 2
+
+def player_move(player, move){
+    valid_moves(take, drop)
+}
+
+def take(player, move){
+    check(count(move:target) > 0, nothing to take)
+}
+
+def drop(player, move){
+    check(count(move:cards) is 0)
+}
+");
+        game.start();
+
+        assert_eq!(
+            play(&mut game, "9d"),
+            Err("not allowed: no valid move - nothing to take; check failed in drop: count(move:cards) is 0".to_string())
+        );
+    }
+
+    #[test]
+    fn every_player_runs_a_block_for_each_player_in_order() {
+        let mut game = game_from_source("
+players 3
+
+def setup(){
+    every player p {
+        deck > p:hand 2
+        winner(p:id)
+    }
+}
+");
+        game.start();
+
+        assert_eq!(game.show("game"), "active\nwinners: 1, 2, 3");
+        assert_eq!(game.show("players"), "player 1 (cards: 2), player 2 (cards: 2), player 3 (cards: 2)");
+        assert_eq!(game.show("player 1"), "king diamonds, queen diamonds");
+    }
+
+    #[test]
+    fn every_player_as_a_test_is_true_only_if_it_holds_for_all() {
+        let result = winners_of("
+players 3
+
+def setup(){
+    if(every player p: count(p:hand) is 0){
+        winner(1)
+    }
+    deck > players:2:hand
+    if(every player p: count(p:hand) is 0){
+        winner(2)
+    }
+    if(every player p : p:id >= 1 & p:id <= 3){
+        winner(3)
+    }
+}
+");
+        assert_eq!(result, "active\nwinners: 1, 3");
+    }
+
+    #[test]
+    fn every_card_goes_through_the_cards_in_a_pile() {
+        let result = winners_of("
+players 2
+stack middle
+
+def setup(){
+    deck > middle 3
+    every card c in middle {
+        winner(c:value)
+    }
+    if(every card c in middle: c:suit is Diamonds){
+        winner(100)
+    }
+    if(every card c in middle : c:value > 11){
+        winner(200)
+    }
+}
+");
+        // king, queen, jack of diamonds
+        assert_eq!(result, "active\nwinners: 13, 12, 11, 100");
+    }
+
+    #[test]
+    fn every_card_works_with_player_piles() {
+        let mut game = game_from_source("
+players 2
+
+def setup(){
+    deck > players 2
+}
+
+def player_move(player){
+    check(every card c in player:hand: c:suit is Diamonds, all diamonds)
+    end()
+}
+");
+        game.start();
+        game.player_move(1).unwrap();
+        assert_eq!(game.show("game"), "game over");
+    }
+
+    #[test]
+    fn return_and_check_inside_every_end_the_function() {
+        let result = winners_of("
+players 3
+
+def first_with_id_above(n){
+    every player p {
+        if(p:id > n){
+            return(p:id)
+        }
+    }
+    return(0)
+}
+
+def setup(){
+    winner(first_with_id_above(1))
+    winner(first_with_id_above(5))
+    every player p {
+        check(p:id < 2)
+        winner(10)
+    }
+    winner(99)
+}
+");
+        assert_eq!(result, "active\nwinners: 2, 0, 10");
+    }
+
+    #[test]
+    fn players_with_the_most_cards_can_be_found_without_variables() {
+        let result = winners_of("
+players 3
+stack collection per player
+
+def setup(){
+    deck > players:1:collection 2
+    deck > players:2:collection 5
+    deck > players:3:collection 5
+    every player p {
+        if(every player q: count(p:collection) >= count(q:collection)){
+            winner(p:id)
+        }
+    }
+}
+");
+        assert_eq!(result, "active\nwinners: 2, 3");
     }
 }

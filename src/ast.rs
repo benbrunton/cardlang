@@ -9,6 +9,8 @@ pub enum Statement {
     ReturnStatement(ReturnStatement),
     // `values { Jack 8, Queen 9 }`: card values by rank
     ValueTable(Vec<(String, f64)>),
+    // every player p { ... } / every card c in pile { ... }
+    Every(EveryLoop),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -20,7 +22,9 @@ pub enum Expression {
     FunctionCall(FunctionCall),
     And(Box<And>),
     Or(Box<Or>),
-    Binary(Box<Binary>)
+    Binary(Box<Binary>),
+    // every player p: condition / every card c in pile: condition
+    Every(Box<EveryTest>)
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -92,7 +96,9 @@ pub struct Comparison {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct CheckStatement {
-    pub expression: Expression
+    pub expression: Expression,
+    // shown to the player when the check fails, instead of the rule
+    pub message: Option<String>
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -117,7 +123,31 @@ pub enum BinaryOp {
     Add,
     Subtract,
     LessThan,
-    GreaterThan
+    GreaterThan,
+    LessOrEqual,
+    GreaterOrEqual
+}
+
+// what `every` goes through
+#[derive(Debug, PartialEq, Clone)]
+pub enum EveryKind {
+    Player,
+    // the cards in a pile (any expression that gives cards)
+    Card(Expression)
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct EveryLoop {
+    pub kind: EveryKind,
+    pub variable: String,
+    pub body: Vec<Statement>
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct EveryTest {
+    pub kind: EveryKind,
+    pub variable: String,
+    pub condition: Expression
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -155,9 +185,15 @@ impl std::fmt::Display for Expression {
                     BinaryOp::Add => "+",
                     BinaryOp::Subtract => "-",
                     BinaryOp::LessThan => "<",
-                    BinaryOp::GreaterThan => ">"
+                    BinaryOp::GreaterThan => ">",
+                    BinaryOp::LessOrEqual => "<=",
+                    BinaryOp::GreaterOrEqual => ">="
                 };
                 write!(f, "{} {} {}", b.left, op, b.right)
+            },
+            Expression::Every(e) => match &e.kind {
+                EveryKind::Player => write!(f, "every player {}: {}", e.variable, e.condition),
+                EveryKind::Card(pile) => write!(f, "every card {} in {}: {}", e.variable, pile, e.condition)
             }
         }
     }
