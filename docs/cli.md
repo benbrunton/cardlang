@@ -115,14 +115,15 @@ A move either happens completely or not at all. If it's rejected, nothing in the
 | after the game has ended | `move ignored: the game is over` |
 | the game has no `player_move` function | `move ignored: this game does not define player_move` |
 | no such player (e.g. `0 move`, or `3 move` with 2 players) | `move ignored: there is no player 3 (players: 2)` |
-| a `check` in the game fails | `move ignored: not allowed: check failed in take: sum(move:target) is sum(move:cards)` |
+| a `check` with a [message](language-reference.md#check-messages) fails | `move ignored: put a / before the cards you're capturing, e.g. take 9d / 4c 5s` |
+| a `check` without a message fails | `move ignored: not allowed: check failed in take: sum(move:target) is sum(move:cards)` |
 | a transfer can't happen | `move ignored: not allowed: transfer failed in drop: player:hand > middle taking move:cards (king clubs is not in player:hand)` |
 | no move name given, and no move works | `move ignored: not allowed: no valid move - check failed in take: …; check failed in drop: …` (one reason per move tried) |
 | an unknown move name | `move ignored: not allowed: unknown move 'play' - valid moves: take, drop` |
 | something that isn't a card | `'7x' is not a card (try 7h, 10d, ks or 'seven hearts')` |
 | the old `move 2` syntax | `to move as player 2, put the number first: '2 move'` |
 
-The reason shows the game's rule as it's written in the `.card` file, so it helps to know the game's rules.
+Games can give their own messages, as Simple Scopa does. Otherwise the reason shows the game's rule as written in the `.card` file.
 
 ### `show`
 

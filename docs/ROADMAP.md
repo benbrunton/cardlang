@@ -73,25 +73,23 @@ Bugs that gave game authors wrong results without any error.
 
 The Rust version is pinned in `rust-toolchain.toml` (currently 1.100.0), and both CI and local builds use it. This stops a new Rust release from adding clippy warnings that fail the build. To upgrade, change the version there, run `cargo clippy --all-targets -- -D warnings`, and fix anything new (`cargo clippy --fix` handles most of it).
 
-## Milestone 5: towards full Scopa and multi-round games
+## Milestone 5: messages and loops ✅
 
-Not started. These came up while building Simple Scopa, plus the leftovers from the old Milestone 3.
+Simple Scopa now explains mistakes in plain words and works for 2 to 4 players.
 
 | # | Item | Status | Notes |
 |---|---|---|---|
 | 34 | Say why a move was rejected | ✅ | e.g. `not allowed: check failed in take: sum(move:target) is sum(move:cards)` |
-| 34b | Let a game attach its own message to a `check`, e.g. `check(count(move:target) > 0, "put a / before the cards you're capturing")` | ⬜ | The built-in reason shows the rule, not what the player should do |
-| 35 | Loops, e.g. `for each player` | ⬜ | Simple Scopa compares `players:1` and `players:2` by hand, so it only works for 2 players |
-| 36 | Variables or game state, e.g. who captured last (in Scopa, they take the cards left at the end) | ⬜ | |
-| 37 | Rounds and scores: play several hands, keep points between them | ⬜ | Needed for full Scopa scoring |
-| 38 | Compulsory capture (Scopa rule): only allow `drop` when no `take` is possible | ⬜ | Needs a way to ask "would this move work?" without making it |
-| 15 | A real `deck` declaration (currently ignored), e.g. a 40-card deck | ⬜ | README "filter deck in declaration". `filter` + `taking` in `setup` works today. |
-| 21 | Stacks as real references. Passing a pile to a function copies it, and `filter` results can't be stored. | ⬜ | |
-| 22 | Spec tests: `.test(...)` blocks in a game file, run by `cardlang test` | ⬜ | README "spec test"; sketched in `examples/turns.card` |
-| 24 | `shuffle(x)` should shuffle `x`, not always `deck` | ⬜ | |
-| 25 | Multi-word names and quoted strings | ⬜ | |
-| 26 | Switch statements | ⬜ | README; `else if` covers most uses |
-| 39 | `*`, `/`, `<=`, `>=` | ⬜ | |
+| 34b | A game's own message on `check`: `check(rule, message)` | ✅ | No quotes; everything after the first comma is the message |
+| 35 | Loops: `every player p { … }`, `every card c in <pile> { … }` | ✅ | |
+| 35b | "For all" tests: `every player p: <condition>` | ✅ | Lets a game compare players without variables, e.g. who has the most cards |
+| 39 | `>=` and `<=` | ✅ | `*` and `/` moved to the backlog |
+
+### Design decisions made
+
+1. `check(rule, message)`: the message is free text with no quotes. Everything after the first top-level comma up to the matching `)` is the message, so it can contain commas. Brackets inside must be balanced.
+2. `every` has two forms. With a block it runs once per player or card. With a colon it's a true/false test that holds for all of them. The types are `player` and `card c in <pile>`.
+3. Variables, rounds and scoring, compulsory capture, and a game-chosen table display are deferred until a game needs them.
 
 ## Milestone 6: CLI experience ✅
 
@@ -106,3 +104,22 @@ Making the interpreter pleasant to play at.
 | 45 | `cardlang play <file>`: build and start in one step | ✅ | |
 | 44 | Let a game choose what the table shows, e.g. a `display` function | ⚠️ | Needs a design decision; see Milestone 5 |
 | 46 | Save history between sessions | ⬜ | History lasts for one session today |
+
+## Backlog
+
+Deferred or not yet needed. Each needs a design decision before it starts.
+
+| # | Item | Status | Notes |
+|---|---|---|---|
+| 36 | Variables or game state, e.g. who captured last (in Scopa, they take the cards left at the end) | ⏸️ deferred | |
+| 37 | Rounds and scores: play several hands, keep points between them | ⏸️ deferred | Needed for full Scopa scoring; builds on 36 |
+| 38 | Compulsory capture (Scopa rule): only allow `drop` when no `take` is possible | ⏸️ deferred | Needs a way to ask "would this move work?" without making it |
+| 44 | Let a game choose what the table shows, e.g. a `display` function | ⏸️ deferred | |
+| 47 | "Any" tests and `not` for a whole condition | ⬜ | Today: `(every player p: …) is false` |
+| 15 | A real `deck` declaration (currently ignored), e.g. a 40-card deck | ⬜ | README "filter deck in declaration". `filter` + `taking` in `setup` works today. |
+| 21 | Stacks as real references. Passing a pile to a function copies it, and `filter` results can't be stored. | ⬜ | |
+| 22 | Spec tests: `.test(...)` blocks in a game file, run by `cardlang test` | ⏸️ deferred | README "spec test"; sketched in `examples/turns.card` |
+| 24 | `shuffle(x)` should shuffle `x`, not always `deck` | ⬜ | |
+| 25 | Multi-word names | ⬜ | Could reuse the free-text approach from check messages |
+| 26 | Switch statements | ⬜ | README; `else if` covers most uses |
+| 39b | `*` and `/` | ⬜ | |
