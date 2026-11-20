@@ -1,5 +1,6 @@
 use crate::ast::*;
 use std::fmt::Display;
+use std::collections::HashMap;
 use crate::runtime::{
     Runtime,
     InitialValues,
@@ -27,7 +28,8 @@ impl Game {
 
         let mut callbacks = Callbacks {
             player_move: None,
-            setup: None
+            setup: None,
+            definitions: HashMap::new()
         };
 
         for statement in ast.iter() {
@@ -35,6 +37,7 @@ impl Game {
                 Statement::Definition(
                     d
                 ) => {
+                    callbacks.definitions.insert(d.name.clone(), d.clone());
                     match d.name.as_str() {
                         "setup" => callbacks.setup = Some(d.clone()),
                         "player_move" => callbacks.player_move = Some(d.clone()),
@@ -1257,5 +1260,192 @@ mod test{
         let player_hand = game.show("player 1 hand");
 
         assert_eq!(player_hand, "king diamonds".to_string());
+    }
+
+    fn game_from_source(source: &str) -> Game {
+        let tokens = crate::lex::lexer(source).expect("lex error");
+        let ast = crate::parse::parse(&tokens).expect("parse error");
+        Game::new(ast)
+    }
+
+    #[test]
+    fn it_can_call_a_user_defined_function_with_arguments() {
+        let mut game = game_from_source("
+players 2
+
+define finish(id){
+    winner(id)
+    end()
+}
+
+define setup(){
+    finish(2)
+}
+");
+        game.start();
+
+        assert_eq!(game.show("game"), "game over\nwinners: 2");
+    }
+
+    #[test]
+    fn it_can_use_the_return_value_of_a_user_defined_function() {
+        let mut game = game_from_source("
+players 2
+
+define has_no_cards(p){
+    return(count(p:hand) is 0)
+}
+
+define player_move(player){
+    check(has_no_cards(player) is true)
+    end()
+}
+");
+        game.start();
+        game.player_move(1);
+
+        assert_eq!(game.show("game"), "game over");
+    }
+
+    #[test]
+    fn a_failing_check_in_a_user_defined_function_returns_false() {
+        let mut game = game_from_source("
+players 2
+
+define has_no_cards(p){
+    return(count(p:hand) is 0)
+}
+
+define setup(){
+    deck > players end
+}
+
+define player_move(player){
+    check(has_no_cards(player) is true)
+    end()
+}
+");
+        game.start();
+        game.player_move(1);
+
+        assert_eq!(game.show("game"), "active");
+    }
+
+    #[test]
+    fn user_defined_functions_can_transfer_from_a_player_passed_in() {
+        let mut game = game_from_source("
+players 2
+stack middle
+
+define discard(p){
+    p:hand > middle
+}
+
+define setup(){
+    deck > players
+}
+
+define player_move(player){
+    discard(player)
+}
+");
+        game.start();
+        game.player_move(1);
+
+        assert_eq!(game.show("player 1 hand"), "");
+        assert_eq!(game.show("middle"), "king diamonds");
+    }
+
+    #[test]
+    fn arguments_are_scoped_to_the_function_call() {
+        let mut game = game_from_source("
+players 2
+
+define inner(id){
+    winner(id)
+}
+
+define outer(id){
+    inner(1)
+    winner(id)
+}
+
+define setup(){
+    outer(2)
+}
+");
+        game.start();
+
+        assert_eq!(game.show("game"), "active\nwinners: 1, 2");
+    }
+
+    #[test]
+    fn filter_can_be_called_with_a_user_defined_function() {
+        let mut game = game_from_source("
+define is_ace(card){
+    return(card:rank is Ace)
+}
+
+define setup(){
+    if(count(filter(deck, is_ace)) is 4){
+        end()
+    }
+}
+");
+        game.start();
+
+        assert_eq!(game.show("game"), "game over");
+    }
+
+    #[test]
+    fn filter_can_use_negative_comparisons() {
+        let mut game = game_from_source("
+define not_ace(card){
+    return(card:rank is not Ace)
+}
+
+define setup(){
+    if(count(filter(deck, not_ace)) is 48){
+        end()
+    }
+}
+");
+        game.start();
+
+        assert_eq!(game.show("game"), "game over");
+    }
+
+    #[test]
+    fn custom_stacks_can_be_counted() {
+        let mut game = game_from_source("
+stack middle
+
+define setup(){
+    deck > middle
+    if(count(middle) is 1){
+        end()
+    }
+}
+");
+        game.start();
+
+        assert_eq!(game.show("game"), "game over");
+    }
+
+    #[test]
+    fn infinite_recursion_is_stopped() {
+        let mut game = game_from_source("
+define forever(){
+    forever()
+}
+
+define setup(){
+    forever()
+    end()
+}
+");
+        game.start();
+
+        assert_eq!(game.show("game"), "game over");
     }
 }

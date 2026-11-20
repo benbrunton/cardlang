@@ -34,7 +34,8 @@ pub enum PrimitiveValue {
 
 #[derive(Clone, Debug)]
 pub enum ArgumentValue {
-    Obj(HashMap<String, PrimitiveValue>)
+    Obj(HashMap<String, PrimitiveValue>),
+    Value(PrimitiveValue)
 }
 
 #[derive(Clone, Debug)]
@@ -47,10 +48,12 @@ pub struct InitialValues {
 #[derive(Clone, Debug)]
 pub struct Callbacks {
     pub player_move: Option<Definition>,
-    pub setup: Option<Definition>
+    pub setup: Option<Definition>,
+    pub definitions: HashMap<String, Definition>
 }
 
 const INTERNAL_REF: &str = "_ref";
+const MAX_CALL_DEPTH: usize = 256;
 
 #[derive(Clone, Debug)]
 pub struct Runtime {
@@ -116,8 +119,68 @@ impl Runtime {
                 };
                 None
             },
-            _ => None
-        }        
+            "filter" => {
+                let stack = match f.arguments.get(0).map(|a| self.resolve_expression(a)) {
+                    Some(PrimitiveValue::Stack(s)) => s,
+                    _ => return Some(PrimitiveValue::Stack(vec!()))
+                };
+                let definition = match f.arguments.get(1) {
+                    Some(Expression::Symbol(name)) => self.callbacks.definitions.get(name).cloned(),
+                    _ => None
+                };
+                match definition {
+                    Some(d) => Some(PrimitiveValue::Stack(self.filter(stack, d))),
+                    None => {
+                        eprintln!("filter: expected a function name as the second argument");
+                        Some(PrimitiveValue::Stack(vec!()))
+                    }
+                }
+            },
+            name => {
+                let definition = match self.callbacks.definitions.get(name) {
+                    Some(d) => d.clone(),
+                    None => {
+                        eprintln!("unknown function '{}'", name);
+                        return None;
+                    }
+                };
+                self.call_user_function(&definition, &f.arguments)
+            }
+        }
+    }
+
+    fn call_user_function(&mut self, definition: &Definition, arguments: &Vec<Expression>) -> Option<PrimitiveValue> {
+        if self.call_stack.len() >= MAX_CALL_DEPTH {
+            eprintln!("maximum call depth exceeded in '{}'", definition.name);
+            return None;
+        }
+
+        // arguments are resolved in the caller's scope before the new frame is pushed
+        let mut call_stack_frame = HashMap::new();
+        for (i, arg_name) in definition.arguments.iter().enumerate() {
+            let value = match arguments.get(i) {
+                Some(expression) => self.resolve_argument(expression),
+                None => ArgumentValue::Value(PrimitiveValue::Bool(false))
+            };
+            call_stack_frame.insert(arg_name.clone(), value);
+        }
+
+        self.call_stack.push(call_stack_frame);
+        let result = self.handle_statements(&definition.body);
+        self.call_stack.pop();
+        Some(result)
+    }
+
+    fn resolve_argument(&mut self, expression: &Expression) -> ArgumentValue {
+        // pass whole objects (e.g. a player) through by name
+        if let Expression::Symbol(s) = expression {
+            if !s.contains(':') {
+                if let Some(value) = self.find_in_call_stack(s) {
+                    return value;
+                }
+            }
+        }
+        ArgumentValue::Value(self.resolve_expression(expression))
     }
 
     pub fn get_status(&self) -> String {
@@ -212,7 +275,12 @@ impl Runtime {
                             None => PrimitiveValue::Bool(false)
                         }
                     },
-                    _ => PrimitiveValue::String(s.to_string())
+                    Some(ArgumentValue::Value(v)) if components.len() == 1 => v,
+                    _ if s == "deck" => PrimitiveValue::Stack(self.deck.clone()),
+                    _ => match self.card_stacks.get(s) {
+                        Some(stack) => PrimitiveValue::Stack(stack.clone()),
+                        None => PrimitiveValue::String(s.to_string())
+                    }
                 }
             },
             Expression::FunctionCall(f) => self.handle_function_call(&f).unwrap_or(PrimitiveValue::Bool(false)),
@@ -394,7 +462,7 @@ impl Runtime {
         None
     }
 
-    pub fn filter(&mut self, stack: Vec<Card>, function: Definition) -> Vec<Card> {
+    fn filter(&mut self, stack: Vec<Card>, function: Definition) -> Vec<Card> {
         let card_arg = match function.arguments.get(0) {
             Some(arg) => arg,
             None => "card"
@@ -445,7 +513,8 @@ mod test{
 
         let callbacks = Callbacks{
             player_move: None,
-            setup: None
+            setup: None,
+            definitions: HashMap::new()
         };
 
         let mut runtime = Runtime::new(initial_values, callbacks);
@@ -475,7 +544,8 @@ mod test{
 
         let callbacks = Callbacks{
             player_move: None,
-            setup: None
+            setup: None,
+            definitions: HashMap::new()
         };
 
         let mut runtime = Runtime::new(initial_values, callbacks);
@@ -509,7 +579,8 @@ mod test{
 
         let callbacks = Callbacks{
             player_move: None,
-            setup: None
+            setup: None,
+            definitions: HashMap::new()
         };
 
         let mut runtime = Runtime::new(initial_values, callbacks);
@@ -543,7 +614,8 @@ mod test{
 
         let callbacks = Callbacks{
             player_move: None,
-            setup: None
+            setup: None,
+            definitions: HashMap::new()
         };
 
         let mut runtime = Runtime::new(initial_values, callbacks);

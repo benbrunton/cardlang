@@ -183,20 +183,7 @@ pub fn parse(tokens: &Vec<SourceToken>) -> Result<Vec<Statement>, ParseError> {
 }
 
 fn create_function(name: &str, tokens_iter: &mut std::slice::Iter<SourceToken>) -> Result<Statement, ParseError> {
-    let mut arguments = vec!();
-
-    match tokens_iter.next() {
-        Some(SourceToken{ token: Token::Deck, ..}) => {
-            arguments.push(Expression::Symbol("deck".to_string()));
-        },
-        Some(SourceToken{ token: Token::Symbol(s), ..}) => {
-            arguments.push(Expression::Symbol(s.to_string()));
-        },
-        _ => ()
-    };
-
-    //close parens
-    //tokens_iter.next();
+    let arguments = build_call_arguments(tokens_iter)?;
 
     let function_call = FunctionCall { name: name.to_string(), arguments };
     Ok(Statement::FunctionCall(function_call))
@@ -291,6 +278,8 @@ fn build_expression(tokens_iter: &mut std::slice::Iter<SourceToken>) -> Result<E
         Some(SourceToken{ token: Token::Symbol(s), ..}) => Expression::Symbol(s.to_string()),
         Some(SourceToken{ token: Token::Number(n), ..}) => Expression::Number(*n),
         Some(SourceToken{ token: Token::CurrentPlayer, ..}) => Expression::Symbol("current_player".to_string()),
+        Some(SourceToken{ token: Token::Deck, ..}) => Expression::Symbol("deck".to_string()),
+        Some(SourceToken{ token: Token::Players, ..}) => Expression::Symbol("players".to_string()),
         None => return Err(ParseError::new(ParseErrorType::UnexpectedEndOfStream, 0)),
         _ => return Err(ParseError::new(ParseErrorType::UnexpectedToken, 0))
     };
@@ -328,7 +317,7 @@ fn combine_expression(tokens_iter: &mut std::slice::Iter<SourceToken>, left: Exp
         Some(SourceToken{ token: Token::OpenParens, ..}) => {
             match left {
                 Expression::Symbol(s) => {
-                    let arguments = vec!(build_expression(tokens_iter).expect("bad args!"));
+                    let arguments = build_call_arguments(tokens_iter)?;
                     let function = FunctionCall{
                         name: s.to_string(),
                         arguments
@@ -342,6 +331,57 @@ fn combine_expression(tokens_iter: &mut std::slice::Iter<SourceToken>, left: Exp
     }
 }
     
+
+// Parses the comma separated arguments of a function call, consuming
+// tokens up to and including the call's closing parens.
+fn build_call_arguments(tokens_iter: &mut std::slice::Iter<SourceToken>) -> Result<Vec<Expression>, ParseError> {
+    let mut groups: Vec<Vec<SourceToken>> = vec!();
+    let mut current = vec!();
+    let mut depth = 0;
+    let mut line_number = 0;
+
+    loop {
+        let source_token = match tokens_iter.next() {
+            Some(t) => t,
+            None => return Err(ParseError::new(ParseErrorType::UnexpectedEndOfStream, line_number))
+        };
+        line_number = source_token.line_number;
+
+        match source_token.token {
+            Token::CloseParens if depth == 0 => break,
+            Token::Comma if depth == 0 => {
+                if current.is_empty() {
+                    return Err(ParseError::new(ParseErrorType::UnexpectedToken, line_number));
+                }
+                groups.push(current);
+                current = vec!();
+            },
+            Token::Newline => (),
+            _ => {
+                match source_token.token {
+                    Token::OpenParens => depth += 1,
+                    Token::CloseParens => depth -= 1,
+                    _ => ()
+                }
+                current.push(source_token.clone());
+            }
+        }
+    }
+
+    if !current.is_empty() {
+        groups.push(current);
+    } else if !groups.is_empty() {
+        // trailing comma
+        return Err(ParseError::new(ParseErrorType::UnexpectedToken, line_number));
+    }
+
+    groups.iter().map(|group| {
+        build_expression(&mut group.iter()).map_err(|e| {
+            let line = if e.line_number == 0 { group[0].line_number } else { e.line_number };
+            ParseError::new(e.error_type, line)
+        })
+    }).collect()
+}
 
 fn build_args_list(tokens_iter: &mut std::slice::Iter<SourceToken>) -> Result<Vec<String>, ParseError> {
     let mut args_list = vec!();
@@ -688,6 +728,99 @@ mod test{
         
         let result = parse(&tokens);
         assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn it_can_recognise_function_calls_with_multiple_arguments() {
+        let tokens = get_source_tokens(vec!(
+            Token::Symbol("deal".to_string()),
+            Token::OpenParens,
+            Token::Deck,
+            Token::Comma,
+            Token::Number(3.0),
+            Token::CloseParens
+        ));
+
+        let function_call = FunctionCall{
+            name: "deal".to_string(),
+            arguments: vec!(
+                Expression::Symbol("deck".to_string()),
+                Expression::Number(3.0)
+            )
+        };
+        let expected = Ok(vec!(Statement::FunctionCall(function_call)));
+
+        assert_eq!(parse(&tokens), expected);
+    }
+
+    #[test]
+    fn it_can_parse_function_calls_with_no_arguments_in_expressions() {
+        let tokens = get_source_tokens(vec!(
+            Token::Return,
+            Token::OpenParens,
+            Token::Symbol("is_ready".to_string()),
+            Token::OpenParens,
+            Token::CloseParens,
+            Token::CloseParens
+        ));
+
+        let expression = Expression::FunctionCall(FunctionCall{
+            name: "is_ready".to_string(),
+            arguments: vec!()
+        });
+        let expected = Ok(vec!(Statement::ReturnStatement(ReturnStatement{ expression })));
+
+        assert_eq!(parse(&tokens), expected);
+    }
+
+    #[test]
+    fn it_can_parse_nested_function_calls_with_multiple_arguments_in_expressions() {
+        let tokens = get_source_tokens(vec!(
+            Token::Check,
+            Token::OpenParens,
+            Token::Symbol("same".to_string()),
+            Token::OpenParens,
+            Token::Symbol("count".to_string()),
+            Token::OpenParens,
+            Token::Symbol("player:hand".to_string()),
+            Token::CloseParens,
+            Token::Comma,
+            Token::Number(2.0),
+            Token::CloseParens,
+            Token::Is,
+            Token::True,
+            Token::CloseParens
+        ));
+
+        let count = Expression::FunctionCall(FunctionCall{
+            name: "count".to_string(),
+            arguments: vec!(Expression::Symbol("player:hand".to_string()))
+        });
+        let same = Expression::FunctionCall(FunctionCall{
+            name: "same".to_string(),
+            arguments: vec!(count, Expression::Number(2.0))
+        });
+        let expression = Expression::Comparison(Box::new(Comparison{
+            left: same,
+            right: Expression::Bool(true),
+            negative: false
+        }));
+        let expected = Ok(vec!(Statement::CheckStatement(CheckStatement{ expression })));
+
+        assert_eq!(parse(&tokens), expected);
+    }
+
+    #[test]
+    fn it_rejects_a_trailing_comma_in_function_calls() {
+        let tokens = get_source_tokens(vec!(
+            Token::Symbol("deal".to_string()),
+            Token::OpenParens,
+            Token::Deck,
+            Token::Comma,
+            Token::CloseParens
+        ));
+
+        assert!(parse(&tokens).is_err());
     }
 
     #[test]
