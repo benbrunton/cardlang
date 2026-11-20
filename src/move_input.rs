@@ -21,7 +21,7 @@ pub fn parse_move(line: &str) -> Result<MoveInput, String> {
     // optional move name: a word that isn't the start of a card
     let word = rest.split(|c: char| c.is_whitespace() || c == '/').next().unwrap_or("");
     if !word.is_empty() && !starts_a_card(word) {
-        if !word.chars().next().map_or(false, |c| c.is_ascii_alphabetic()) {
+        if !word.chars().next().is_some_and(|c| c.is_ascii_alphabetic()) {
             return Err(format!("'{}' is not a move name or a card", word));
         }
         input.name = Some(word.to_string());

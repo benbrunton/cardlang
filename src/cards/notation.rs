@@ -42,6 +42,32 @@ fn card_from_code(word: &str) -> Option<Card> {
     Some(Card { rank: rank_from_word(rank)?, suit: suit_from_word(suit)? })
 }
 
+// The short code for a card, e.g. `7h`, `10d`, `ks`
+pub fn card_code(card: &Card) -> String {
+    let rank = match card.rank {
+        Rank::Ace => "a",
+        Rank::Two => "2",
+        Rank::Three => "3",
+        Rank::Four => "4",
+        Rank::Five => "5",
+        Rank::Six => "6",
+        Rank::Seven => "7",
+        Rank::Eight => "8",
+        Rank::Nine => "9",
+        Rank::Ten => "10",
+        Rank::Jack => "j",
+        Rank::Queen => "q",
+        Rank::King => "k"
+    };
+    let suit = match card.suit {
+        Suit::Spades => "s",
+        Suit::Hearts => "h",
+        Suit::Clubs => "c",
+        Suit::Diamonds => "d"
+    };
+    format!("{}{}", rank, suit)
+}
+
 // true if a word could start a card, so it can't be a move name
 pub fn starts_a_card(word: &str) -> bool {
     let word = word.to_lowercase();
@@ -59,7 +85,7 @@ pub fn parse_cards(input: &str) -> Result<Vec<Card>, String> {
         .filter(|w| !w.is_empty())
         .collect();
 
-    let mut cards = vec!();
+    let mut cards = vec![];
     let mut i = 0;
     while i < words.len() {
         let word = words[i];
@@ -134,6 +160,13 @@ mod test {
     #[test]
     fn it_rejects_the_same_card_twice() {
         assert!(parse_cards("10d td").is_err());
+    }
+
+    #[test]
+    fn card_codes_read_back_as_the_same_card() {
+        for card in crate::cards::standard_deck() {
+            assert_eq!(parse_cards(&card_code(&card)).unwrap(), vec!(card));
+        }
     }
 
     #[test]

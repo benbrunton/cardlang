@@ -1,7 +1,43 @@
 use crate::ast::*;
 use std::fmt::Display;
 use std::collections::HashMap;
-use crate::cards::Card;
+use crate::cards::{card_code, Card};
+
+// What the CLI can offer when the player presses Tab
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct CompletionContext {
+    // the moves named in the game's valid_moves(...) calls
+    pub move_names: Vec<String>,
+    // shared piles declared with `stack`
+    pub stacks: Vec<String>,
+    // piles declared with `stack <name> per player`
+    pub player_stacks: Vec<String>,
+    pub players: usize,
+    // card codes in the current player's hand
+    pub hand: Vec<String>,
+    // card codes in the shared piles
+    pub table: Vec<String>
+}
+
+// finds the function names passed to valid_moves(...) anywhere in a body
+fn collect_valid_moves(statements: &[Statement], names: &mut Vec<String>) {
+    for statement in statements {
+        match statement {
+            Statement::FunctionCall(f) if f.name == "valid_moves" => {
+                for argument in f.arguments.iter() {
+                    if let Expression::Symbol(name) = argument {
+                        names.push(name.clone());
+                    }
+                }
+            },
+            Statement::IfStatement(i) => {
+                collect_valid_moves(&i.body, names);
+                collect_valid_moves(&i.else_body, names);
+            },
+            _ => ()
+        }
+    }
+}
 use crate::runtime::{
     MoveInput,
     Runtime,
@@ -12,7 +48,6 @@ use crate::runtime::{
 #[derive(Clone, Debug)]
 pub struct Game {
     name: Option<String>,
-    ast: Vec<Statement>,
     runtime: Runtime,
     initial_values: InitialValues,
     callbacks: Callbacks
@@ -24,29 +59,20 @@ impl Game {
 
         let mut initial_values = InitialValues{ 
             players: 1,
-            player_stacks: vec!(),
-            card_values: vec!(),
-            card_stacks: vec!(),
+            player_stacks: vec![],
+            card_values: vec![],
+            card_stacks: vec![],
             current_player: 1 
         };
 
         let mut callbacks = Callbacks {
-            player_move: None,
-            setup: None,
             definitions: HashMap::new()
         };
 
         for statement in ast.iter() {
             match statement {
-                Statement::Definition(
-                    d
-                ) => {
+                Statement::Definition(d) => {
                     callbacks.definitions.insert(d.name.clone(), d.clone());
-                    match d.name.as_str() {
-                        "setup" => callbacks.setup = Some(d.clone()),
-                        "player_move" => callbacks.player_move = Some(d.clone()),
-                        _ => ()
-                    }
                 },
                 Statement::Declaration(Declaration{
                     key: GlobalKey::Name,
@@ -90,7 +116,6 @@ impl Game {
 
         Game {
             name,
-            ast,
             runtime,
             initial_values: initial_values.clone(),
             callbacks: callbacks.clone()
@@ -104,7 +129,7 @@ impl Game {
             "players" => Self::display_list(&self.runtime.get_players()),
             "game" => {
                 let winner_list = self.runtime.get_winners();
-                let winners = if winner_list.len() > 0 {
+                let winners = if !winner_list.is_empty() {
                     let w = Self::display_list(&winner_list);
                     format!("\nwinners: {}", w)
                 } else {
@@ -125,6 +150,41 @@ impl Game {
         self.runtime.setup();
     }
 
+    // What tab completion at the CLI can offer for this game right now
+    pub fn completion_context(&self) -> CompletionContext {
+        let mut move_names = vec![];
+        for definition in self.callbacks.definitions.values() {
+            collect_valid_moves(&definition.body, &mut move_names);
+        }
+        move_names.sort();
+        move_names.dedup();
+
+        let started = self.is_started();
+        let current = self.runtime.get_current_player();
+        let hand = match self.runtime.get_player(current.wrapping_sub(1)) {
+            Some(player) if started => player.get_hand().iter().map(card_code).collect(),
+            _ => vec![]
+        };
+        let table = if started {
+            self.initial_values.card_stacks.iter()
+                .filter_map(|name| self.runtime.find_custom_item(name))
+                .flatten()
+                .map(|card| card_code(&card))
+                .collect()
+        } else {
+            vec![]
+        };
+
+        CompletionContext {
+            move_names,
+            stacks: self.initial_values.card_stacks.clone(),
+            player_stacks: self.initial_values.player_stacks.clone(),
+            players: self.runtime.get_players().len(),
+            hand,
+            table
+        }
+    }
+
     pub fn is_started(&self) -> bool {
         self.runtime.get_status() != "pending"
     }
@@ -133,7 +193,7 @@ impl Game {
     // whose turn it is, the deck, the shared piles, the current player's
     // hand and how many cards are in each player's own piles.
     pub fn table(&self) -> String {
-        let mut lines = vec!();
+        let mut lines = vec![];
 
         let winners = self.runtime.get_winners();
         if self.runtime.get_status() == "game over" {
@@ -177,7 +237,7 @@ impl Game {
     }
 
     // long piles are summarised so the table stays readable
-    fn cards_or_count(cards: &Vec<Card>) -> String {
+    fn cards_or_count(cards: &[Card]) -> String {
         match cards.len() {
             0 => "empty".to_string(),
             1..=10 => Self::display_list(cards),
@@ -229,7 +289,7 @@ impl Game {
          }
     }
 
-    fn display_list<D: Display>(list: &Vec<D>) -> String {
+    fn display_list<D: Display>(list: &[D]) -> String {
         list.iter().map(|x|x.to_string()).collect::<Vec<String>>().join(", ")
     }
 
@@ -263,14 +323,14 @@ mod test{
 
     #[test]
     fn it_can_display_a_deck() {
-        let ast = vec!(
+        let ast = vec![
             Statement::Declaration(
                 Declaration {
                     key: GlobalKey::Deck,
                     value: Expression::Symbol("StandardDeck".to_string())
                 }
             )
-        );
+        ];
 
         let game = Game::new(ast);
         let deck = game.show("deck");
@@ -282,14 +342,14 @@ mod test{
 
     #[test]
     fn it_can_display_a_name() {
-        let ast = vec!(
+        let ast = vec![
             Statement::Declaration(
                 Declaration {
                     key: GlobalKey::Name,
                     value: Expression::Symbol("turns".to_string())
                 }
             )
-        );
+        ];
 
         let game = Game::new(ast);
         let name = game.show("name");
@@ -299,14 +359,14 @@ mod test{
 
     #[test]
     fn it_can_display_players() {
-        let ast = vec!(
+        let ast = vec![
             Statement::Declaration(
                 Declaration {
                     key: GlobalKey::Players,
                     value: Expression::Number(3.0)
                 }
             )
-        );
+        ];
 
         let game = Game::new(ast);
         let players = game.show("players");
@@ -316,14 +376,14 @@ mod test{
 
     #[test]
     fn it_can_display_a_single_player() {
-        let ast = vec!(
+        let ast = vec![
             Statement::Declaration (
                 Declaration {
                     key: GlobalKey::Players,
                     value: Expression::Number(1.0)
                 }
             )
-        );
+        ];
 
         let game = Game::new(ast);
         let players = game.show("players");
@@ -333,14 +393,14 @@ mod test{
 
     #[test]
     fn it_can_start_a_game() {
-        let mut ast = vec!(
+        let mut ast = vec![
             Statement::Declaration(
                 Declaration {
                     key: GlobalKey::Players,
                     value: Expression::Number(3.0)
                 }
             )
-        );
+        ];
         let from = "deck".to_owned();
         let to = "players".to_owned();
         let modifier = None;
@@ -349,8 +409,8 @@ mod test{
         let transfer_statement = Statement::Transfer(transfer);
 
         let name = "setup".to_owned();
-        let body = vec!(transfer_statement);
-        let definition = Definition{ arguments: vec!(), name, body };
+        let body = vec![transfer_statement];
+        let definition = Definition{ arguments: vec![], name, body };
         let statement = Statement::Definition(definition);
 
         ast.push(statement);
@@ -366,14 +426,14 @@ mod test{
 
     #[test]
     fn second_start_restarts() {
-        let mut ast = vec!(
+        let mut ast = vec![
             Statement::Declaration(
                 Declaration {
                     key: GlobalKey::Players,
                     value: Expression::Number(3.0)
                 }
             )
-        );
+        ];
         let from = "deck".to_owned();
         let to = "players".to_owned();
         let modifier = None;
@@ -382,8 +442,8 @@ mod test{
         let transfer_statement = Statement::Transfer(transfer);
 
         let name = "setup".to_owned();
-        let body = vec!(transfer_statement);
-        let definition = Definition{ arguments: vec!(), name, body };
+        let body = vec![transfer_statement];
+        let definition = Definition{ arguments: vec![], name, body };
         let statement = Statement::Definition(definition);
 
         ast.push(statement);
@@ -400,14 +460,14 @@ mod test{
 
     #[test]
     fn it_deals_to_the_end_with_the_count_modifier() {
-        let mut ast = vec!(
+        let mut ast = vec![
             Statement::Declaration(
                 Declaration {
                     key: GlobalKey::Players,
                     value: Expression::Number(3.0)
                 }
             )
-        );
+        ];
         let from = "deck".to_owned();
         let to = "players".to_owned();
         let modifier = None; //Some(TransferModifier::Alternate);
@@ -416,8 +476,8 @@ mod test{
         let transfer_statement = Statement::Transfer(transfer);
 
         let name = "setup".to_owned();
-        let body = vec!(transfer_statement);
-        let definition = Definition{ arguments: vec!(), name, body };
+        let body = vec![transfer_statement];
+        let definition = Definition{ arguments: vec![], name, body };
         let statement = Statement::Definition(definition);
 
         ast.push(statement);
@@ -431,14 +491,14 @@ mod test{
 
     #[test]
     fn it_can_show_player_hand(){
-        let mut ast = vec!(
+        let mut ast = vec![
             Statement::Declaration(
                 Declaration {
                     key: GlobalKey::Players,
                     value: Expression::Number(1.0)
                 }
             )
-        );
+        ];
         let from = "deck".to_owned();
         let to = "players".to_owned();
         let modifier = None; //Some(TransferModifier::Alternate);
@@ -447,8 +507,8 @@ mod test{
         let transfer_statement = Statement::Transfer(transfer);
 
         let name = "setup".to_owned();
-        let body = vec!(transfer_statement);
-        let definition = Definition{ arguments: vec!(), name, body };
+        let body = vec![transfer_statement];
+        let definition = Definition{ arguments: vec![], name, body };
         let statement = Statement::Definition(definition);
 
         ast.push(statement);
@@ -462,14 +522,14 @@ mod test{
 
     #[test]
     fn it_can_show_multiple_player_hand(){
-        let mut ast = vec!(
+        let mut ast = vec![
             Statement::Declaration(
                 Declaration {
                     key: GlobalKey::Players,
                     value: Expression::Number(2.0)
                 }
             )
-        );
+        ];
         let from = "deck".to_owned();
         let to = "players".to_owned();
         let modifier = None; //Some(TransferModifier::Alternate);
@@ -478,8 +538,8 @@ mod test{
         let transfer_statement = Statement::Transfer(transfer);
 
         let name = "setup".to_owned();
-        let body = vec!(transfer_statement);
-        let definition = Definition{ arguments: vec!(), name, body };
+        let body = vec![transfer_statement];
+        let definition = Definition{ arguments: vec![], name, body };
         let statement = Statement::Definition(definition);
 
         ast.push(statement);
@@ -496,19 +556,19 @@ mod test{
 
     #[test]
     fn it_can_access_built_in_functions() {
-        let body = vec!(
+        let body = vec![
             Statement::FunctionCall(
                 FunctionCall{
                     name: "shuffle".to_string(),
                     arguments: vec!(Expression::Symbol("deck".to_string()))
                 }
             )
-        );
+        ];
 
         let name = "setup".to_owned();
-        let definition = Definition{ arguments: vec!(), name, body };
+        let definition = Definition{ arguments: vec![], name, body };
         let statement = Statement::Definition(definition);
-        let ast = vec!(statement);
+        let ast = vec![statement];
 
         let mut game = Game::new(ast);
         game.start();
@@ -521,20 +581,20 @@ mod test{
 
     #[test]
     fn it_can_make_a_move() {
-        let body = vec!(
+        let body = vec![
             Statement::FunctionCall(
                 FunctionCall{
                     name: "shuffle".to_string(),
                     arguments: vec!(Expression::Symbol("deck".to_string()))
                 }
             )
-        );
+        ];
 
         let name = "player_move".to_owned();
-        let definition = Definition{ arguments: vec!(), name, body };
+        let definition = Definition{ arguments: vec![], name, body };
         let statement = Statement::Definition(definition);
 
-        let ast = vec!(statement);
+        let ast = vec![statement];
 
         let mut game = Game::new(ast);
         game.start();
@@ -555,7 +615,7 @@ mod test{
             }
         );
 
-        let body = vec!(
+        let body = vec![
             Statement::Transfer(
                 Transfer{
                     from: "deck".to_string(),
@@ -564,16 +624,16 @@ mod test{
                     count: None
                 }
             )
-        );
+        ];
 
         let name = "player_move".to_owned();
-        let definition = Definition{ arguments: vec!("player".to_string()), name, body };
+        let definition = Definition{ arguments: vec!["player".to_string()], name, body };
         let statement = Statement::Definition(definition);
 
-        let ast = vec!(
+        let ast = vec![
             players,
             statement
-        );
+        ];
 
         let mut game = Game::new(ast);
         game.start();
@@ -593,7 +653,7 @@ mod test{
             }
         );
 
-        let body = vec!(
+        let body = vec![
             Statement::Transfer(
                 Transfer{
                     from: "deck".to_string(),
@@ -602,16 +662,16 @@ mod test{
                     count: None
                 }
             )
-        );
+        ];
 
         let name = "player_move".to_owned();
-        let definition = Definition{ arguments: vec!("player".to_string()), name, body };
+        let definition = Definition{ arguments: vec!["player".to_string()], name, body };
         let statement = Statement::Definition(definition);
 
-        let ast = vec!(
+        let ast = vec![
             players,
             statement
-        );
+        ];
 
         let mut game = Game::new(ast);
         game.start();
@@ -626,7 +686,7 @@ mod test{
 
     #[test]
     fn it_can_handle_custom_stacks() {
-        let mut ast = vec!(
+        let mut ast = vec![
             Statement::Declaration(
                 Declaration {
                     key: GlobalKey::Players,
@@ -639,7 +699,7 @@ mod test{
                     value: Expression::Symbol("middle".to_string())
                 }
             )
-        );
+        ];
         let from = "deck".to_owned();
         let to = "middle".to_owned();
         let modifier = None;
@@ -648,8 +708,8 @@ mod test{
         let transfer_statement = Statement::Transfer(transfer);
 
         let name = "setup".to_owned();
-        let body = vec!(transfer_statement);
-        let definition = Definition{ arguments: vec!(), name, body };
+        let body = vec![transfer_statement];
+        let definition = Definition{ arguments: vec![], name, body };
         let statement = Statement::Definition(definition);
 
         ast.push(statement);
@@ -664,14 +724,14 @@ mod test{
 
     #[test]
     fn it_can_show_info_about_the_game() {
-        let ast = vec!(
+        let ast = vec![
             Statement::Declaration(
                 Declaration {
                     key: GlobalKey::Deck,
                     value: Expression::Symbol("StandardDeck".to_string())
                 }
             )
-        );
+        ];
 
         let game = Game::new(ast);
         let display = game.show("game");
@@ -681,19 +741,19 @@ mod test{
 
     #[test]
     fn it_can_end_a_game() {
-        let body = vec!(
+        let body = vec![
             Statement::FunctionCall(
                 FunctionCall{
                     name: "end".to_string(),
                     arguments: vec!()
                 }
             )
-        );
+        ];
 
         let name = "setup".to_owned();
-        let definition = Definition{ arguments: vec!(), name, body };
+        let definition = Definition{ arguments: vec![], name, body };
         let statement = Statement::Definition(definition);
-        let ast = vec!(statement);
+        let ast = vec![statement];
 
         let mut game = Game::new(ast);
         game.start();
@@ -712,7 +772,7 @@ mod test{
             }
         );
 
-        let body = vec!(
+        let body = vec![
             Statement::Transfer(
                 Transfer{
                     from: "deck".to_string(),
@@ -721,16 +781,16 @@ mod test{
                     count: None
                 }
             )
-        );
+        ];
 
         let name = "player_move".to_owned();
-        let definition = Definition{ arguments: vec!(), name, body };
+        let definition = Definition{ arguments: vec![], name, body };
         let statement = Statement::Definition(definition);
 
-        let ast = vec!(
+        let ast = vec![
             players,
             statement
-        );
+        ];
 
         let mut game = Game::new(ast);
         assert!(game.player_move(1).is_err());
@@ -749,7 +809,7 @@ mod test{
             }
         );
 
-        let body = vec!(
+        let body = vec![
             Statement::Transfer(
                 Transfer{
                     from: "deck".to_string(),
@@ -758,29 +818,29 @@ mod test{
                     count: None
                 }
             )
-        );
+        ];
 
         let name = "player_move".to_owned();
-        let definition = Definition{ arguments: vec!(), name, body };
+        let definition = Definition{ arguments: vec![], name, body };
         let statement = Statement::Definition(definition);
 
-        let body = vec!(
+        let body = vec![
             Statement::FunctionCall(
                 FunctionCall{
                     name: "end".to_owned(),
                     arguments: vec!()
                 }
             )
-        );
+        ];
         let name = "setup".to_owned();
-        let definition = Definition{ arguments: vec!(), name, body };
+        let definition = Definition{ arguments: vec![], name, body };
         let setup = Statement::Definition(definition);
 
-        let ast = vec!(
+        let ast = vec![
             players,
             statement,
             setup
-        );
+        ];
 
         let mut game = Game::new(ast);
         game.start();
@@ -793,19 +853,19 @@ mod test{
 
     #[test]
     fn it_can_apply_a_winner() {
-        let body = vec!(
+        let body = vec![
             Statement::FunctionCall(
                 FunctionCall{
                     name: "winner".to_string(),
                     arguments: vec!(Expression::Number(1.0))
                 }
             )
-        );
+        ];
 
         let name = "setup".to_owned();
-        let definition = Definition{ arguments: vec!(), name, body };
+        let definition = Definition{ arguments: vec![], name, body };
         let statement = Statement::Definition(definition);
-        let ast = vec!(statement);
+        let ast = vec![statement];
 
         let mut game = Game::new(ast);
         game.start();
@@ -823,19 +883,19 @@ mod test{
                 value: Expression::Number(1.0)
             }
         );
-        let body = vec!(
+        let body = vec![
             Statement::FunctionCall(
                 FunctionCall{
                     name: "winner".to_string(),
                     arguments: vec!(Expression::Symbol("player:id".to_string()))
                 }
             )
-        );
+        ];
 
         let name = "player_move".to_owned();
-        let definition = Definition{ arguments: vec!("player".to_string()), name, body };
+        let definition = Definition{ arguments: vec!["player".to_string()], name, body };
         let statement = Statement::Definition(definition);
-        let ast = vec!(declaration, statement);
+        let ast = vec![declaration, statement];
 
         let mut game = Game::new(ast);
         game.start();
@@ -848,7 +908,7 @@ mod test{
 
     #[test]
     fn it_can_show_a_winner_after_game_over() {
-        let body = vec!(
+        let body = vec![
             Statement::FunctionCall(
                 FunctionCall{
                     name: "winner".to_string(),
@@ -861,12 +921,12 @@ mod test{
                     arguments: vec!()
                 }
             )
-        );
+        ];
 
         let name = "setup".to_owned();
-        let definition = Definition{ arguments: vec!(), name, body };
+        let definition = Definition{ arguments: vec![], name, body };
         let statement = Statement::Definition(definition);
-        let ast = vec!(statement);
+        let ast = vec![statement];
 
         let mut game = Game::new(ast);
         game.start();
@@ -878,28 +938,28 @@ mod test{
 
     #[test]
     fn it_executes_if_statement_when_expression_is_true() {
-        let if_body = vec!(
+        let if_body = vec![
             Statement::FunctionCall(
                 FunctionCall{
                     name: "end".to_string(),
                     arguments: vec!()
                 }
             )
-        );
+        ];
 
-        let if_statement = IfStatement{ else_body: vec!(),
+        let if_statement = IfStatement{ else_body: vec![],
             expression: Expression::Bool(true),
             body: if_body
         };
 
-        let body = vec!(
+        let body = vec![
             Statement::IfStatement(if_statement)
-        );
+        ];
 
         let name = "setup".to_owned();
-        let definition = Definition{ arguments: vec!(), name, body };
+        let definition = Definition{ arguments: vec![], name, body };
         let statement = Statement::Definition(definition);
-        let ast = vec!(statement);
+        let ast = vec![statement];
 
         let mut game = Game::new(ast);
         game.start();
@@ -911,28 +971,28 @@ mod test{
 
     #[test]
     fn it_doesnt_execute_if_statement_when_expression_is_false() {
-        let if_body = vec!(
+        let if_body = vec![
             Statement::FunctionCall(
                 FunctionCall{
                     name: "end".to_string(),
                     arguments: vec!()
                 }
             )
-        );
+        ];
 
-        let if_statement = IfStatement{ else_body: vec!(),
+        let if_statement = IfStatement{ else_body: vec![],
             expression: Expression::Bool(false),
             body: if_body
         };
 
-        let body = vec!(
+        let body = vec![
             Statement::IfStatement(if_statement)
-        );
+        ];
 
         let name = "setup".to_owned();
-        let definition = Definition{ arguments: vec!(), name, body };
+        let definition = Definition{ arguments: vec![], name, body };
         let statement = Statement::Definition(definition);
-        let ast = vec!(statement);
+        let ast = vec![statement];
 
         let mut game = Game::new(ast);
         game.start();
@@ -944,14 +1004,14 @@ mod test{
 
     #[test]
     fn it_executes_if_statement_when_expression_is_true_comparison() {
-        let if_body = vec!(
+        let if_body = vec![
             Statement::FunctionCall(
                 FunctionCall{
                     name: "end".to_string(),
                     arguments: vec!()
                 }
             )
-        );
+        ];
 
         let comparison = Comparison{
             left: Expression::Number(1.0),
@@ -959,19 +1019,19 @@ mod test{
             negative: false
         };
 
-        let if_statement = IfStatement{ else_body: vec!(),
+        let if_statement = IfStatement{ else_body: vec![],
             expression: Expression::Comparison(Box::new(comparison)),
             body: if_body
         };
 
-        let body = vec!(
+        let body = vec![
             Statement::IfStatement(if_statement)
-        );
+        ];
 
         let name = "setup".to_owned();
-        let definition = Definition{ name, body, arguments: vec!() };
+        let definition = Definition{ name, body, arguments: vec![] };
         let statement = Statement::Definition(definition);
-        let ast = vec!(statement);
+        let ast = vec![statement];
 
         let mut game = Game::new(ast);
         game.start();
@@ -983,28 +1043,28 @@ mod test{
 
     #[test]
     fn it_can_compare_based_on_function_calls() {
-        let mut ast = vec!(
+        let mut ast = vec![
             Statement::Declaration(
                 Declaration {
                     key: GlobalKey::Players,
                     value: Expression::Number(2.0)
                 }
             )
-        );
-        let if_body = vec!(
+        ];
+        let if_body = vec![
             Statement::FunctionCall(
                 FunctionCall{
                     name: "end".to_string(),
                     arguments: vec!()
                 }
             )
-        );
+        ];
 
         let count_call = FunctionCall {
             name: "count".to_string(),
-            arguments: vec!(
+            arguments: vec![
                 Expression::Symbol("player:hand".to_string())
-            )
+            ]
         };
 
         let comparison = Comparison{
@@ -1013,17 +1073,17 @@ mod test{
             negative: false
         };
 
-        let if_statement = IfStatement{ else_body: vec!(),
+        let if_statement = IfStatement{ else_body: vec![],
             expression: Expression::Comparison(Box::new(comparison)),
             body: if_body
         };
 
-        let body = vec!(
+        let body = vec![
             Statement::IfStatement(if_statement)
-        );
+        ];
 
         let name = "player_move".to_owned();
-        let definition = Definition{ name, body, arguments: vec!() };
+        let definition = Definition{ name, body, arguments: vec![] };
         let statement = Statement::Definition(definition);
         ast.push(statement);
 
@@ -1038,14 +1098,14 @@ mod test{
 
     #[test]
     fn it_can_compare_based_on_function_calls_with_cards() {
-        let mut ast = vec!(
+        let mut ast = vec![
             Statement::Declaration(
                 Declaration {
                     key: GlobalKey::Players,
                     value: Expression::Number(2.0)
                 }
             )
-        );
+        ];
         let from = "deck".to_owned();
         let to = "players".to_owned();
         let modifier = None; //Some(TransferModifier::Alternate);
@@ -1054,26 +1114,26 @@ mod test{
         let transfer_statement = Statement::Transfer(transfer);
 
         let name = "setup".to_owned();
-        let body = vec!(transfer_statement);
-        let definition = Definition{ name, body, arguments: vec!() };
+        let body = vec![transfer_statement];
+        let definition = Definition{ name, body, arguments: vec![] };
         let statement = Statement::Definition(definition);
 
         ast.push(statement);
 
-        let if_body = vec!(
+        let if_body = vec![
             Statement::FunctionCall(
                 FunctionCall{
                     name: "end".to_string(),
                     arguments: vec!()
                 }
             )
-        );
+        ];
 
         let count_call = FunctionCall {
             name: "count".to_string(),
-            arguments: vec!(
+            arguments: vec![
                 Expression::Symbol("player:hand".to_string())
-            )
+            ]
         };
 
         let comparison = Comparison{
@@ -1082,17 +1142,17 @@ mod test{
             negative: false
         };
 
-        let if_statement = IfStatement{ else_body: vec!(),
+        let if_statement = IfStatement{ else_body: vec![],
             expression: Expression::Comparison(Box::new(comparison)),
             body: if_body
         };
 
-        let body = vec!(
+        let body = vec![
             Statement::IfStatement(if_statement)
-        );
+        ];
 
         let name = "player_move".to_owned();
-        let definition = Definition{ name, body, arguments: vec!("player".to_string()) };
+        let definition = Definition{ name, body, arguments: vec!["player".to_string()] };
         let statement = Statement::Definition(definition);
         ast.push(statement);
 
@@ -1107,7 +1167,7 @@ mod test{
 
     #[test]
     fn check_stops_a_function_executing_when_expression_is_false() {
-        let body = vec!(
+        let body = vec![
             Statement::CheckStatement(CheckStatement{
                 expression: Expression::Bool(false)
             }),
@@ -1123,12 +1183,12 @@ mod test{
                     arguments: vec!()
                 }
             )
-        );
+        ];
 
         let name = "setup".to_owned();
-        let definition = Definition{ name, body, arguments: vec!() };
+        let definition = Definition{ name, body, arguments: vec![] };
         let statement = Statement::Definition(definition);
-        let ast = vec!(statement);
+        let ast = vec![statement];
 
         let mut game = Game::new(ast);
         game.start();
@@ -1140,7 +1200,7 @@ mod test{
 
     #[test]
     fn check_passes_through_when_expression_is_true() {
-        let body = vec!(
+        let body = vec![
             Statement::CheckStatement(CheckStatement{
                 expression: Expression::Bool(true)
             }),
@@ -1156,12 +1216,12 @@ mod test{
                     arguments: vec!()
                 }
             )
-        );
+        ];
 
         let name = "setup".to_owned();
-        let definition = Definition{ name, body, arguments: vec!() };
+        let definition = Definition{ name, body, arguments: vec![] };
         let statement = Statement::Definition(definition);
-        let ast = vec!(statement);
+        let ast = vec![statement];
 
         let mut game = Game::new(ast);
         game.start();
@@ -1173,14 +1233,14 @@ mod test{
 
     #[test]
     fn it_shows_current_player() {
-        let ast = vec!(
+        let ast = vec![
             Statement::Declaration(
                 Declaration {
                     key: GlobalKey::CurrentPlayer,
                     value: Expression::Number(1.0)
                 }
             )
-        );
+        ];
 
         let game = Game::new(ast);
         let current_player = game.show("current_player");
@@ -1190,14 +1250,14 @@ mod test{
 
     #[test]
     fn it_shows_current_player_as_set() {
-        let ast = vec!(
+        let ast = vec![
             Statement::Declaration(
                 Declaration {
                     key: GlobalKey::CurrentPlayer,
                     value: Expression::Number(2.0)
                 }
             )
-        );
+        ];
 
         let game = Game::new(ast);
         let current_player = game.show("current_player");
@@ -1207,19 +1267,19 @@ mod test{
 
     #[test]
     fn it_can_rotate_current_player() {
-        let body = vec!(
+        let body = vec![
             Statement::FunctionCall(
                 FunctionCall{
                     name: "next_player".to_string(),
                     arguments: vec!()
                 }
             )
-        );
+        ];
 
         let name = "setup".to_owned();
-        let definition = Definition{ name, body,  arguments: vec!(), };
+        let definition = Definition{ name, body,  arguments: vec![], };
         let statement = Statement::Definition(definition);
-        let ast = vec!(
+        let ast = vec![
             Statement::Declaration(
                 Declaration {
                     key: GlobalKey::Players,
@@ -1233,7 +1293,7 @@ mod test{
                 }
             ),
             statement
-        );
+        ];
 
         let mut game = Game::new(ast);
         game.start();
@@ -1244,19 +1304,19 @@ mod test{
 
     #[test]
     fn it_can_rotate_current_player_back_to_first() {
-        let body = vec!(
+        let body = vec![
             Statement::FunctionCall(
                 FunctionCall{
                     name: "next_player".to_string(),
                     arguments: vec!()
                 }
             )
-        );
+        ];
 
         let name = "setup".to_owned();
-        let definition = Definition{ name, body, arguments: vec!() };
+        let definition = Definition{ name, body, arguments: vec![] };
         let statement = Statement::Definition(definition);
-        let ast = vec!(
+        let ast = vec![
             Statement::Declaration(
                 Declaration {
                     key: GlobalKey::Players,
@@ -1270,7 +1330,7 @@ mod test{
                 }
             ),
             statement
-        );
+        ];
 
         let mut game = Game::new(ast);
         game.start();
@@ -1281,33 +1341,33 @@ mod test{
 
     #[test]
     fn it_executes_if_statement_when_expression_is_true_and_true() {
-        let if_body = vec!(
+        let if_body = vec![
             Statement::FunctionCall(
                 FunctionCall{
                     name: "end".to_string(),
                     arguments: vec!()
                 }
             )
-        );
+        ];
 
         let and = And{
             left: Expression::Bool(true),
             right: Expression::Bool(true)
         };
 
-        let if_statement = IfStatement{ else_body: vec!(),
+        let if_statement = IfStatement{ else_body: vec![],
             expression: Expression::And(Box::new(and)),
             body: if_body
         };
 
-        let body = vec!(
+        let body = vec![
             Statement::IfStatement(if_statement)
-        );
+        ];
 
         let name = "setup".to_owned();
-        let definition = Definition{ name, body, arguments: vec!() };
+        let definition = Definition{ name, body, arguments: vec![] };
         let statement = Statement::Definition(definition);
-        let ast = vec!(statement);
+        let ast = vec![statement];
 
         let mut game = Game::new(ast);
         game.start();
@@ -1326,7 +1386,7 @@ mod test{
             }
         );
 
-        let body = vec!(
+        let body = vec![
             Statement::Transfer(
                 Transfer{
                     from: "deck".to_string(),
@@ -1335,16 +1395,16 @@ mod test{
                     count: None
                 }
             )
-        );
+        ];
 
         let name = "player_move".to_owned();
-        let definition = Definition{ arguments: vec!("pl".to_string()), name, body };
+        let definition = Definition{ arguments: vec!["pl".to_string()], name, body };
         let statement = Statement::Definition(definition);
 
-        let ast = vec!(
+        let ast = vec![
             players,
             statement
-        );
+        ];
 
         let mut game = Game::new(ast);
         game.start();

@@ -7,8 +7,9 @@ New here? Start with the [user guides](docs/README.md): [getting started](docs/g
 ## CLI usage
 ### (interactive mode)
 ```
-cardlang # (or cargo run)
-> build ./examples/simple_scopa.card
+cardlang play examples/simple_scopa.card   # (or cargo run -- play ...)
+> build examples/simple_scopa.card
+Game loaded
 > start
 > show middle
 jack diamonds, ace spades, two spades, nine clubs
@@ -19,6 +20,7 @@ six hearts, seven spades, two clubs
 two spades, two clubs
 > help
 ```
+Press Tab to complete commands, file names, moves and cards.
 
 ## check a game file parses
 ```

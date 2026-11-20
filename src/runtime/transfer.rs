@@ -49,21 +49,17 @@ pub fn transfer(
 
     while count > 0 {
 
-        let card_result = match from {
-            Some(TransferTarget::Stack(ref mut s)) => s.pop(),
-            _ => None
+        // nothing to transfer into
+        to.as_ref()?;
+
+        // running out of cards early is fine: move as many as there are
+        let card = match from {
+            Some(TransferTarget::Stack(ref mut s)) => match s.pop() {
+                Some(card) => card,
+                None => break
+            },
+            _ => break
         };
-
-        // todo - error?
-        if card_result.is_none() {
-            break;
-        }
-
-        if to.is_none() {
-            return None;
-        }
-
-        let card = card_result.expect("unable to get card");
 
         match to {
             Some(TransferTarget::StackList(ref mut s)) => {
@@ -81,10 +77,7 @@ pub fn transfer(
     }
 
     match from {
-        Some(f) => match to {
-            Some(t) => Some((f, t)),
-            _  => None
-        },
+        Some(f) => to.map(|t| (f, t)),
         _ => None
     }
 }
@@ -97,7 +90,7 @@ mod test{
     #[test]
     fn it_can_handle_moving_stack_to_stack() {
         let from = Some(TransferTarget::Stack(standard_deck()));
-        let to = Some(TransferTarget::Stack(vec!()));
+        let to = Some(TransferTarget::Stack(vec![]));
 
         let result = transfer(from, to, None);
 

@@ -2,7 +2,7 @@ use crate::cards::Card;
 use rand::seq::SliceRandom;
 use super::{PrimitiveValue, GameState};
 
-pub fn shuffle(stack: &mut Vec<Card>) {
+pub fn shuffle(stack: &mut [Card]) {
     let mut rng = rand::thread_rng();
     stack.shuffle(&mut rng);
 }

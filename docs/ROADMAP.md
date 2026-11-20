@@ -59,19 +59,19 @@ Bugs that gave game authors wrong results without any error.
 3. Specific cards are moved with a trailing `taking`: `middle > player:collection taking move:target`.
 4. Card values have built-in defaults (Ace 1 … King 13), an optional `values` table, `sum()`, and `+ - < >`.
 
-## Milestone 4: code health
-
-Spread across the other milestones rather than done in one go.
+## Milestone 4: code health ✅
 
 | # | Item | Status |
 |---|---|---|
-| 27 | Fix the 2 compiler warnings (unused `Peekable` import, unused `Game.ast` field) | ⬜ |
-| 28 | Fix the ~40 clippy warnings (mostly mechanical: `?`, `if let`, `&[T]` instead of `&Vec<T>`), then make clippy warnings fatal in CI | ⬜ |
-| 29 | Move from Rust edition 2018 to 2021 | ⬜ |
-| 30 | Remove the duplication in `Callbacks`: `setup` and `player_move` are stored separately from `definitions` | ⬜ |
-| 31 | Replace the remaining `.expect()` calls in the lexer and `main.rs` with error handling (none can currently be triggered, but they're fragile) | ⬜ |
+| 27 | Fix the compiler warnings (unused `Peekable` import, unused `Game.ast` field) | ✅ |
+| 28 | Fix the clippy warnings, then make clippy warnings fatal in CI | ✅ `cargo clippy --all-targets -- -D warnings` |
+| 29 | Move from Rust edition 2018 to 2021 | ✅ |
+| 30 | Remove the duplication in `Callbacks`: `setup` and `player_move` were stored separately from `definitions` | ✅ |
+| 31 | Replace the remaining check-then-`expect()` patterns in the lexer, `main.rs` and transfers | ✅ |
 | 32 | CLI tests | ✅ `tests/cli.rs` |
 | 33 | One list of known work: this file replaces the README todo list | ✅ |
+
+CI uses the latest stable Rust, so a new Rust release can add clippy lints that fail the build. When that happens, fix the new warnings, or pin a toolchain with a `rust-toolchain.toml` if it becomes a nuisance.
 
 ## Milestone 5: towards full Scopa and multi-round games
 
@@ -93,16 +93,16 @@ Not started. These came up while building Simple Scopa, plus the leftovers from 
 | 26 | Switch statements | ⬜ | README; `else if` covers most uses |
 | 39 | `*`, `/`, `<=`, `>=` | ⬜ | |
 
-## Milestone 6: CLI experience
+## Milestone 6: CLI experience ✅
 
 Making the interpreter pleasant to play at.
 
 | # | Item | Status | Notes |
 |---|---|---|---|
-| 40 | **Tab completion**: press Tab to complete `build` file paths (e.g. `build ex<Tab>` → `build examples/`), command names, `show` targets, move names and cards in hand | ⬜ | Needs a line-editing library such as `rustyline` |
-| 41 | Command history: up arrow to repeat or edit a previous line | ⬜ | Comes with the same library |
+| 40 | **Tab completion**: `build` file paths (`build ex<Tab>` → `build examples/`), commands, `show` targets, move names and the cards you can play | ✅ | Uses `rustyline`, only when running in a terminal |
+| 41 | Command history: up arrow to repeat or edit a previous line | ✅ | |
 | 42 | Show the table after `start` and after each move | ✅ | Whose turn, deck size, shared piles, current hand, each player's own piles |
 | 43 | `show` before `start` says to type `start` | ✅ | It used to print empty piles |
-| 44 | Let a game choose what the table shows, e.g. a `display` function | ⬜ | The built-in table is the same for every game |
-| 45 | `cardlang play <file>`: build and start in one step | ⬜ | |
-
+| 45 | `cardlang play <file>`: build and start in one step | ✅ | |
+| 44 | Let a game choose what the table shows, e.g. a `display` function | ⚠️ | Needs a design decision; see Milestone 5 |
+| 46 | Save history between sessions | ⬜ | History lasts for one session today |

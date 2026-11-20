@@ -49,9 +49,9 @@ pub struct InitialValues {
 }
 
 #[derive(Clone, Debug)]
+// The game's functions by name. `setup` and `player_move` are called by
+// the interpreter; the rest are called by the game itself.
 pub struct Callbacks {
-    pub player_move: Option<Definition>,
-    pub setup: Option<Definition>,
     pub definitions: HashMap<String, Definition>
 }
 
@@ -118,17 +118,17 @@ impl Runtime {
 
         let mut card_stacks: HashMap<String, Vec<Card>> = HashMap::new();
         for stack in initial_values.card_stacks.iter() {
-            card_stacks.insert(stack.to_string(), vec!());
+            card_stacks.insert(stack.to_string(), vec![]);
         }
 
         Runtime {
             status: GameState::Pending,
             deck:  standard_deck(),
-            winners: vec!(),
+            winners: vec![],
             current_player: initial_values.current_player,
-            call_stack: vec!(),
+            call_stack: vec![],
             current_move: None,
-            function_names: vec!(),
+            function_names: vec![],
             failure: None,
             card_stacks,
             card_values: initial_values.card_values.iter().cloned().collect(),
@@ -148,7 +148,7 @@ impl Runtime {
                 None
             },
             "winner" => {
-                let argument = match f.arguments.get(0) {
+                let argument = match f.arguments.first() {
                     Some(a) => a,
                     None => {
                         eprintln!("winner: expected a player id");
@@ -167,7 +167,7 @@ impl Runtime {
                 None
             },
             "count" => {
-                let c = match f.arguments.get(0) {
+                let c = match f.arguments.first() {
                     Some(a) => {
                         let stack_to_count = self.resolve_expression(a);
                         count(stack_to_count)
@@ -185,7 +185,7 @@ impl Runtime {
                 None
             },
             "sum" => {
-                let total = match f.arguments.get(0).map(|a| self.resolve_expression(a)) {
+                let total = match f.arguments.first().map(|a| self.resolve_expression(a)) {
                     Some(PrimitiveValue::Stack(cards)) => cards.iter().map(|c| self.card_value(c)).sum(),
                     _ => {
                         eprintln!("sum: expected a stack of cards");
@@ -196,7 +196,7 @@ impl Runtime {
             },
             "valid_moves" => Some(PrimitiveValue::Bool(self.valid_moves(&f.arguments))),
             "cards_in_stack" => {
-                let cards = f.arguments.get(0).map(|a| self.resolve_expression(a));
+                let cards = f.arguments.first().map(|a| self.resolve_expression(a));
                 let stack = f.arguments.get(1).map(|a| self.resolve_expression(a));
                 let result = match (cards, stack) {
                     (Some(PrimitiveValue::Stack(cards)), Some(PrimitiveValue::Stack(stack))) => {
@@ -210,9 +210,9 @@ impl Runtime {
                 Some(PrimitiveValue::Bool(result))
             },
             "filter" => {
-                let stack = match f.arguments.get(0).map(|a| self.resolve_expression(a)) {
+                let stack = match f.arguments.first().map(|a| self.resolve_expression(a)) {
                     Some(PrimitiveValue::Stack(s)) => s,
-                    _ => return Some(PrimitiveValue::Stack(vec!()))
+                    _ => return Some(PrimitiveValue::Stack(vec![]))
                 };
                 let definition = match f.arguments.get(1) {
                     Some(Expression::Symbol(name)) => self.callbacks.definitions.get(name).cloned(),
@@ -222,7 +222,7 @@ impl Runtime {
                     Some(d) => Some(PrimitiveValue::Stack(self.filter(stack, d))),
                     None => {
                         eprintln!("filter: expected a function name as the second argument");
-                        Some(PrimitiveValue::Stack(vec!()))
+                        Some(PrimitiveValue::Stack(vec![]))
                     }
                 }
             },
@@ -239,7 +239,7 @@ impl Runtime {
         }
     }
 
-    fn call_user_function(&mut self, definition: &Definition, arguments: &Vec<Expression>) -> Option<PrimitiveValue> {
+    fn call_user_function(&mut self, definition: &Definition, arguments: &[Expression]) -> Option<PrimitiveValue> {
         if self.call_stack.len() >= MAX_CALL_DEPTH {
             eprintln!("maximum call depth exceeded in '{}'", definition.name);
             return None;
@@ -321,7 +321,7 @@ impl Runtime {
             GameState::Active => ()
         }
 
-        let p_move = match self.callbacks.player_move.clone() {
+        let p_move = match self.callbacks.definitions.get("player_move").cloned() {
             Some(m) => m,
             None => return Err("this game does not define player_move".to_string())
         };
@@ -339,7 +339,7 @@ impl Runtime {
         let move_object = Self::build_move_object(&input);
 
         let mut call_stack_frame = HashMap::new();
-        if let Some(arg) = p_move.arguments.get(0) {
+        if let Some(arg) = p_move.arguments.first() {
             call_stack_frame.insert(arg.clone(), player.clone());
         }
         if let Some(arg) = p_move.arguments.get(1) {
@@ -412,7 +412,7 @@ impl Runtime {
             }
         };
 
-        let mut moves = vec!();
+        let mut moves = vec![];
         for argument in arguments {
             match argument {
                 Expression::Symbol(name) => match self.callbacks.definitions.get(name) {
@@ -437,7 +437,7 @@ impl Runtime {
             _ => None
         };
 
-        let values = vec!(player, move_object);
+        let values = vec![player, move_object];
         match requested {
             Some(name) => match moves.iter().find(|d| d.name == name) {
                 Some(definition) => !Self::failed(&self.call_with_values(definition, values)),
@@ -448,7 +448,7 @@ impl Runtime {
                 }
             },
             None => {
-                let mut reasons = vec!();
+                let mut reasons = vec![];
                 for definition in moves.iter() {
                     let before = self.snapshot();
                     self.failure = None;
@@ -466,7 +466,7 @@ impl Runtime {
 
     pub fn setup(&mut self) {
         self.status = GameState::Active;
-        if let Some(setup) = self.callbacks.setup.clone() {
+        if let Some(setup) = self.callbacks.definitions.get("setup").cloned() {
             self.failure = None;
             self.function_names.push(setup.name.clone());
             let result = self.handle_statements(&setup.body);
@@ -570,7 +570,7 @@ impl Runtime {
                     }
                 }
             },
-            Expression::FunctionCall(f) => self.handle_function_call(&f).unwrap_or(PrimitiveValue::Bool(false)),
+            Expression::FunctionCall(f) => self.handle_function_call(f).unwrap_or(PrimitiveValue::Bool(false)),
             Expression::Number(n) => PrimitiveValue::Number(*n),
             Expression::Bool(_)
                 | Expression::Comparison(_)
@@ -788,31 +788,24 @@ impl Runtime {
     }
 
     pub fn find_custom_item(&self, key: &str) -> Option<Vec<Card>> {
-        match self.card_stacks.get(key) {
-            Some(v) => Some(v.to_vec()),
-            None    => None
-        }
+        self.card_stacks.get(key).map(|v| v.to_vec())
     }
 
     fn find_in_call_stack(&self, key: &str) -> Option<ArgumentValue> {
         for frame in self.call_stack.iter().rev(){
             let result = frame.get(key);
-            match result {
-                Some(r)  => return Some(r.clone()),
-                _ => ()
-
-            }
+            if let Some(r) = result { return Some(r.clone()) }
         }
         None
     }
 
     fn filter(&mut self, stack: Vec<Card>, function: Definition) -> Vec<Card> {
-        let card_arg = match function.arguments.get(0) {
+        let card_arg = match function.arguments.first() {
             Some(arg) => arg,
             None => "card"
         }.to_string();
 
-        return stack.iter().filter(|&card|{
+        stack.iter().filter(|&card|{
             let mut call_stack_frame = HashMap::new();
             let card_obj = self.build_card_object(*card);
             call_stack_frame.insert(card_arg.clone(), card_obj);
@@ -825,7 +818,7 @@ impl Runtime {
                 PrimitiveValue::Bool(b) => b,
                 _ => false
             }
-        }).map(|&card| card.clone()).collect()
+        }).copied().collect()
     }
 }
 
@@ -847,21 +840,19 @@ mod test{
         });
         let func = Definition{
             name: "_".to_string(),
-            arguments: vec!("card".to_string()),
-            body: vec!(return_statement)
+            arguments: vec!["card".to_string()],
+            body: vec![return_statement]
         };
 
         let initial_values = InitialValues{
             players: 1,
-            player_stacks: vec!(),
-            card_values: vec!(),
-            card_stacks: vec!(),
+            player_stacks: vec![],
+            card_values: vec![],
+            card_stacks: vec![],
             current_player: 1,
         };
 
         let callbacks = Callbacks{
-            player_move: None,
-            setup: None,
             definitions: HashMap::new()
         };
 
@@ -880,21 +871,19 @@ mod test{
         });
         let func = Definition{
             name: "_".to_string(),
-            arguments: vec!("card".to_string()),
-            body: vec!(return_statement)
+            arguments: vec!["card".to_string()],
+            body: vec![return_statement]
         };
 
         let initial_values = InitialValues{
             players: 1,
-            player_stacks: vec!(),
-            card_values: vec!(),
-            card_stacks: vec!(),
+            player_stacks: vec![],
+            card_values: vec![],
+            card_stacks: vec![],
             current_player: 1,
         };
 
         let callbacks = Callbacks{
-            player_move: None,
-            setup: None,
             definitions: HashMap::new()
         };
 
@@ -917,21 +906,19 @@ mod test{
         let return_statement = Statement::ReturnStatement(ReturnStatement{ expression });
         let func = Definition{
             name: "_".to_string(),
-            arguments: vec!("card".to_string()),
-            body: vec!(return_statement)
+            arguments: vec!["card".to_string()],
+            body: vec![return_statement]
         };
 
         let initial_values = InitialValues{
             players: 1,
-            player_stacks: vec!(),
-            card_values: vec!(),
-            card_stacks: vec!(),
+            player_stacks: vec![],
+            card_values: vec![],
+            card_stacks: vec![],
             current_player: 1,
         };
 
         let callbacks = Callbacks{
-            player_move: None,
-            setup: None,
             definitions: HashMap::new()
         };
 
@@ -954,21 +941,19 @@ mod test{
         let return_statement = Statement::ReturnStatement(ReturnStatement{ expression });
         let func = Definition{
             name: "_".to_string(),
-            arguments: vec!("card".to_string()),
-            body: vec!(return_statement)
+            arguments: vec!["card".to_string()],
+            body: vec![return_statement]
         };
 
         let initial_values = InitialValues{
             players: 1,
-            player_stacks: vec!(),
-            card_values: vec!(),
-            card_stacks: vec!(),
+            player_stacks: vec![],
+            card_values: vec![],
+            card_stacks: vec![],
             current_player: 1,
         };
 
         let callbacks = Callbacks{
-            player_move: None,
-            setup: None,
             definitions: HashMap::new()
         };
 

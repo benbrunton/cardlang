@@ -12,8 +12,8 @@ pub struct Player {
 
 impl Player{
     pub fn with_stacks(id: u32, stack_names: &[String]) -> Player {
-        let stacks = stack_names.iter().map(|name| (name.clone(), vec!())).collect();
-        Player { hand: vec!(), id, stacks }
+        let stacks = stack_names.iter().map(|name| (name.clone(), vec![])).collect();
+        Player { hand: vec![], id, stacks }
     }
 
     pub fn get_hand(&self) -> Vec<Card> {

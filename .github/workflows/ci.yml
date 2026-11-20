@@ -28,6 +28,5 @@ jobs:
           cargo run --quiet -- test examples/race.card
           cargo run --quiet -- test examples/turns.card
 
-      # Warnings are reported but not yet fatal; see docs/ROADMAP.md (Milestone 4).
       - name: Clippy
-        run: cargo clippy --locked --all-targets
+        run: cargo clippy --locked --all-targets -- -D warnings
