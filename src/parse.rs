@@ -518,6 +518,15 @@ fn parse_primary(tokens_iter: &mut std::slice::Iter<SourceToken>) -> Result<Expr
             Ok(cards) if !cards.is_empty() => Expression::Cards(cards),
             _ => return Err(ParseError::new(ParseErrorType::UnexpectedToken, source_token.line_number))
         },
+        Token::Most => {
+            // most player p: <number>
+            let (kind, variable, has_colon) = build_every_header(tokens_iter, source_token.line_number)?;
+            if kind != EveryKind::Player || !has_colon {
+                return Err(ParseError::new(ParseErrorType::UnexpectedToken, source_token.line_number));
+            }
+            let value = parse_or(tokens_iter)?;
+            Expression::Most(Box::new(MostExpression{ variable, value }))
+        },
         Token::Every | Token::Any => {
             let (kind, variable, has_colon) = build_every_header(tokens_iter, source_token.line_number)?;
             if !has_colon {
@@ -1775,6 +1784,8 @@ mod test{
     #[test]
     fn incomplete_or_invalid_source_is_a_parse_error_not_a_panic() {
         let cases = [
+            "def setup(){ winner(most card c in deck: 1) }",
+            "def setup(){ winner(most player p) }",
             "def setup(){ any player p { } }",
             "def setup(){ check(any thing x: true) }",
             "def setup(){ check(any group g: true) }",

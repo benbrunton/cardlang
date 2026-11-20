@@ -30,7 +30,9 @@ pub enum Expression {
     // every player p: condition / every card c in pile: condition
     Every(Box<EveryTest>),
     // [7d, kh]: specific cards
-    Cards(Vec<crate::cards::Card>)
+    Cards(Vec<crate::cards::Card>),
+    // most player p: <number> - the id of the player with the highest value, or 0 if tied
+    Most(Box<MostExpression>)
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -205,6 +207,7 @@ impl std::fmt::Display for Expression {
                 };
                 write!(f, "{} {} {}", b.left, op, b.right)
             },
+            Expression::Most(m) => write!(f, "most player {}: {}", m.variable, m.value),
             Expression::Cards(cards) => {
                 let codes: Vec<String> = cards.iter().map(crate::cards::card_code).collect();
                 write!(f, "[{}]", codes.join(", "))
@@ -247,5 +250,11 @@ pub const DECK_NAMES: [&str; 1] = ["standard"];
 pub struct Assignment {
     // a number's name, a player field (p:score, players:2:score) or current_player
     pub target: String,
+    pub value: Expression
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct MostExpression {
+    pub variable: String,
     pub value: Expression
 }

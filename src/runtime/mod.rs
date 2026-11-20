@@ -252,6 +252,23 @@ impl Runtime {
                 Some(PrimitiveValue::Number(total))
             },
             "valid_moves" => Some(PrimitiveValue::Bool(self.valid_moves(&f.arguments))),
+            "gather" => {
+                // every card from every pile and hand back into the deck
+                let mut cards = vec![];
+                // a fixed order, so games are repeatable
+                let mut names: Vec<String> = self.card_stacks.keys().cloned().collect();
+                names.sort();
+                for name in names {
+                    if let Some(stack) = self.card_stacks.get_mut(&name) {
+                        cards.append(stack);
+                    }
+                }
+                for player in self.players.iter_mut() {
+                    cards.append(&mut player.take_all_cards());
+                }
+                self.deck.append(&mut cards);
+                None
+            },
             "cards_in_stack" => {
                 let cards = f.arguments.first().map(|a| self.resolve_expression(a));
                 let stack = f.arguments.get(1).map(|a| self.resolve_expression(a));
@@ -663,7 +680,8 @@ impl Runtime {
                 | Expression::Or(_)
                 | Expression::Every(_) => PrimitiveValue::Bool(self.resolve_to_bool(expression)),
             Expression::Binary(b) => self.evaluate_binary(b),
-            Expression::Cards(cards) => PrimitiveValue::Stack(cards.clone())
+            Expression::Cards(cards) => PrimitiveValue::Stack(cards.clone()),
+            Expression::Most(m) => PrimitiveValue::Number(self.most(m))
         }
     }
 
@@ -768,6 +786,42 @@ impl Runtime {
             }
         }
         Flow::Continue
+    }
+
+    // most player p: <number> - the id of the one player with the highest
+    // value, or 0 when two or more share it
+    fn most(&mut self, most: &MostExpression) -> f64 {
+        let players = self.players.clone();
+        let mut best: Option<(f64, u32)> = None;
+        let mut tied = false;
+        for player in players {
+            let id = player.get_id();
+            let mut frame = HashMap::new();
+            frame.insert(most.variable.clone(), Self::build_player_object(player));
+            self.call_stack.push(frame);
+            let value = self.resolve_expression(&most.value);
+            self.call_stack.pop();
+
+            let value = match value {
+                PrimitiveValue::Number(n) => n,
+                other => {
+                    eprintln!("most: expected a number for player {}, got {:?}", id, other);
+                    continue;
+                }
+            };
+            match best {
+                Some((top, _)) if value < top => (),
+                Some((top, _)) if value == top => tied = true,
+                _ => {
+                    best = Some((value, id));
+                    tied = false;
+                }
+            }
+        }
+        match best {
+            Some((_, id)) if !tied => id as f64,
+            _ => 0.0
+        }
     }
 
     // every ...: true when the condition holds for all of them

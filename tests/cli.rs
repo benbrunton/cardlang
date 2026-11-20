@@ -133,9 +133,9 @@ fn the_table_is_shown_after_start_and_after_each_move() {
     assert!(stdout.contains("player 1 to play"));
     assert!(stdout.contains("  deck: 42 cards"));
     assert!(stdout.contains("  middle: "));
-    assert!(stdout.contains("  player 1 hand: "));
-    assert!(stdout.contains("  collection: player 1: 0 cards, player 2: 0 cards"));
-
+    assert!(stdout.contains("  player 1: collection 0 cards"));
+    assert!(stdout.contains("  player 2: collection 0 cards"));
+    assert!(stdout.contains("  your hand (player 1): "));
 }
 
 #[test]
@@ -153,10 +153,10 @@ fn the_table_after_a_move_shows_the_next_player() {
     std::fs::remove_dir_all(&dir).ok();
     let stdout = stdout_of(&output);
 
-    assert!(stdout.contains("  player 1 hand: nine diamonds, seven diamonds, five diamonds"));
+    assert!(stdout.contains("  your hand (player 1): 9d, 7d, 5d"));
     assert!(stdout.contains("player 2 to play"));
-    assert!(stdout.contains("  middle: king diamonds, queen diamonds, jack diamonds, ten diamonds, nine diamonds"));
-    assert!(stdout.contains("  player 2 hand: eight diamonds, six diamonds, four diamonds"));
+    assert!(stdout.contains("  middle: kd, qd, jd, 10d, 9d"));
+    assert!(stdout.contains("  your hand (player 2): 8d, 6d, 4d"));
 }
 
 #[test]

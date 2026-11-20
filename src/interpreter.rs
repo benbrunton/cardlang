@@ -239,19 +239,28 @@ impl Game {
             }
         }
 
-        let current = self.runtime.get_current_player();
-        if self.runtime.get_status() != "game over" {
-            if let Some(player) = self.runtime.get_player(current.wrapping_sub(1)) {
-                lines.push(format!("  player {} hand: {}", current, Self::display_list(&player.get_hand())));
+        // one line per player with their numbers and piles, if the game has any
+        let has_fields = !self.initial_values.player_numbers.is_empty() || !self.initial_values.player_stacks.is_empty();
+        if has_fields {
+            for player in self.runtime.get_players().iter() {
+                let mut fields = vec![];
+                for name in self.initial_values.player_numbers.iter() {
+                    let n = player.get_number(name).unwrap_or(0.0);
+                    fields.push(format!("{} {}", name, n));
+                }
+                for name in self.initial_values.player_stacks.iter() {
+                    let size = player.get_stack(name).map_or(0, |cards| cards.len());
+                    fields.push(format!("{} {}", name, Self::plural(size, "card")));
+                }
+                lines.push(format!("  player {}: {}", player.get_id(), fields.join(", ")));
             }
         }
 
-        for name in self.initial_values.player_stacks.iter() {
-            let counts: Vec<String> = self.runtime.get_players().iter().map(|p| {
-                let size = p.get_stack(name).map_or(0, |cards| cards.len());
-                format!("player {}: {}", p.get_id(), Self::plural(size, "card"))
-            }).collect();
-            lines.push(format!("  {}: {}", name, counts.join(", ")));
+        let current = self.runtime.get_current_player();
+        if self.runtime.get_status() != "game over" {
+            if let Some(player) = self.runtime.get_player(current.wrapping_sub(1)) {
+                lines.push(format!("  your hand (player {}): {}", current, Self::codes(&player.get_hand())));
+            }
         }
 
         lines.join("\n")
@@ -261,9 +270,17 @@ impl Game {
     fn cards_or_count(cards: &[Card]) -> String {
         match cards.len() {
             0 => "empty".to_string(),
-            1..=10 => Self::display_list(cards),
-            n => format!("{} cards, top: {}", n, cards[n - 1])
+            1..=10 => Self::codes(cards),
+            n => format!("{} cards, top: {}", n, card_code(&cards[n - 1]))
         }
+    }
+
+    // cards as short codes, the way they're typed in moves: 7h, 10d, ks
+    fn codes(cards: &[Card]) -> String {
+        if cards.is_empty() {
+            return "empty".to_string();
+        }
+        cards.iter().map(card_code).collect::<Vec<_>>().join(", ")
     }
 
     fn plural(n: usize, word: &str) -> String {
@@ -2854,5 +2871,44 @@ def setup(){
 ");
         game.start();
         assert_eq!(game.show("game"), "active");
+    }
+
+    #[test]
+    fn most_gives_the_player_with_the_highest_value_or_0_for_a_tie() {
+        let result = winners_of("
+players 3
+player number score
+
+def setup(){
+    winner(most player p: p:score)
+    players:2:score = 5
+    winner(most player p: p:score)
+    players:3:score = 5
+    winner(most player p: p:score)
+    winner(most player p: 10 - p:id)
+}
+");
+        assert_eq!(result, "active\nwinners: 0, 2, 0, 1");
+    }
+
+    #[test]
+    fn gather_puts_every_card_back_in_the_deck() {
+        let mut game = game_from_source("
+players 2
+stack middle
+player stack collection
+deck standard without Two
+
+def setup(){
+    deck > middle 4
+    deck > players 3
+    deck > players:1:collection 5
+    gather()
+    winner(count(deck))
+    winner(count(middle) + count(players:1:hand) + count(players:1:collection))
+}
+");
+        game.start();
+        assert_eq!(game.show("game"), "active\nwinners: 48, 0");
     }
 }

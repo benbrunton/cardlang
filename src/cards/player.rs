@@ -19,6 +19,20 @@ impl Player{
         Player { hand: vec![], id, stacks, numbers }
     }
 
+    // empties the hand and every stack, returning their cards
+    pub fn take_all_cards(&mut self) -> Vec<Card> {
+        let mut cards = std::mem::take(&mut self.hand);
+        let mut names: Vec<String> = self.stacks.keys().cloned().collect();
+        // a fixed order, so games are repeatable
+        names.sort();
+        for name in names {
+            if let Some(stack) = self.stacks.get_mut(&name) {
+                cards.append(stack);
+            }
+        }
+        cards
+    }
+
     pub fn get_number(&self, name: &str) -> Option<f64> {
         self.numbers.get(name).copied()
     }
