@@ -104,6 +104,7 @@ Making the interpreter pleasant to play at.
 | 45 | `cardlang play <file>`: build and start in one step | ✅ | |
 | 44 | Let a game choose what the table shows, e.g. a `display` function | ⚠️ | Needs a design decision; see Milestone 5 |
 | 46 | Save history between sessions | ⬜ | History lasts for one session today |
+| 58 | Syntax highlighting for VS Code (`editors/vscode`) | ✅ | Tested with the same engine as VS Code; also covers syntax proposed for Scopa. Getting GitHub itself to highlight `.card` files needs the language added to GitHub's Linguist, which only accepts widely used languages. |
 
 ## Milestone 7: web and embedding
 

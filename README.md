@@ -28,5 +28,8 @@ cardlang test ./gamedef.card   # exits 1 if the file doesn't parse
 ```
 (Running spec tests written inside a game file is planned; see the roadmap.)
 
+## Editor support
+Syntax highlighting for VS Code is in [`editors/vscode`](editors/vscode/README.md).
+
 ## Roadmap
 Known bugs and planned work are tracked in [docs/ROADMAP.md](docs/ROADMAP.md).

@@ -1,0 +1,464 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "cardlang",
+  "scopeName": "source.cardlang",
+  "fileTypes": [
+    "card"
+  ],
+  "patterns": [
+    {
+      "include": "#statement"
+    }
+  ],
+  "repository": {
+    "statement": {
+      "patterns": [
+        {
+          "include": "#comment"
+        },
+        {
+          "include": "#test-block"
+        },
+        {
+          "include": "#declaration"
+        },
+        {
+          "include": "#function-definition"
+        },
+        {
+          "include": "#expression"
+        }
+      ]
+    },
+    "comment": {
+      "comment": ".( ... ) - brackets inside a comment may nest",
+      "name": "comment.block.cardlang",
+      "begin": "\\.\\(",
+      "end": "\\)",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.definition.comment.begin.cardlang"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.comment.end.cardlang"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#comment-brackets"
+        }
+      ]
+    },
+    "comment-brackets": {
+      "begin": "\\(",
+      "end": "\\)",
+      "patterns": [
+        {
+          "include": "#comment-brackets"
+        }
+      ]
+    },
+    "test-block": {
+      "comment": ".test( ... ) spec test blocks (not run yet)",
+      "match": "\\.test\\b",
+      "name": "keyword.other.test.cardlang"
+    },
+    "declaration": {
+      "comment": "top-level declarations at the start of a line",
+      "patterns": [
+        {
+          "match": "^\\s*(stack)\\s+([A-Za-z_]\\w*)(?:\\s+(per)\\s+(player))?",
+          "captures": {
+            "1": {
+              "name": "storage.type.declaration.cardlang"
+            },
+            "2": {
+              "name": "variable.other.stack.cardlang"
+            },
+            "3": {
+              "name": "keyword.other.per.cardlang"
+            },
+            "4": {
+              "name": "keyword.other.per.cardlang"
+            }
+          }
+        },
+        {
+          "match": "^\\s*(var)\\s+([A-Za-z_]\\w*)(?:\\s+(per)\\s+(player))?",
+          "captures": {
+            "1": {
+              "name": "storage.type.declaration.cardlang"
+            },
+            "2": {
+              "name": "variable.other.declared.cardlang"
+            },
+            "3": {
+              "name": "keyword.other.per.cardlang"
+            },
+            "4": {
+              "name": "keyword.other.per.cardlang"
+            }
+          }
+        },
+        {
+          "match": "^\\s*(name)\\s+([A-Za-z_]\\w*)",
+          "captures": {
+            "1": {
+              "name": "storage.type.declaration.cardlang"
+            },
+            "2": {
+              "name": "entity.name.type.game.cardlang"
+            }
+          }
+        },
+        {
+          "match": "^\\s*(values)(?:\\s+([A-Za-z_]\\w*))?(?=\\s*\\{)",
+          "captures": {
+            "1": {
+              "name": "storage.type.declaration.cardlang"
+            },
+            "2": {
+              "name": "variable.other.values-table.cardlang"
+            }
+          }
+        },
+        {
+          "match": "^\\s*(deck)\\s+(?!>)([A-Za-z_]\\w*)",
+          "captures": {
+            "1": {
+              "name": "storage.type.declaration.cardlang"
+            },
+            "2": {
+              "name": "entity.name.type.deck.cardlang"
+            }
+          }
+        },
+        {
+          "match": "^\\s*(players|current_player)(?=\\s+\\d)",
+          "captures": {
+            "1": {
+              "name": "storage.type.declaration.cardlang"
+            }
+          }
+        }
+      ]
+    },
+    "function-definition": {
+      "comment": "def name(a, b) - the parameters are highlighted as parameters",
+      "begin": "\\b(def)\\s+([A-Za-z_]\\w*)\\s*(\\()",
+      "end": "\\)",
+      "beginCaptures": {
+        "1": {
+          "name": "storage.type.function.cardlang"
+        },
+        "2": {
+          "name": "entity.name.function.cardlang"
+        },
+        "3": {
+          "name": "punctuation.section.parens.begin.cardlang"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.parens.end.cardlang"
+        }
+      },
+      "patterns": [
+        {
+          "match": "[A-Za-z_]\\w*",
+          "name": "variable.parameter.cardlang"
+        },
+        {
+          "match": ",",
+          "name": "punctuation.separator.comma.cardlang"
+        }
+      ]
+    },
+    "expression": {
+      "patterns": [
+        {
+          "include": "#comment"
+        },
+        {
+          "include": "#check"
+        },
+        {
+          "include": "#every"
+        },
+        {
+          "include": "#builtin-call"
+        },
+        {
+          "include": "#function-call"
+        },
+        {
+          "include": "#field-access"
+        },
+        {
+          "include": "#keywords"
+        },
+        {
+          "include": "#constants"
+        },
+        {
+          "include": "#card-literal"
+        },
+        {
+          "include": "#identifier"
+        },
+        {
+          "include": "#operators"
+        },
+        {
+          "include": "#brackets"
+        }
+      ]
+    },
+    "check": {
+      "comment": "check(rule) or check(rule, message): everything after the first top-level comma is free text",
+      "begin": "\\b(check)\\s*(\\()",
+      "end": "\\)",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.control.check.cardlang"
+        },
+        "2": {
+          "name": "punctuation.section.parens.begin.cardlang"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.parens.end.cardlang"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#check-message"
+        },
+        {
+          "include": "#expression"
+        }
+      ]
+    },
+    "check-message": {
+      "begin": ",",
+      "end": "(?=\\))",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.separator.message.cardlang"
+        }
+      },
+      "contentName": "string.unquoted.message.cardlang",
+      "patterns": [
+        {
+          "include": "#message-brackets"
+        }
+      ]
+    },
+    "message-brackets": {
+      "begin": "\\(",
+      "end": "\\)",
+      "patterns": [
+        {
+          "include": "#message-brackets"
+        }
+      ]
+    },
+    "every": {
+      "comment": "every player p / every card c in pile / any group g in pile",
+      "match": "\\b(every|any)\\s+(player|card|group)\\s+([A-Za-z_]\\w*)(?:\\s+(in)\\b)?",
+      "captures": {
+        "1": {
+          "name": "keyword.control.loop.cardlang"
+        },
+        "2": {
+          "name": "storage.type.loop-kind.cardlang"
+        },
+        "3": {
+          "name": "variable.parameter.loop.cardlang"
+        },
+        "4": {
+          "name": "keyword.control.loop.cardlang"
+        }
+      }
+    },
+    "builtin-call": {
+      "begin": "\\b(shuffle|count|sum|filter|cards_in_stack|valid_moves|winner|end|next_player|gather|return)\\s*(\\()",
+      "end": "\\)",
+      "beginCaptures": {
+        "1": {
+          "name": "support.function.builtin.cardlang"
+        },
+        "2": {
+          "name": "punctuation.section.parens.begin.cardlang"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.parens.end.cardlang"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#expression"
+        }
+      ]
+    },
+    "function-call": {
+      "begin": "\\b(?!(?:if|check|def)\\b)([A-Za-z_]\\w*)\\s*(\\()",
+      "end": "\\)",
+      "beginCaptures": {
+        "1": {
+          "name": "entity.name.function.call.cardlang"
+        },
+        "2": {
+          "name": "punctuation.section.parens.begin.cardlang"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.parens.end.cardlang"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#expression"
+        }
+      ]
+    },
+    "field-access": {
+      "comment": "p:hand, move:cards, players:2:collection",
+      "match": "\\b([A-Za-z_]\\w*)((?::\\w+)+)",
+      "captures": {
+        "1": {
+          "name": "variable.other.object.cardlang"
+        },
+        "2": {
+          "name": "variable.other.property.cardlang"
+        }
+      }
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "match": "\\b(if|else|return|every|any|in)\\b",
+          "name": "keyword.control.cardlang"
+        },
+        {
+          "match": "\\b(is|not|or)\\b",
+          "name": "keyword.operator.word.cardlang"
+        },
+        {
+          "match": "\\b(taking|end|per|without)\\b",
+          "name": "keyword.other.cardlang"
+        },
+        {
+          "match": "\\b(deck|players|current_player)\\b",
+          "name": "variable.language.cardlang"
+        },
+        {
+          "match": "\\b(values|var|stack|name|def)\\b",
+          "name": "storage.type.cardlang"
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        {
+          "match": "\\b(true|false)\\b",
+          "name": "constant.language.boolean.cardlang"
+        },
+        {
+          "match": "\\b(Ace|Two|Three|Four|Five|Six|Seven|Eight|Nine|Ten|Jack|Queen|King|Spades|Hearts|Clubs|Diamonds)\\b",
+          "name": "variable.other.enummember.card.cardlang"
+        },
+        {
+          "match": "\\b\\d+\\b",
+          "name": "constant.numeric.cardlang"
+        }
+      ]
+    },
+    "card-literal": {
+      "comment": "[7d], [ks, 10h] - specific cards (proposed)",
+      "match": "\\[[^\\]\\n]*\\]",
+      "name": "variable.other.enummember.card-literal.cardlang"
+    },
+    "operators": {
+      "patterns": [
+        {
+          "match": ">=|<=|>|<",
+          "name": "keyword.operator.comparison.cardlang"
+        },
+        {
+          "match": "\\+|-",
+          "name": "keyword.operator.arithmetic.cardlang"
+        },
+        {
+          "match": "&",
+          "name": "keyword.operator.logical.cardlang"
+        },
+        {
+          "match": "=",
+          "name": "keyword.operator.assignment.cardlang"
+        },
+        {
+          "match": ":",
+          "name": "punctuation.separator.colon.cardlang"
+        },
+        {
+          "match": ",",
+          "name": "punctuation.separator.comma.cardlang"
+        }
+      ]
+    },
+    "brackets": {
+      "patterns": [
+        {
+          "begin": "\\(",
+          "end": "\\)",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.section.parens.begin.cardlang"
+            }
+          },
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.section.parens.end.cardlang"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#expression"
+            }
+          ]
+        },
+        {
+          "begin": "\\{",
+          "end": "\\}",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.section.block.begin.cardlang"
+            }
+          },
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.section.block.end.cardlang"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#statement"
+            }
+          ]
+        }
+      ]
+    },
+    "identifier": {
+      "comment": "any other name: a pile, a parameter or a variable",
+      "match": "\\b[A-Za-z_]\\w*\\b",
+      "name": "variable.other.readwrite.cardlang"
+    }
+  }
+}
