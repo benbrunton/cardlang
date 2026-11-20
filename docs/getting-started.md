@@ -102,31 +102,33 @@ Game loaded
 > start
 > show players
 player 1 (cards: 26), player 2 (cards: 26)
-> move 1
+> move
 > show current_player
 2
-> move 1
+> 1 move
+move ignored: not allowed
 > show players
 player 1 (cards: 25), player 2 (cards: 26)
-> move 2
+> move
 > show middle
-four hearts, jack clubs
+six diamonds, seven clubs
 > show game
 active
 ```
 
-The second `move 1` did nothing because it was player 2's turn, so the `check` stopped it. Your cards will differ because the deck is shuffled.
+Any line that isn't one of the CLI's own commands is a move. `move` makes a move for the current player. Race's moves don't need a name or cards, so any word would do. `1 move` tries to move as player 1. That's rejected because it's player 2's turn, so the `check` fails. Your cards will differ because the deck is shuffled.
 
-Keep alternating `move 1` and `move 2`. When player 1 plays their last card, `show game` prints:
+Keep typing `move`. When player 1 plays their last card, `show game` prints:
 
 ```
 game over
 winners: 1
 ```
 
-Moves made after the game is over are ignored. Type `start` to deal a fresh game, or `exit` to quit. All the commands are in [Using the CLI](cli.md).
+Moves made after the game is over are ignored. Type `start` to deal a fresh game, `help` to list the commands, or `exit` to quit. All the commands are in [Using the CLI](cli.md).
 
 ## Next steps
 
 - Read the [language reference](language-reference.md) for every statement and built-in function.
-- Try changing Race: deal only part of the deck, add a second pile, or use `filter` to remove the picture cards before dealing.
+- Try changing Race: deal only part of the deck (`deck > players 5`), add a second pile, or use `filter` to remove the picture cards before dealing.
+- Look at [`examples/simple_scopa.card`](../examples/simple_scopa.card). It's a fuller game where players choose which cards to play: named moves, card values, and capturing cards into a pile each player owns.

@@ -2132,4 +2132,86 @@ def drop(player, move){
             assert!(crate::parse::parse(&tokens).is_err(), "{} should be reserved", name);
         }
     }
+
+    fn cards_shown(game: &Game, what: &str) -> Vec<String> {
+        game.show(what).split(", ").filter(|c| !c.is_empty()).map(|c| c.to_string()).collect()
+    }
+
+    #[test]
+    fn simple_scopa_can_be_played_to_the_end() {
+        let mut game = game_from_source(include_str!("../examples/simple_scopa.card"));
+        game.start();
+        assert_eq!(cards_shown(&game, "middle").len(), 4);
+        assert_eq!(game.show("players"), "player 1 (cards: 3), player 2 (cards: 3)");
+
+        let mut moves = 0;
+        let mut captures = 0;
+        while !game.show("game").starts_with("game over") {
+            moves += 1;
+            assert!(moves <= 52, "the game should end after 48 cards are played");
+
+            let current = game.show("current_player");
+            let other = if current == "1" { "2" } else { "1" };
+            let hand = cards_shown(&game, &format!("player {}", current));
+            let middle = cards_shown(&game, "middle");
+
+            // moving out of turn is rejected
+            let other_hand = cards_shown(&game, &format!("player {}", other));
+            if let Some(card) = other_hand.first() {
+                assert!(play(&mut game, &format!("{} drop {}", other, card)).is_err());
+            }
+
+            // capture a single card of the same value if possible, otherwise drop
+            let mut played = false;
+            'search: for card in hand.iter() {
+                for target in middle.iter() {
+                    if play(&mut game, &format!("take {} / {}", card, target)).is_ok() {
+                        captures += 1;
+                        played = true;
+                        break 'search;
+                    }
+                }
+            }
+            if !played {
+                play(&mut game, &format!("drop {}", hand[0])).unwrap();
+            }
+        }
+
+        assert_eq!(moves, 48);
+        let collected_1 = cards_shown(&game, "player 1 collection").len();
+        let collected_2 = cards_shown(&game, "player 2 collection").len();
+        let middle = cards_shown(&game, "middle").len();
+        // every card is accounted for: each capture collects two cards
+        assert_eq!(collected_1 + collected_2, captures * 2);
+        assert_eq!(collected_1 + collected_2 + middle, 52);
+        assert_eq!(cards_shown(&game, "deck").len(), 0);
+
+        let expected_winners = if collected_1 > collected_2 {
+            "1"
+        } else if collected_2 > collected_1 {
+            "2"
+        } else {
+            "1, 2"
+        };
+        assert_eq!(game.show("game"), format!("game over\nwinners: {}", expected_winners));
+    }
+
+    #[test]
+    fn simple_scopa_take_needs_matching_values() {
+        let mut game = game_from_source(include_str!("../examples/simple_scopa.card"));
+        game.start();
+
+        let hand = cards_shown(&game, "player 1");
+        let middle = cards_shown(&game, "middle");
+
+        // a drop with a target, or a take with no target, is never valid
+        assert!(play(&mut game, &format!("drop {} / {}", hand[0], middle[0])).is_err());
+        assert!(play(&mut game, &format!("take {}", hand[0])).is_err());
+        // cards that aren't in your hand can't be played
+        let not_mine = cards_shown(&game, "player 2")[0].clone();
+        assert!(play(&mut game, &format!("drop {}", not_mine)).is_err());
+
+        assert_eq!(cards_shown(&game, "player 1"), hand);
+        assert_eq!(cards_shown(&game, "middle"), middle);
+    }
 }

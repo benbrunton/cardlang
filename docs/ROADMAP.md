@@ -36,32 +36,28 @@ Bugs that gave game authors wrong results without any error.
 | 13b | `winner(x)` where `x` isn't a number recorded player `0` | ✅ | Prints an error instead |
 | 13c | Error messages should say what was found and what was expected (`line 5: expected a number after 'players', found 'two'`) | ⬜ | Needs the token stored in `ParseError` |
 
-## Milestone 3: features to play Scopa
+## Milestone 3: Simple Scopa playable ✅
 
-The old README todo list, plus what [`examples/simple_scopa.card`](../examples/simple_scopa.card) relies on, ordered by dependency. Settle the design decisions below before starting the ⚠️ items.
+[`examples/simple_scopa.card`](../examples/simple_scopa.card) can be played from start to finish at the CLI. A test plays whole games through it.
 
-| # | Item | Status | Source |
+| # | Item | Status | Notes |
 |---|---|---|---|
-| 14 | Transfer counts: `deck > middle 4` (currently a parse error) | ⬜ | README "limit on stack transfer" |
-| 15 | A real `deck` declaration (currently ignored), including `deck filter(StandardDeck, not_royal)` | ⬜ | README "filter deck in declaration" |
-| 16 | Move input: `player_move(player, move)`, plus a CLI way to choose cards | ⚠️ | Scopa |
-| 17 | Moving specific cards in a transfer: `a > b - move:cards` | ⚠️ | README "specify cards on transfer" |
-| 18 | `cards_in_stack(cards, stack)` built-in | ⬜ | README |
-| 19 | `valid_moves(take, drop)`: try each move function in turn | ⬜ | Scopa |
-| 20 | Card values and arithmetic (Scopa's `get_value` needs sums) | ⚠️ | Scopa |
-| 21 | Stacks as real references. Passing a pile to a function copies it, and `filter` results can't be stored. | ⬜ | limitations.md |
-| 22 | Spec tests: `.test(...)` blocks in a game file, run by `cardlang test` | ⬜ | README "spec test"; sketched in `examples/turns.card` |
-| 23 | `def` as an alias for `define`, or update the Scopa example | ⚠️ | Scopa |
-| 24 | `shuffle(x)` should shuffle `x`, not always `deck` | ⬜ | limitations.md |
-| 25 | Multi-word names and quoted strings | ⬜ | limitations.md |
-| 26 | Switch statements | ⬜ | README |
+| 14 | Transfer counts: `deck > middle 4`, `deck > players 3` (per player) | ✅ | |
+| 16 | Move input: `[player] [name] [cards] [/ cards]` at the CLI, no `move` keyword, current player by default; `player_move(player, move)` with `move:name`, `move:cards`, `move:target` | ✅ | Cards as codes (`7h`) or names (`seven of hearts`) |
+| 17 | Moving specific cards: `a > b taking cards`, all or nothing | ✅ | |
+| 18 | `cards_in_stack(cards, stack)` built-in | ✅ | |
+| 19 | `valid_moves(take, drop)`: run the named move, or the first that works | ✅ | |
+| 19b | A failed move changes nothing: game state is restored | ✅ | |
+| 20 | Card values: `card:value` (Ace 1 … King 13), a `values { }` table, `sum()`, `+ - < >` | ✅ | |
+| 20b | Per-player piles (`stack collection per player`) and players by number (`players:2:hand`) | ✅ | Also fixed `p:<pile>` always meaning the hand |
+| 23 | `def` replaces `define` | ✅ | |
 
-### Design decisions needed
+### Design decisions made
 
-1. **`def` or `define`?** Make `def` an alias, or update the Scopa example? (item 23)
-2. **How does a player choose cards on a move?** The CLI syntax (e.g. `move 1 ace hearts, two clubs`) and the shape of the `move` object passed to `player_move`. (item 16)
-3. **Syntax for moving specific cards:** keep `a > b - cards`, or something else? (item 17)
-4. **Card values:** a fixed value table in the game declaration, or a function the game defines? (item 20)
+1. `def` replaces `define` everywhere.
+2. Moves are typed without a `move` keyword: `[player] [name] [cards] [/ cards]`. The player defaults to the current player. Without a name, `valid_moves` tries each move in order. The CLI's command words are reserved.
+3. Specific cards are moved with a trailing `taking`: `middle > player:collection taking move:target`.
+4. Card values have built-in defaults (Ace 1 … King 13), an optional `values` table, `sum()`, and `+ - < >`.
 
 ## Milestone 4: code health
 
@@ -76,3 +72,22 @@ Spread across the other milestones rather than done in one go.
 | 31 | Replace the remaining `.expect()` calls in the lexer and `main.rs` with error handling (none can currently be triggered, but they're fragile) | ⬜ |
 | 32 | CLI tests | ✅ `tests/cli.rs` |
 | 33 | One list of known work: this file replaces the README todo list | ✅ |
+
+## Milestone 5: towards full Scopa and multi-round games
+
+Not started. These came up while building Simple Scopa, plus the leftovers from the old Milestone 3.
+
+| # | Item | Status | Notes |
+|---|---|---|---|
+| 34 | Say why a move was rejected: which `check` failed, or a message the game provides | ⬜ | Today it's always `move ignored: not allowed` |
+| 35 | Loops, e.g. `for each player` | ⬜ | Simple Scopa compares `players:1` and `players:2` by hand, so it only works for 2 players |
+| 36 | Variables or game state, e.g. who captured last (in Scopa, they take the cards left at the end) | ⬜ | |
+| 37 | Rounds and scores: play several hands, keep points between them | ⬜ | Needed for full Scopa scoring |
+| 38 | Compulsory capture (Scopa rule): only allow `drop` when no `take` is possible | ⬜ | Needs a way to ask "would this move work?" without making it |
+| 15 | A real `deck` declaration (currently ignored), e.g. a 40-card deck | ⬜ | README "filter deck in declaration". `filter` + `taking` in `setup` works today. |
+| 21 | Stacks as real references. Passing a pile to a function copies it, and `filter` results can't be stored. | ⬜ | |
+| 22 | Spec tests: `.test(...)` blocks in a game file, run by `cardlang test` | ⬜ | README "spec test"; sketched in `examples/turns.card` |
+| 24 | `shuffle(x)` should shuffle `x`, not always `deck` | ⬜ | |
+| 25 | Multi-word names and quoted strings | ⬜ | |
+| 26 | Switch statements | ⬜ | README; `else if` covers most uses |
+| 39 | `*`, `/`, `<=`, `>=` | ⬜ | |

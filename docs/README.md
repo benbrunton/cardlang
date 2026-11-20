@@ -16,4 +16,4 @@ The language is still early and changing. The guides describe what the code on t
 
 - [`examples/race.card`](../examples/race.card): the game built in the getting started guide.
 - [`examples/turns.card`](../examples/turns.card): a minimal turn-based game.
-- [`examples/simple_scopa.card`](../examples/simple_scopa.card): a sketch of Scopa that uses syntax that isn't supported yet. It doesn't parse. It's there as a target for the language to grow into.
+- [`examples/simple_scopa.card`](../examples/simple_scopa.card): Simple Scopa, a fuller game where players choose which cards to play. It shows named moves (`take 9d / 4c 5s`), card values, `taking` transfers and a pile for each player.

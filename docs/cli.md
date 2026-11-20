@@ -8,21 +8,73 @@ The `cardlang` binary has two modes.
 cardlang test examples/race.card
 ```
 
-This parses the file and prints `Game loaded` and `success!`, or a parse error. It does **not** run the game. It exits with status `0` when the file is valid, and `1` when it fails to parse, can't be read, or no file was given. That makes it usable in scripts and CI.
+This parses the file and prints `Game loaded` and `success!`, or an error. It does **not** run the game. It exits with status `0` when the file is valid, and `1` when it fails to parse, can't be read, or no file was given. That makes it usable in scripts and CI.
 
 ## Interactive mode: `cardlang`
 
-With no arguments, `cardlang` opens a prompt (`>`) that takes one command per line.
+With no arguments, `cardlang` opens a prompt (`>`) that takes one line at a time. A line is either a command or a move.
+
+### Commands
 
 | Command | What it does |
 |---|---|
-| `build <path>` | Loads a game file. Prints `Game loaded` or a parse error. Building again replaces the current game. |
+| `build <path>` | Loads a game file. Prints `Game loaded` or an error. Building again replaces the current game. |
 | `start` | Starts the game: resets the table, then runs `setup`. Running it again starts a fresh game. |
-| `move <n>` | Runs `player_move` for player `n`. If the move can't happen, it prints `move ignored: <reason>` (see below). |
 | `show <what>` | Prints part of the game state (see below). |
+| `help` | Lists the commands and the move syntax. |
 | `exit` | Quits. End of input (Ctrl-D, or the end of a piped script) also quits. |
 
-Empty lines are ignored. Until a game has been built, `start`, `move` and `show` print `no game loaded - use 'build <file>' first`.
+Empty lines are ignored. Until a game has been built, moves, `start` and `show` print `no game loaded - use 'build <file>' first`.
+
+These five words are reserved. A game can't define a function called `build`, `start`, `show`, `help` or `exit`.
+
+### Moves
+
+Any other line is a move:
+
+```
+[player] [name] [cards] [/ cards]
+```
+
+| Part | Meaning | Example |
+|---|---|---|
+| player | Optional. The number of the player making the move. Without it, the move is for the current player. | `2 drop 9d` |
+| name | Optional. Which move to make; the game's `valid_moves` decides what's allowed. | `take`, `drop` |
+| cards | Optional. The cards being played. They become `move:cards`. | `9d` |
+| `/ cards` | Optional. A second group of cards, such as what you're capturing. They become `move:target`. | `/ 4c 5s` |
+
+Examples from [Simple Scopa](../examples/simple_scopa.card):
+
+```
+> take 9d / 4c 5s        capture the 4 and 5 with the 9 of diamonds
+> drop nine of diamonds  put a card in the middle
+> 9d / 4c 5s             no name: the game tries take first, then drop
+> 2 drop 8h              make a move as player 2
+```
+
+For games where a move needs no name or cards, such as [Race](../examples/race.card), type any word: `move`, or `2 move` for player 2.
+
+**Writing cards.** Separate cards with spaces or commas. Each card can be written as:
+- a short code: rank then suit. Ranks are `a`, `2`–`10` (or `t`), `j`, `q`, `k`; suits are `s`, `h`, `c`, `d`. For example `7h`, `10d`, `ks`, `AS`.
+- a name: `seven hearts`, `seven of hearts`, `7 hearts`, `queen of spades`.
+
+Case doesn't matter. A word that looks like a card (`as`, `seven`, `10`) is always read as a card, so it can't be used as a move name.
+
+### When a move is ignored
+
+A move either happens completely or not at all. If it's rejected, nothing in the game changes.
+
+| Situation | Message |
+|---|---|
+| before `start` | `move ignored: the game has not started - use 'start'` |
+| after the game has ended | `move ignored: the game is over` |
+| the game has no `player_move` function | `move ignored: this game does not define player_move` |
+| no such player (e.g. `0 move`, or `3 move` with 2 players) | `move ignored: there is no player 3 (players: 2)` |
+| the game's rules reject it (a failed `check` or transfer, or no valid move) | `move ignored: not allowed` |
+| something that isn't a card | `'7x' is not a card (try 7h, 10d, ks or 'seven hearts')` |
+| the old `move 2` syntax | `to move as player 2, put the number first: '2 move'` |
+
+`move ignored: not allowed` doesn't yet say *which* rule failed. Naming an unknown move also prints `unknown move '<name>' - valid moves: …`.
 
 ### `show`
 
@@ -30,22 +82,11 @@ Empty lines are ignored. Until a game has been built, `start`, `move` and `show`
 |---|---|---|
 | `show game` | status (`pending`, `active` or `game over`) and any winners | `game over`<br>`winners: 1` |
 | `show name` | the game's `name` | `race` |
-| `show players` | every player and how many cards they hold | `player 1 (cards: 26), player 2 (cards: 26)` |
-| `show player <n>` | player `n`'s hand. `show player <n> hand` also works. | `king diamonds, jack clubs` |
+| `show players` | every player and how many cards are in their hand | `player 1 (cards: 26), player 2 (cards: 26)` |
+| `show player <n>` | player `n`'s hand | `king diamonds, jack clubs` |
+| `show player <n> <stack>` | one of player `n`'s own stacks (`hand`, or one declared with `stack <name> per player`) | `jack spades, jack diamonds` |
 | `show current_player` | whose turn it is | `2` |
 | `show deck` | the cards in the deck | `ace spades, two spades, …` |
 | `show <pile>` | the cards in a pile declared with `stack` | `four hearts` |
 
-Cards are listed bottom first, so the **last** card shown is the top of the pile. An empty pile prints a blank line. An unknown name prints `<name> not found`. `show player` without a valid number prints `usage: show player <number>`, and a player that doesn't exist prints `there is no player <n>`.
-
-### When a move is ignored
-
-| Situation | Message |
-|---|---|
-| `move` without a number, or with something that isn't a number | `usage: move <player number>` |
-| before `start` | `move ignored: the game has not started - use 'start'` |
-| after the game has ended | `move ignored: the game is over` |
-| the game has no `player_move` function | `move ignored: this game does not define player_move` |
-| no such player (e.g. `move 0`, or `move 3` with 2 players) | `move ignored: there is no player 3 (players: 2)` |
-
-A `check` that fails inside `player_move` also stops the move, but it prints nothing.
+Cards are listed bottom first, so the **last** card shown is the top of the pile. An empty pile prints a blank line. An unknown name prints `<name> not found`. `show player` without a valid number prints `usage: show player <number>`. A player that doesn't exist prints `there is no player <n>`, and an unknown stack prints `player 1 has no stack '<name>'`.
