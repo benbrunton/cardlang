@@ -54,31 +54,31 @@ def setup(){
 
 ### Taking a turn
 
-The `player_move` function runs every time a player makes a move. It receives that player as its argument.
+A **move** is something a player can do on their turn. Race has just one, `play`:
 
 ```
 def is_out(p){
     return(count(p:hand) is 0)
 }
 
-def player_move(player){
-    check(player:id is current_player)
+move play(player){
     player:hand > middle
     if(is_out(player)){
         winner(player:id)
         end()
     }
-    next_player()
 }
 ```
 
+`move` works like `def`, but it marks this as something a player can do. Players type its name, `play`, to make the move, and it receives the player making it.
+
 Line by line:
 
-1. `check(player:id is current_player)`: if it isn't this player's turn, stop here and ignore the move.
-2. `player:hand > middle`: move the top card of the player's hand onto the middle pile.
-3. `is_out` is a function you wrote. It returns `true` when the player's hand is empty. `if(is_out(player))` calls it and runs the block when it returns `true`.
-4. `winner(player:id)` records the winner and `end()` finishes the game.
-5. `next_player()` passes the turn to the next player. After the last player it goes back to player 1.
+1. `player:hand > middle`: move the top card of the player's hand onto the middle pile.
+2. `is_out` is an ordinary function (`def`). It returns `true` when the player's hand is empty. `if(is_out(player))` calls it and runs the block when it returns `true`.
+3. `winner(player:id)` records the winner and `end()` finishes the game.
+
+You don't need to check whose turn it is, or pass the turn on: the interpreter does both. Only the current player can make a move. After a move, the turn passes to the next player, and after the last player it goes back to player 1.
 
 The full file is in [`examples/race.card`](../examples/race.card).
 
@@ -102,24 +102,24 @@ Game loaded
 > start
 player 1 to play
   middle: empty
-  your hand (player 1): 7c, 10d, …
-> move
+  your hand (player 1): ad, 6h, …
+> play
 player 2 to play
-  middle: 8c
-  your hand (player 2): 9c, 4s, …
-> 1 move
-move ignored: not allowed: check failed in player_move: player:id is current_player
-> move
+  middle: 9h
+  your hand (player 2): qc, 3c, …
+> 1 play
+move ignored: it's not your turn
+> play
 player 1 to play
-  middle: 8c, ad
-  your hand (player 1): 7c, 10d, …
+  middle: 9h, 3h
+  your hand (player 1): ad, 6h, …
 ```
 
-`start` deals the cards and shows the table: whose turn it is, the piles, and the current player's hand (shortened here; a hand is listed bottom first, so the card played is the last one). Cards are shown as short codes: `8c` is the eight of clubs, `ad` the ace of diamonds. Any line that isn't one of the CLI's own commands is a move. `move` makes a move for the current player. Race's moves don't need a name or cards, so any word would do. After each move the table is shown again.
+`start` deals the cards and shows the table: whose turn it is, the piles, and the current player's hand (shortened here; a hand is listed bottom first, so the card played is the last one). Cards are shown as short codes: `9h` is the nine of hearts, `ad` the ace of diamonds. Any line that isn't one of the CLI's own commands is a move. `play` makes Race's only move for the current player. After each move the table is shown again.
 
-`1 move` tries to move as player 1. It's rejected because it's player 2's turn, and the message shows which rule failed. Your cards will differ because the deck is shuffled.
+`1 play` tries to move as player 1. It's rejected because it's player 2's turn. Your cards will differ because the deck is shuffled.
 
-Keep typing `move`. When player 1 plays their last card, the table shows:
+Keep typing `play`. When player 1 plays their last card, the table shows:
 
 ```
 game over - winners: 1

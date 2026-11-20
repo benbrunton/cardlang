@@ -42,9 +42,9 @@ The message says what the parser found, but not yet what it expected.
 
 | Limitation | What happens |
 |---|---|
-| Checks without a message show the rule | e.g. `check failed in take: count(move:cards) is 1`. Add a message: `check(count(move:cards) is 1, play one card)`. |
-| At most two groups of cards | A move has `move:cards` and `move:target`; a third `/` group is rejected |
+| Checks without a message show the rule | e.g. `check failed in take: count(played) is 1`. Add a message: `check(count(played) is 1, play one card)`. |
 | Some words can't be move names | Anything that reads as a card (`as`, `seven`, `10`) and the CLI's own commands |
+| Turns always pass in order | Only the current player can move; a game where anyone can act at any time (like Snap) isn't possible yet |
 
 ## Interpreter
 

@@ -206,7 +206,7 @@ fn print_help() {
   exit                quit
 moves:
   [player] [name] [cards] [/ cards]
-  e.g.  take 7h / 3c 4s     drop nine of diamonds     2 move
+  e.g.  take 7h / 3c 4s     drop nine of diamonds     2 play
   cards: 7h, 10d, ks, as - or 'seven hearts', 'seven of hearts'
 keys:
   Tab completes commands, file names, moves and the cards you can play

@@ -11,7 +11,7 @@ A cardlang file (`.card`) contains **declarations**, which set up the table, and
 - [Transfers](#transfers)
 - [Expressions and values](#expressions-and-values)
 - [Built-in functions](#built-in-functions)
-- [Objects: players, cards and moves](#objects-players-cards-and-moves)
+- [Objects: players and cards](#objects-players-and-cards)
 
 ## Source text
 
@@ -23,7 +23,7 @@ A cardlang file (`.card`) contains **declarations**, which set up the table, and
 | Operators | `>` (transfer, or greater than inside an expression), `<`, `>=`, `<=`, `+`, `-`, `&`, `=` (assignment), `:` (after `every …`, `any …`, `most …`) |
 | Card literals | `[7d]`, `[7d, kh, as]`: specific cards, written as at the CLI. See [Expressions](#expressions-and-values). |
 | Whitespace | Spaces, tabs and newlines. Windows (`\r\n`) line endings are fine. |
-| Keywords | `name`, `deck`, `players`, `current_player`, `stack`, `number`, `values`, `def`, `if`, `else`, `every`, `any`, `most`, `in`, `check`, `return`, `is`, `not`, `or`, `true`, `false` |
+| Keywords | `name`, `deck`, `players`, `current_player`, `stack`, `number`, `values`, `def`, `move`, `if`, `else`, `every`, `any`, `most`, `in`, `check`, `return`, `is`, `not`, `or`, `true`, `false` |
 
 Write one statement per line. A line break inside `( … )` doesn't end the statement, so a long expression or call can continue on the next line:
 
@@ -89,12 +89,12 @@ def name(arg1, arg2){
 
 Parameters can be separated by commas or spaces. A body can be on one line: `def setup(){ next_player() }`. The CLI's command words (`build`, `start`, `show`, `help`, `exit`) can't be used as function names.
 
-Two names are special. The interpreter calls them for you:
+Two function names are special. If a game defines them, the interpreter calls them for you:
 
 | Function | Called when | Arguments |
 |---|---|---|
 | `setup` | `start` is run | none |
-| `player_move` | a player makes a move at the CLI (see [Moves](#moves)) | the [player](#objects-players-cards-and-moves) making the move, then the [move](#objects-players-cards-and-moves) |
+| `after_move` | after every successful [move](#moves), before the turn passes on | none |
 
 Any other function runs only when you call it: `name(a, b)` as a statement, or inside an expression (`count(hand_of(player))`).
 
@@ -110,38 +110,46 @@ How calls work:
 
 ## Moves
 
-When a player types a move at the CLI, such as `take 9d / 4c 5s` ([syntax](cli.md#moves)), the interpreter calls `player_move(player, move)`:
+A **move** is something a player can do on their turn. Declare it with `move` instead of `def`:
 
 ```
-def player_move(player, move){
-    check(player:id is current_player)
-    valid_moves(take, drop)
-    next_player()
+move take(player, played, captured){
+    check(sum(captured) is sum(played), the cards you capture must add up to the card you play)
+    middle > player:collection taking captured
+    player:hand > player:collection taking played
 }
 
-def take(player, move){
-    check(sum(move:target) is sum(move:cards))
-    middle > player:collection taking move:target
-    player:hand > player:collection taking move:cards
-}
-
-def drop(player, move){
-    player:hand > middle taking move:cards
+move drop(player, played){
+    player:hand > middle taking played
 }
 ```
 
-- **`valid_moves(take, drop)`** runs the move the player named. For example, `take 9d / 4c` runs `take`; a name that isn't in the list is rejected. If the player didn't give a name (`9d / 4c`), it tries each move in order and uses the first one that succeeds. Each move function receives the same `player` and `move` arguments.
-- **A move succeeds unless it fails.** It fails when a `check` fails, a transfer can't happen, it returns `false`, or `valid_moves` finds no valid move.
-- **A failed move changes nothing.** Every card and value goes back to how it was before the move, including transfers made before the failure. The CLI prints `move ignored: not allowed`.
+**Parameters:** the first is the [player](#objects-players-and-cards) making the move. The rest receive the groups of cards the player typed, in order, as piles. In `take 9d / 4c 5s`, `played` is `[9d]` and `captured` is `[4c, 5s]`.
+- A group the player didn't type is an empty pile.
+- Typing more groups than a move has parameters for rejects it, e.g. `drop takes one group of cards, without a /`.
 
-`player_move` can also take just the player (`def player_move(player)`), for games where a move needs no input, like [Race](../examples/race.card).
+**Which move runs:**
+- **A named move** like `take 9d / 4c` runs `take`. A name that isn't a move is rejected, listing the moves there are.
+- **No name** (`9d / 4c`): the moves are tried in the order they appear in the file, and the first one that succeeds is used.
+- **A move without cards**, like Race's `move play(player)`, is typed by its name: `play`.
+
+**Turns are handled for you:**
+- **Only the current player can move.** Anyone else is told `it's not your turn`.
+- **After a successful move,** `after_move()` runs if the game defines it, for example to deal more cards or end a hand.
+- **Then the turn passes** to the next player, wrapping from the last back to 1. If the move or `after_move` sets `current_player` itself (or calls `next_player()`), that decides who plays next instead. This works even when it sets the same player, which gives them another turn.
+
+**A move succeeds unless it fails.** It fails when a `check` fails, a transfer can't happen, an assignment can't be made, it returns `false`, or `after_move` fails.
+
+**A failed move changes nothing.** Every card and number goes back to how it was before the move, including changes made before the failure. The turn doesn't pass. The CLI says why the move was rejected.
+
+Move names can't be words that read as cards (`as`, `seven`, `10`), because the CLI would read them as cards.
 
 ## Statements
 
 | Statement | Meaning |
 |---|---|
 | `from > to …` | Move cards. See [Transfers](#transfers). If the transfer can't happen, the function stops and returns `false`, like a failed `check`. |
-| `name(args…)` | Call a function and discard its result. `valid_moves(...)` is the exception: if no move is valid, the function stops and returns `false`. |
+| `name(args…)` | Call a function and discard its result. |
 | `if(condition){ … }` | Run the block when the condition is true. |
 | `if(condition){ … } else { … }` | Run the first block when the condition is true, otherwise the second. `else` can go on the line after the `}`. |
 | `if(a){ … } else if(b){ … } else { … }` | Run the block for the first condition that is true. |
@@ -167,7 +175,7 @@ current_player = 1
 ### Check messages
 
 ```
-check(count(move:target) > 0, put a / before the cards you're capturing, e.g. take 9d / 4c 5s)
+check(count(captured) > 0, put a / before the cards you're capturing, e.g. take 9d / 4c 5s)
 ```
 
 Everything after the **first** comma, up to the `)` that closes the `check`, is the message, exactly as written. No quotes are needed:
@@ -227,8 +235,8 @@ give_point(most player p: count(p:collection))
 
 | Form | Goes through |
 |---|---|
-| `player p` | each player, as a [player object](#objects-players-cards-and-moves) |
-| `card c in <pile>` | each card in the pile, as a [card object](#objects-players-cards-and-moves), bottom first |
+| `player p` | each player, as a [player object](#objects-players-and-cards) |
+| `card c in <pile>` | each card in the pile, as a [card object](#objects-players-and-cards), bottom first |
 | `group g in <pile>` | every combination of one or more cards from the pile, each as a pile (so `sum(g)`, `count(g)` work) |
 
 `<pile>` can be any expression that gives cards: `middle`, `p:hand`, `players:2:collection`, `filter(deck, is_ace)`, `[7d, kh]`. `most` only works with `player`.
@@ -264,7 +272,7 @@ A transfer takes cards from the top of `from` and puts them on top of `to`.
 | `a > players end` | every card in `a`, dealt round the table starting with player 1 |
 | `a > b taking cards` | exactly these cards, wherever they are in `a`, in the order given |
 
-`taking` takes any expression that gives cards, such as `move:cards` or `filter(middle, is_ace)`. It's all or nothing: if any of the cards isn't in `a`, nothing moves and the transfer fails. `taking` needs a single pile on each side, so not `players`.
+`taking` takes any expression that gives cards, such as a move's `played` parameter, `[7d]` or `filter(middle, is_ace)`. It's all or nothing: if any of the cards isn't in `a`, nothing moves and the transfer fails. `taking` needs a single pile on each side, so not `players`.
 
 Valid names for `from` or `to`:
 
@@ -273,7 +281,7 @@ Valid names for `from` or `to`:
 | `deck` | the deck |
 | `[7d, kh]` | specific cards, as the source of `taking` |
 | a name declared with `stack <name>` | that shared pile |
-| `p:hand`, `p:collection` … | a pile of the player object `p`, such as the `player` argument of `player_move` |
+| `p:hand`, `p:collection` … | a pile of the player object `p`, such as a move's `player` parameter |
 | `players:2:hand`, `players:1:collection` … | a pile of a player chosen by number |
 | `players` | every player's hand (destination only, not with `taking`) |
 
@@ -291,7 +299,7 @@ Values are numbers, booleans (`true` / `false`), text, and stacks (lists of card
 | `deck` / a pile name | that stack of cards |
 | a parameter name | the value passed in |
 | a name declared with `number` | its value |
-| `p:id`, `p:hand`, `p:score`, `c:value`, `move:cards`… | a field of an [object](#objects-players-cards-and-moves) |
+| `p:id`, `p:hand`, `p:score`, `c:value`… | a field of an [object](#objects-players-and-cards) |
 | `players:2:id`, `players:2:collection`, `players:2:score`… | a field of a player chosen by number |
 | `[7d]`, `[7d, kh, as]` | those cards, as a pile. Cards are written as at the CLI: `7h`, `10d`, `ks` or names such as `seven hearts`. |
 | any other word, e.g. `Ace` | the word as text |
@@ -321,7 +329,6 @@ Equality compares type as well as value: the number `1` is not equal to the text
 | `sum(stack)` | Adds up the cards' [values](#card-values). | number |
 | `cards_in_stack(cards, stack)` | Checks every card in `cards` is in `stack`. | boolean |
 | `filter(stack, f)` | Calls your function `f` with each card. Keeps the cards where `f` returns `true`. The original stack is not changed. | stack |
-| `valid_moves(f, g, …)` | Runs the player's chosen move; see [Moves](#moves). Only works inside `player_move`. | boolean |
 | `winner(id)` | Adds a player to the winners list. Call it more than once for several winners. Without a number it prints an error and does nothing. | nothing |
 | `end()` | Ends the game. Later moves are ignored. | nothing |
 | `next_player()` | Moves `current_player` to the next player, wrapping from the last back to 1. | nothing |
@@ -341,9 +348,9 @@ def setup(){
 }
 ```
 
-## Objects: players, cards and moves
+## Objects: players and cards
 
-**Player**: the first argument of `player_move` and of move functions.
+**Player**: the first parameter of a move, or the `p` in `every player p`.
 
 | Field | Value |
 |---|---|
@@ -353,7 +360,7 @@ def setup(){
 
 Player fields always show the current state, including transfers made earlier in the same move. Any player can also be reached by number: `players:2:hand`.
 
-**Card**: the argument passed to a `filter` function.
+**Card**: the argument passed to a `filter` function, or the `c` in `every card c in …`.
 
 | Field | Values |
 |---|---|
@@ -361,11 +368,3 @@ Player fields always show the current state, including transfers made earlier in
 | `c:suit` | `Spades`, `Hearts`, `Clubs`, `Diamonds` (text, case-sensitive) |
 | `c:value` | the card's [value](#card-values) (number) |
 | `c:<name>` | its value in a [named values table](#card-values), such as `c:primiera` |
-
-**Move**: the second argument of `player_move` and of move functions.
-
-| Field | Value |
-|---|---|
-| `move:name` | the move name the player typed, such as `take`, or empty text if they didn't give one |
-| `move:cards` | the first group of cards typed (stack, maybe empty) |
-| `move:target` | the group after the `/` (stack, maybe empty) |

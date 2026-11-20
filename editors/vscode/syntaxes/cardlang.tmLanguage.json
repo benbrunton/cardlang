@@ -139,8 +139,8 @@
       ]
     },
     "function-definition": {
-      "comment": "def name(a, b) - the parameters are highlighted as parameters",
-      "begin": "\\b(def)\\s+([A-Za-z_]\\w*)\\s*(\\()",
+      "comment": "def name(a, b) / move name(player, cards) - the parameters are highlighted as parameters",
+      "begin": "\\b(def|move)\\s+([A-Za-z_]\\w*)\\s*(\\()",
       "end": "\\)",
       "beginCaptures": {
         "1": {
@@ -278,7 +278,7 @@
       }
     },
     "builtin-call": {
-      "begin": "\\b(shuffle|count|sum|filter|cards_in_stack|valid_moves|winner|end|next_player|gather|return)\\s*(\\()",
+      "begin": "\\b(shuffle|count|sum|filter|cards_in_stack|winner|end|next_player|gather|return)\\s*(\\()",
       "end": "\\)",
       "beginCaptures": {
         "1": {
@@ -352,7 +352,7 @@
           "name": "variable.language.cardlang"
         },
         {
-          "match": "\\b(values|number|stack|name|def)\\b",
+          "match": "\\b(values|number|stack|name|def|move)\\b",
           "name": "storage.type.cardlang"
         }
       ]

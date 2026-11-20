@@ -142,6 +142,15 @@ Not started. The aim is to use cardlang as the rules engine inside other program
 | 62 | Named value tables: `values primiera { … }` → `card:primiera` | ✅ | |
 | 63 | A line break inside `( … )` continues the statement | ✅ | |
 | 64 | The table grouped by player, with their numbers and piles, and cards as codes | ✅ | |
+| 66 | Moves declared with `move` instead of `player_move` + `valid_moves` | ✅ | `move take(player, played, captured)`: the card groups are named parameters. The engine checks it's the player's turn, runs the named move (or tries each in file order), calls `after_move()`, and passes the turn on unless the move set `current_player`. |
+| 67 | `npm run install-extension` builds and installs the VS Code extension | ✅ | |
+
+### Design decisions made
+
+1. Declarations by type: `stack` and `number` are shared by the whole game; `player stack` and `player number` give each player their own.
+2. `most player p: …` gives the leader's id, or 0 for a tie, instead of passing function names around.
+3. Moves are declared with `move`, with the card groups as named parameters. Turn order is enforced by the engine, with no opt-out for now: games where anyone can act at any time (like Snap) will need a design decision when they come up.
+4. `after_move()` is the one hook for what happens after a move.
 
 ### Plan from here
 

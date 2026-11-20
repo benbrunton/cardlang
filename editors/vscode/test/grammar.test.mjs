@@ -80,6 +80,13 @@ test('declarations', () => {
   assert.equal(scopeOf(source, '21'), 'constant.numeric.cardlang');
 });
 
+test('move definitions', () => {
+  const source = 'move take(player, played, captured){\n    player:hand > middle taking played\n}';
+  assert.equal(scopeOf(source, 'move'), 'storage.type.function.cardlang');
+  assert.equal(scopeOf(source, 'take'), 'entity.name.function.cardlang');
+  assert.equal(scopeOf(source, 'captured'), 'variable.parameter.cardlang');
+});
+
 test('functions, calls and fields', () => {
   const source = 'def take(player, move){\n    middle > player:collection taking move:target\n    winner(count(p:hand))\n}';
   assert.equal(scopeOf(source, 'def'), 'storage.type.function.cardlang');
