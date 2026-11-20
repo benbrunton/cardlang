@@ -3,7 +3,7 @@ use std::fmt;
 mod player;
 pub use player::*;
 mod notation;
-pub use notation::{parse_cards, starts_a_card};
+pub use notation::{card_code, parse_cards, starts_a_card};
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Suit {

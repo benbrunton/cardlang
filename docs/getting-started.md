@@ -127,6 +127,10 @@ game over - winners: 1
 
 Moves made after the game is over are ignored. Type `start` to deal a fresh game, `help` to list the commands, or `exit` to quit. All the commands are in [Using the CLI](cli.md).
 
+Two shortcuts:
+- `cardlang play race.card` builds and starts the game in one step.
+- Press **Tab** to complete commands, file names, moves and cards. For example, `build ex<Tab>` completes to `build examples/`. The up arrow repeats earlier lines.
+
 ## Next steps
 
 - Read the [language reference](language-reference.md) for every statement and built-in function.

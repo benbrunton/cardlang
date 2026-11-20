@@ -164,3 +164,32 @@ fn a_rejected_move_says_why() {
     let output = run_interactive("build ./examples/simple_scopa.card\nstart\nplay 7h\nexit\n");
     assert!(stdout_of(&output).contains("move ignored: not allowed: unknown move 'play' - valid moves: take, drop"));
 }
+
+fn run_with_args(args: &[&str], input: &str) -> Output {
+    let mut child = Command::new(BIN)
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("unable to start cardlang");
+    child.stdin.take().unwrap().write_all(input.as_bytes()).unwrap();
+    child.wait_with_output().unwrap()
+}
+
+#[test]
+fn play_builds_and_starts_a_game() {
+    let output = run_with_args(&["play", "examples/simple_scopa.card"], "show game\nexit\n");
+    let stdout = stdout_of(&output);
+    assert!(output.status.success());
+    assert!(stdout.contains("> build examples/simple_scopa.card\nGame loaded"));
+    assert!(stdout.contains("> start\nplayer 1 to play"));
+    assert!(stdout.contains("active"));
+}
+
+#[test]
+fn play_without_a_file_is_an_error() {
+    let output = run_with_args(&["play"], "");
+    assert_eq!(output.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("usage: cardlang play <file>"));
+}

@@ -1,6 +1,6 @@
 # Using the CLI
 
-The `cardlang` binary has two modes.
+The `cardlang` binary has three modes.
 
 ## Check a file: `cardlang test <file>`
 
@@ -10,9 +10,34 @@ cardlang test examples/race.card
 
 This parses the file and prints `Game loaded` and `success!`, or an error. It does **not** run the game. It exits with status `0` when the file is valid, and `1` when it fails to parse, can't be read, or no file was given. That makes it usable in scripts and CI.
 
+## Play a game: `cardlang play <file>`
+
+```sh
+cardlang play examples/simple_scopa.card
+```
+
+This loads the game, starts it, and leaves you at the prompt, ready to make the first move. It's the same as running `cardlang` and typing `build <file>` then `start`.
+
 ## Interactive mode: `cardlang`
 
 With no arguments, `cardlang` opens a prompt (`>`) that takes one line at a time. A line is either a command or a move.
+
+### Tab completion and history
+
+In a terminal, press **Tab** to complete what you're typing. Press it twice to list the options.
+
+| You type | Tab offers |
+|---|---|
+| the first word | the commands, and the game's move names (e.g. `take`, `drop`) |
+| `build ` | folders and `.card` files, e.g. `build ex<Tab>` → `build examples/` |
+| `show ` | what can be shown: `game`, `players`, the game's piles … then player numbers and their piles |
+| a move | cards in the current player's hand, then after a `/` the cards on the table, as short codes (`7h`) |
+
+Move names come from the game's `valid_moves(...)` calls.
+
+**Up** and **Down** go through the lines you've typed, so you can repeat or edit a move. **Ctrl-C** clears the line and **Ctrl-D** quits.
+
+When input is piped in (for example `cardlang < moves.txt`), lines are read plainly, without completion or history.
 
 ### Commands
 
@@ -21,7 +46,7 @@ With no arguments, `cardlang` opens a prompt (`>`) that takes one line at a time
 | `build <path>` | Loads a game file. Prints `Game loaded` or an error. Building again replaces the current game. |
 | `start` | Starts the game: resets the table, runs `setup`, then shows [the table](#the-table). Running it again starts a fresh game. |
 | `show <what>` | Prints part of the game state (see below). |
-| `help` | Lists the commands and the move syntax. |
+| `help` | Lists the commands, the move syntax and the keys. |
 | `exit` | Quits. End of input (Ctrl-D, or the end of a piped script) also quits. |
 
 Empty lines are ignored. Until a game has been built, moves, `start` and `show` print `no game loaded - use 'build <file>' first`. After `build` but before `start`, nothing has been dealt yet, so `show` prints `the game hasn't started - type 'start' to deal` (except `show game` and `show name`).

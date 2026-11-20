@@ -1,7 +1,43 @@
 use crate::ast::*;
 use std::fmt::Display;
 use std::collections::HashMap;
-use crate::cards::Card;
+use crate::cards::{card_code, Card};
+
+// What the CLI can offer when the player presses Tab
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct CompletionContext {
+    // the moves named in the game's valid_moves(...) calls
+    pub move_names: Vec<String>,
+    // shared piles declared with `stack`
+    pub stacks: Vec<String>,
+    // piles declared with `stack <name> per player`
+    pub player_stacks: Vec<String>,
+    pub players: usize,
+    // card codes in the current player's hand
+    pub hand: Vec<String>,
+    // card codes in the shared piles
+    pub table: Vec<String>
+}
+
+// finds the function names passed to valid_moves(...) anywhere in a body
+fn collect_valid_moves(statements: &[Statement], names: &mut Vec<String>) {
+    for statement in statements {
+        match statement {
+            Statement::FunctionCall(f) if f.name == "valid_moves" => {
+                for argument in f.arguments.iter() {
+                    if let Expression::Symbol(name) = argument {
+                        names.push(name.clone());
+                    }
+                }
+            },
+            Statement::IfStatement(i) => {
+                collect_valid_moves(&i.body, names);
+                collect_valid_moves(&i.else_body, names);
+            },
+            _ => ()
+        }
+    }
+}
 use crate::runtime::{
     MoveInput,
     Runtime,
@@ -112,6 +148,41 @@ impl Game {
     pub fn start(&mut self) {
         self.runtime = Runtime::new(self.initial_values.clone(), self.callbacks.clone());
         self.runtime.setup();
+    }
+
+    // What tab completion at the CLI can offer for this game right now
+    pub fn completion_context(&self) -> CompletionContext {
+        let mut move_names = vec!();
+        for definition in self.callbacks.definitions.values() {
+            collect_valid_moves(&definition.body, &mut move_names);
+        }
+        move_names.sort();
+        move_names.dedup();
+
+        let started = self.is_started();
+        let current = self.runtime.get_current_player();
+        let hand = match self.runtime.get_player(current.wrapping_sub(1)) {
+            Some(player) if started => player.get_hand().iter().map(card_code).collect(),
+            _ => vec!()
+        };
+        let table = if started {
+            self.initial_values.card_stacks.iter()
+                .filter_map(|name| self.runtime.find_custom_item(name))
+                .flatten()
+                .map(|card| card_code(&card))
+                .collect()
+        } else {
+            vec!()
+        };
+
+        CompletionContext {
+            move_names,
+            stacks: self.initial_values.card_stacks.clone(),
+            player_stacks: self.initial_values.player_stacks.clone(),
+            players: self.runtime.get_players().len(),
+            hand,
+            table
+        }
     }
 
     pub fn is_started(&self) -> bool {
