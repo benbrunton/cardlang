@@ -41,6 +41,7 @@ pub enum ArgumentValue {
 #[derive(Clone, Debug)]
 pub struct InitialValues {
     pub players: u32,
+    pub player_stacks: Vec<String>,
     pub card_stacks: Vec<String>,
     pub current_player: usize,
 }
@@ -98,7 +99,7 @@ impl Runtime {
             current_player: initial_values.current_player,
             call_stack: vec!(),
             card_stacks,
-            players: Self::generate_players(initial_values.players),
+            players: Self::generate_players(initial_values.players, &initial_values.player_stacks),
             callbacks
         }
     }
@@ -328,12 +329,27 @@ impl Runtime {
                     return PrimitiveValue::Number(self.current_player as f64);
                 }
                 let components: Vec<&str> = s.split(&[':'][..]).collect();
+
+                // players:2:collection - any player's field by number
+                if let ["players", n, field] = components.as_slice() {
+                    let value = n.parse::<usize>().ok()
+                        .and_then(|n| n.checked_sub(1))
+                        .and_then(|i| self.player_field(i, field));
+                    return match value {
+                        Some(v) => v,
+                        None => {
+                            eprintln!("unknown player field '{}'", s);
+                            PrimitiveValue::Bool(false)
+                        }
+                    };
+                }
+
                 match self.find_in_call_stack(components[0]) {
                     Some(ArgumentValue::Obj(o)) if components.len() > 1 => {
-                        // a player's hand changes during a move, so read it live
-                        if components[1] == "hand" {
-                            if let Some(hand) = self.live_player_hand(&o) {
-                                return PrimitiveValue::Stack(hand);
+                        // player fields are read live: stacks change during a move
+                        if let Some(index) = Self::player_index_of(&o) {
+                            if let Some(v) = self.player_field(index, components[1]) {
+                                return v;
                             }
                         }
                         match o.get(components[1]){
@@ -358,14 +374,8 @@ impl Runtime {
         }
     }
 
-    fn generate_players(n: u32) -> Vec<Player>{
-        let mut players = vec!();
-        for i in 0..n {
-            players.push(
-                Player::new(i + 1)
-            );
-        }
-        players
+    fn generate_players(n: u32, stack_names: &[String]) -> Vec<Player>{
+        (0..n).map(|i| Player::with_stacks(i + 1, stack_names)).collect()
     }
 
     fn build_player_object(player: Player) -> ArgumentValue {
@@ -475,108 +485,70 @@ impl Runtime {
         }
     }
 
-    fn get_stack(&self, stack_key: &str) -> Option<TransferTarget> {    
-        let instructions: Vec<&str> = stack_key.split(&[' ', ':'][..]).collect();
-        match instructions[0] {
+    fn get_stack(&self, stack_key: &str) -> Option<TransferTarget> {
+        match stack_key {
             "deck" => Some(TransferTarget::Stack(self.deck.clone())),
             "players" => Some(TransferTarget::StackList(self.players.iter().map(|p| p.get_hand()).collect())),
-            key => self.find_dynamic_stack(key)
+            key => match self.player_stack_ref(key) {
+                Some((i, name)) => self.players[i].get_stack(&name).map(TransferTarget::Stack),
+                None => self.card_stacks.get(key).map(|s| TransferTarget::Stack(s.clone()))
+            }
         }
     }
 
     fn set_stack(&mut self, stack_key: &str, stack: TransferTarget) {
-        let instructions: Vec<&str> = stack_key.split(&[' ', ':'][..]).collect();
-        match instructions[0] {
+        match stack_key {
             "deck" => self.deck = stack.get_stack(0),
             "players" => self.players.iter_mut().enumerate().for_each(|(n, p)| {
-                let new_hand = stack.get_stack(n);
-                p.set_hand(new_hand)
+                p.set_hand(stack.get_stack(n))
             }),
-            key => self.set_dynamic_stack(key, stack)
+            key => match self.player_stack_ref(key) {
+                Some((i, name)) => { self.players[i].set_stack(&name, stack.get_stack(0)); },
+                None => {
+                    if self.card_stacks.contains_key(key) {
+                        self.card_stacks.insert(key.to_string(), stack.get_stack(0));
+                    }
+                }
+            }
         }
     }
 
-    fn find_dynamic_stack(&self, key: &str) -> Option<TransferTarget> {
-        let custom_stack = self.find_custom_stack(key);
-
-        if custom_stack.is_some() {
-            return custom_stack;
-        }
-
-        let call_stack = self.find_transfer_target_in_call_stack(key);
-
-        if call_stack.is_some() {
-            return call_stack;
-        }
-
-        return None;
+    // Finds which player (by index) and which of their stacks a name refers to:
+    // `p:hand` or `p:collection` where `p` is a player object in scope,
+    // or `players:2:hand` for any player by number.
+    fn player_stack_ref(&self, key: &str) -> Option<(usize, String)> {
+        let parts: Vec<&str> = key.split(':').collect();
+        let (index, field) = match parts.as_slice() {
+            ["players", n, field] => (n.parse::<usize>().ok()?.checked_sub(1)?, *field),
+            [object, field] => (self.player_index_in_scope(object)?, *field),
+            _ => return None
+        };
+        let player = self.players.get(index)?;
+        player.get_stack(field)?;
+        Some((index, field.to_string()))
     }
 
-    fn set_dynamic_stack(&mut self, key: &str, stack: TransferTarget) {
-        let custom_stack = self.find_custom_stack(key);
-
-        if custom_stack.is_some() {
-            self.card_stacks.insert(key.to_string(), stack.get_stack(0));
-            return;
-        }
-
-        self.set_transfer_target_in_call_stack(key, stack);
-    }
-
-    fn find_custom_stack(&self, key: &str) -> Option<TransferTarget> {
-        let stack_result = self.card_stacks.get(key);
-        match stack_result {
-            Some(s) => Some(TransferTarget::Stack(s.clone())),
+    fn player_index_in_scope(&self, name: &str) -> Option<usize> {
+        match self.find_in_call_stack(name) {
+            Some(ArgumentValue::Obj(o)) => Self::player_index_of(&o),
             _ => None
         }
     }
 
-    fn find_transfer_target_in_call_stack(&self, key: &str) -> Option<TransferTarget> {
-        let obj = self.find_in_call_stack(key);
-        match obj {
-            Some(ArgumentValue::Obj(p)) => {
-                match p.get(INTERNAL_REF) {
-                    Some(PrimitiveValue::String(s)) => {
-                        let parts: Vec<&str> = s.split(":").collect();
-                        let i = parts[1].parse::<usize>().unwrap();
-
-                        let stack = self.players[i].get_hand();
-                        Some(TransferTarget::Stack(stack.to_vec()))
-                    },
-                    _ => None
-                }
-            },
-            _ => None
-        }
-    }
-
-    fn set_transfer_target_in_call_stack(&mut self, key: &str, stack: TransferTarget) {
-        let obj = self.find_in_call_stack(key);
-        match obj {
-            Some(ArgumentValue::Obj(p)) => {
-                match p.get(INTERNAL_REF) {
-                    Some(PrimitiveValue::String(s)) => {
-                        let parts: Vec<&str> = s.split(":").collect();
-                        let i = parts[1].parse::<usize>().unwrap();
-
-                        self.players[i].set_hand(stack.get_stack(0));
-                    },
-                    _ => ()
-                }
-            },
-            _ => ()
-        }
-    }
-
-    fn live_player_hand(&self, obj: &HashMap<String, PrimitiveValue>) -> Option<Vec<Card>> {
+    fn player_index_of(obj: &HashMap<String, PrimitiveValue>) -> Option<usize> {
         match obj.get(INTERNAL_REF) {
-            Some(PrimitiveValue::String(s)) => {
-                let parts: Vec<&str> = s.split(":").collect();
-                let i = parts.get(1)?.parse::<usize>().ok()?;
-                self.players.get(i).map(|p| p.get_hand())
-            },
+            Some(PrimitiveValue::String(s)) => s.split(':').nth(1)?.parse::<usize>().ok(),
             _ => None
         }
+    }
+
+    // a field of a player, read live so it reflects transfers made during a move
+    fn player_field(&self, index: usize, field: &str) -> Option<PrimitiveValue> {
+        let player = self.players.get(index)?;
+        if field == "id" {
+            return Some(PrimitiveValue::Number(player.get_id() as f64));
+        }
+        player.get_stack(field).map(PrimitiveValue::Stack)
     }
 
     pub fn find_custom_item(&self, key: &str) -> Option<Vec<Card>> {
@@ -643,6 +615,7 @@ mod test{
 
         let initial_values = InitialValues{
             players: 1,
+            player_stacks: vec!(),
             card_stacks: vec!(),
             current_player: 1,
         };
@@ -674,6 +647,7 @@ mod test{
 
         let initial_values = InitialValues{
             players: 1,
+            player_stacks: vec!(),
             card_stacks: vec!(),
             current_player: 1,
         };
@@ -709,6 +683,7 @@ mod test{
 
         let initial_values = InitialValues{
             players: 1,
+            player_stacks: vec!(),
             card_stacks: vec!(),
             current_player: 1,
         };
@@ -744,6 +719,7 @@ mod test{
 
         let initial_values = InitialValues{
             players: 1,
+            player_stacks: vec!(),
             card_stacks: vec!(),
             current_player: 1,
         };

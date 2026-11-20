@@ -26,7 +26,9 @@ pub enum GlobalKey {
     Players,
     Stack,
     Deck,
-    CurrentPlayer
+    CurrentPlayer,
+    // a stack that every player has, e.g. `stack collection per player`
+    PlayerStack
 }
 
 #[derive(Debug, PartialEq, Clone)]

@@ -22,6 +22,7 @@ impl Game {
 
         let mut initial_values = InitialValues{ 
             players: 1,
+            player_stacks: vec!(),
             card_stacks: vec!(),
             current_player: 1 
         };
@@ -67,6 +68,12 @@ impl Game {
                     value: Expression::Symbol(s)
                 }) => {
                     initial_values.card_stacks.push(s.to_string());
+                },
+                Statement::Declaration(Declaration{
+                    key: GlobalKey::PlayerStack,
+                    value: Expression::Symbol(s)
+                }) => {
+                    initial_values.player_stacks.push(s.to_string());
                 },
                 _ => ()
             }
@@ -129,8 +136,12 @@ impl Game {
             Some(Ok(n)) if n >= 1 => n,
             _ => return "usage: show player <number>".to_string()
         };
+        let stack_name = args.get(2).copied().unwrap_or("hand");
         match self.runtime.get_player(player_num - 1) {
-            Some(player) => Self::display_list(&player.get_hand()),
+            Some(player) => match player.get_stack(stack_name) {
+                Some(cards) => Self::display_list(&cards),
+                None => format!("player {} has no stack '{}'", player_num, stack_name)
+            },
             None => format!("there is no player {}", player_num)
         }
     }
@@ -1865,5 +1876,68 @@ def setup(){
 }
 ");
         assert_eq!(result, "active\nwinners: 1");
+    }
+
+    #[test]
+    fn per_player_stacks_can_be_used_through_a_player_object() {
+        let mut game = game_from_source("
+players 2
+stack collection per player
+
+def setup(){
+    deck > players 2
+}
+
+def player_move(player){
+    player:hand > player:collection
+    if(count(player:collection) is 1 & count(player:hand) is 1){
+        end()
+    }
+}
+");
+        game.start();
+        game.player_move(2).unwrap();
+
+        assert_eq!(game.show("player 2 collection"), "ten diamonds");
+        assert_eq!(game.show("player 2 hand"), "queen diamonds");
+        assert_eq!(game.show("player 1 collection"), "");
+        assert_eq!(game.show("game"), "game over");
+    }
+
+    #[test]
+    fn any_player_can_be_addressed_by_number() {
+        let mut game = game_from_source("
+players 2
+stack collection per player
+
+def setup(){
+    deck > players:2:collection 3
+    players:2:collection > players:1:hand
+    if(count(players:2:collection) is 2 & players:1:id is 1){
+        end()
+    }
+}
+");
+        game.start();
+
+        assert_eq!(game.show("player 1"), "jack diamonds");
+        assert_eq!(game.show("player 2 collection"), "king diamonds, queen diamonds");
+        assert_eq!(game.show("game"), "game over");
+    }
+
+    #[test]
+    fn unknown_player_stacks_are_reported() {
+        let mut game = game_from_source("
+players 2
+
+def setup(){
+    deck > players:3:hand
+    end()
+}
+");
+        game.start();
+
+        assert_eq!(game.show("game"), "active");
+        assert_eq!(game.show("player 1 collection"), "player 1 has no stack 'collection'");
     }
 }

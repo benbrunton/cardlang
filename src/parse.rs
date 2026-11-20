@@ -78,6 +78,26 @@ pub fn parse(tokens: &Vec<SourceToken>) -> Result<Vec<Statement>, ParseError> {
                     Some(v) => v,
                     None => return Err(ParseError::new(ParseErrorType::UnexpectedToken, next_token.line_number))
                 };
+
+                // `stack <name> per player` gives every player their own stack
+                let mut key = key;
+                let mut lookahead = tokens_iter.clone();
+                if key == GlobalKey::Stack {
+                    if let (
+                        Some(SourceToken{ token: Token::Symbol(per), .. }),
+                        Some(SourceToken{ token: Token::Symbol(player), .. })
+                    ) = (lookahead.next(), lookahead.next()) {
+                        if per == "per" && player == "player" {
+                            if value == Expression::Symbol("hand".to_string()) {
+                                // every player already has a hand
+                                return Err(ParseError::new(ParseErrorType::UnexpectedToken, next_token.line_number));
+                            }
+                            tokens_iter = lookahead;
+                            key = GlobalKey::PlayerStack;
+                        }
+                    }
+                }
+
                 let declaration = Declaration{ key, value };
                 let statement = Statement::Declaration(declaration);
                 ast.push(statement);
@@ -1557,6 +1577,7 @@ mod test{
     #[test]
     fn incomplete_or_invalid_source_is_a_parse_error_not_a_panic() {
         let cases = [
+            "stack hand per player",
             "def setup() }",
             "def setup() x { }",
             "}",
@@ -1666,5 +1687,15 @@ mod test{
         for case in cases.iter() {
             assert!(parse_source(case).is_err(), "expected a parse error for {:?}", case);
         }
+    }
+
+    #[test]
+    fn it_parses_per_player_stacks() {
+        let result = parse_source("stack middle\nstack collection per player").unwrap();
+
+        assert_eq!(result, vec!(
+            Statement::Declaration(Declaration{ key: GlobalKey::Stack, value: Expression::Symbol("middle".to_string()) }),
+            Statement::Declaration(Declaration{ key: GlobalKey::PlayerStack, value: Expression::Symbol("collection".to_string()) })
+        ));
     }
 }
