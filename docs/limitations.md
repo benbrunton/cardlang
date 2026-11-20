@@ -1,55 +1,39 @@
 # Known limitations
 
-cardlang is early-stage. Everything listed here has been checked against the current code. When one of these is fixed, remove it from this page and update the [language reference](language-reference.md).
+cardlang is early-stage. Everything listed here has been checked against the current code. When one of these is fixed, remove it from this page, update the [language reference](language-reference.md), and mark it done in the [roadmap](ROADMAP.md).
 
 ## Reading error messages
 
-Errors are printed in their raw form:
+Errors give a line number and a short description:
 
 ```
-parse error: LexError { error_type: ParseError, line_number: 33 }
-parse error: ParseError { error_type: UnexpectedToken, line_number: 2 }
+error: line 33: unrecognised character (for example '-', '"' or a decimal number)
+error: line 2: unexpected word or symbol
 ```
 
-- **`LexError`**: the file contains a character cardlang doesn't understand. Common causes: a tab, a Windows (`\r\n`) line ending, `-`, `"`, or a decimal number.
-- **`ParseError`**: the words are valid but in an order the parser doesn't expect. Common causes: a multi-word `name`, a declaration with the wrong kind of value (`players two`, `name 5`), a missing `(` after `check`, `return` or `if`, an unclosed `{`, an unfinished comparison (`check(a is)`), a transfer with no destination (`deck >`), or a trailing comma in a call.
-- The line number is usually right, but can point slightly after the real problem. Some errors report line `0`.
+| Message | Common causes |
+|---|---|
+| `unrecognised character` | `-`, `"`, a decimal number such as `1.5`, or a word starting with a digit |
+| `a comment is never closed` | a `.(` comment with no matching `)` |
+| `unexpected word or symbol` | a multi-word `name`; a declaration with the wrong kind of value (`players two`, `name 5`); a missing `(` after `check`, `return` or `if`; a chained comparison (`a is b is c`); `else` without an `if`; a number after a transfer (`deck > middle 4`); anything left over at the top level of the file |
+| `unexpected end of statement` | something is missing: an unclosed `{` or `(`, an unfinished comparison (`check(a is)`), or a transfer with no destination (`deck >`) |
+| `expected a name` | `define` not followed by a function name, or something other than names in a function's parameter list |
+
+The message says what the parser found, but not yet what it expected.
 
 ## Language
 
 | Limitation | What happens | What to do instead |
 |---|---|---|
-| A bare value or function call as a condition | `if(ready(p))` is always false | `if(ready(p) is true)` |
-| `&` | Binds wrongly: `a is 1 & b is 2` is parsed as `a is (1 & (b is 2))`. `true & f()` is always false. Only `true`/`false` on the left with a single comparison on the right works (`true & a is 1`). | Use a helper function with one `check` per condition (example below) |
-| `check` or `return` inside an `if` block | Only ends the `if` block. The function carries on, and the returned value is lost. | Keep `check` and `return` at the top level of the function body |
-| No `else`, `or`, or arithmetic | Not supported | Two `if`s with opposite conditions (`is` / `is not`) |
-| Transfer counts | `deck > middle 4` moves one card; the number is ignored | Repeat the transfer, or use `end` |
+| No arithmetic | `+`, `-` etc. aren't supported | none yet; see the [roadmap](ROADMAP.md) (item 20) |
+| Transfer counts | `deck > middle 4` is a parse error | Repeat the transfer, or use `end` |
 | `deck <word>` declaration | Ignored. Every game uses the full 52-card deck. | Use `filter` in your logic |
 | `filter` results can't be moved | `filter` returns a new stack that isn't stored anywhere | Use it for counting or comparing |
 | Stacks passed as arguments are copies | Transferring into a stack parameter doesn't change the original pile | Pass the player, or name the pile directly |
 | `shuffle` argument | Always shuffles `deck` | none |
 | Multi-word names | `name my game` fails to parse | `name my_game` |
-| Unknown pile names in transfers | Silently ignored | Check spelling against your `stack` declarations |
-
-### Combining conditions
-
-Until `&` is fixed, use a helper function with a `check` per condition:
-
-```
-define both(a, b){
-    check(a is 1)
-    check(b is 2)
-    return(true)
-}
-
-define setup(){
-    if(both(x, y) is true){
-        end()
-    }
-}
-```
-
-This works because a failing `check` makes the function return `false`. Keep the `check`s at the top level of the helper, not inside an `if`.
+| Unknown pile names in transfers | Only noticed when the transfer runs. It's skipped, with a message on stderr. | Check spelling against your `stack` declarations |
+| `.test(...)` blocks | Skipped; spec tests aren't run yet | none |
 
 ## Syntax used in `examples/simple_scopa.card` that doesn't exist yet
 

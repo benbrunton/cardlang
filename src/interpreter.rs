@@ -800,7 +800,7 @@ mod test{
             )
         );
 
-        let if_statement = IfStatement{
+        let if_statement = IfStatement{ else_body: vec!(),
             expression: Expression::Bool(true),
             body: if_body
         };
@@ -833,7 +833,7 @@ mod test{
             )
         );
 
-        let if_statement = IfStatement{
+        let if_statement = IfStatement{ else_body: vec!(),
             expression: Expression::Bool(false),
             body: if_body
         };
@@ -872,7 +872,7 @@ mod test{
             negative: false
         };
 
-        let if_statement = IfStatement{
+        let if_statement = IfStatement{ else_body: vec!(),
             expression: Expression::Comparison(Box::new(comparison)),
             body: if_body
         };
@@ -926,7 +926,7 @@ mod test{
             negative: false
         };
 
-        let if_statement = IfStatement{
+        let if_statement = IfStatement{ else_body: vec!(),
             expression: Expression::Comparison(Box::new(comparison)),
             body: if_body
         };
@@ -995,7 +995,7 @@ mod test{
             negative: false
         };
 
-        let if_statement = IfStatement{
+        let if_statement = IfStatement{ else_body: vec!(),
             expression: Expression::Comparison(Box::new(comparison)),
             body: if_body
         };
@@ -1208,7 +1208,7 @@ mod test{
             right: Expression::Bool(true)
         };
 
-        let if_statement = IfStatement{
+        let if_statement = IfStatement{ else_body: vec!(),
             expression: Expression::And(Box::new(and)),
             body: if_body
         };
@@ -1547,5 +1547,199 @@ players 2
         assert_eq!(game.show("player 0"), "usage: show player <number>");
         assert_eq!(game.show("player 3"), "there is no player 3");
         assert_eq!(game.show("player 2"), "");
+    }
+
+    fn winners_of(source: &str) -> String {
+        let mut game = game_from_source(source);
+        game.start();
+        game.show("game")
+    }
+
+    #[test]
+    fn return_inside_an_if_returns_from_the_function() {
+        let result = winners_of("
+players 2
+
+define pick(a, b){
+    if(a is 1){
+        return(10)
+    }
+    return(b)
+}
+
+define setup(){
+    winner(pick(1, 20))
+    winner(pick(2, 30))
+}
+");
+        assert_eq!(result, "active\nwinners: 10, 30");
+    }
+
+    #[test]
+    fn check_inside_an_if_ends_the_function() {
+        let result = winners_of("
+players 2
+
+define setup(){
+    if(true){
+        check(false)
+    }
+    end()
+}
+");
+        assert_eq!(result, "active");
+    }
+
+    #[test]
+    fn and_binds_looser_than_comparisons() {
+        let result = winners_of("
+players 2
+
+define setup(){
+    if(1 is 1 & 2 is 2){
+        winner(1)
+    }
+    if(1 is 1 & 2 is 3){
+        winner(2)
+    }
+    if(1 is not 2 & 3 is not 4){
+        winner(3)
+    }
+}
+");
+        assert_eq!(result, "active\nwinners: 1, 3");
+    }
+
+    #[test]
+    fn or_combines_conditions_and_binds_looser_than_and() {
+        let result = winners_of("
+players 2
+
+define setup(){
+    if(1 is 2 or 3 is 3){
+        winner(1)
+    }
+    if(1 is 2 or 3 is 4){
+        winner(2)
+    }
+    if(true or false & false){
+        winner(3)
+    }
+    if((true or false) & false){
+        winner(4)
+    }
+}
+");
+        assert_eq!(result, "active\nwinners: 1, 3");
+    }
+
+    #[test]
+    fn booleans_and_function_calls_can_be_used_directly_as_conditions() {
+        let result = winners_of("
+players 2
+
+define yes(){
+    return(true)
+}
+
+define no(){
+    return(false)
+}
+
+define setup(){
+    if(yes()){
+        winner(1)
+    }
+    if(no()){
+        winner(2)
+    }
+    if(true & yes()){
+        winner(3)
+    }
+    if(no() or yes()){
+        winner(4)
+    }
+    check(yes())
+    winner(5)
+}
+");
+        assert_eq!(result, "active\nwinners: 1, 3, 4, 5");
+    }
+
+    #[test]
+    fn non_boolean_values_are_not_true() {
+        let result = winners_of("
+players 2
+
+define one(){
+    return(1)
+}
+
+define setup(){
+    if(one()){
+        winner(1)
+    }
+}
+");
+        assert_eq!(result, "active");
+    }
+
+    #[test]
+    fn else_runs_when_the_condition_is_false() {
+        let result = winners_of("
+players 2
+
+define setup(){
+    if(1 is 2){
+        winner(1)
+    } else {
+        winner(2)
+    }
+    if(1 is 1){
+        winner(3)
+    }
+    else {
+        winner(4)
+    }
+}
+");
+        assert_eq!(result, "active\nwinners: 2, 3");
+    }
+
+    #[test]
+    fn else_if_chains_pick_the_first_match() {
+        let result = winners_of("
+players 2
+
+define classify(n){
+    if(n is 1){
+        return(10)
+    } else if(n is 2){
+        return(20)
+    } else {
+        return(30)
+    }
+}
+
+define setup(){
+    winner(classify(1))
+    winner(classify(2))
+    winner(classify(3))
+}
+");
+        assert_eq!(result, "active\nwinners: 10, 20, 30");
+    }
+
+    #[test]
+    fn winner_ignores_values_that_are_not_numbers() {
+        let result = winners_of("
+players 2
+
+define setup(){
+    winner(nobody)
+    winner(2)
+}
+");
+        assert_eq!(result, "active\nwinners: 2");
     }
 }

@@ -23,7 +23,9 @@ pub enum Token {
     Ampersand,
     Return,
     Test,
-    Not
+    Not,
+    Or,
+    Else
 }
 
 #[derive(Debug, PartialEq, Clone)]

@@ -24,6 +24,26 @@ impl ParseError {
             line_number
         }
     }
+
+    // fills in a line number for errors raised where the line wasn't known
+    pub fn or_line(self, line_number: u32) -> ParseError {
+        if self.line_number == 0 {
+            ParseError::new(self.error_type, line_number)
+        } else {
+            self
+        }
+    }
+}
+
+impl std::fmt::Display for ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let message = match self.error_type {
+            ParseErrorType::ExpectedSymbol => "expected a name",
+            ParseErrorType::UnexpectedEndOfStream => "unexpected end of statement - something is missing",
+            ParseErrorType::UnexpectedToken => "unexpected word or symbol"
+        };
+        write!(f, "line {}: {}", self.line_number, message)
+    }
 }
 
 pub fn parse(tokens: &Vec<SourceToken>) -> Result<Vec<Statement>, ParseError> {
@@ -142,22 +162,9 @@ pub fn parse(tokens: &Vec<SourceToken>) -> Result<Vec<Statement>, ParseError> {
 
  
             },
-            Some(SourceToken{ token: Token::If, ..}) => {
-                tokens_iter.next(); // assuming open parens?
-
-                let expression = match build_expression(&mut tokens_iter) {
-                    Ok(ex) => ex,
-                    Err(e) => return Err(e)
-                };
-
-                let body = match build_block(&mut tokens_iter) {
-                    Ok(b) => b,
-                    Err(e) => return Err(e)
-                };
-
-                let if_statement = IfStatement{ expression, body };
-                let statement = Statement::IfStatement(if_statement);
-                ast.push(statement);
+            Some(SourceToken{ token: Token::If, line_number }) => {
+                let if_statement = build_if(&mut tokens_iter, *line_number)?;
+                ast.push(Statement::IfStatement(if_statement));
             },
             Some(SourceToken{ token: Token::Check, line_number}) => {
                 match tokens_iter.next() {
@@ -168,10 +175,8 @@ pub fn parse(tokens: &Vec<SourceToken>) -> Result<Vec<Statement>, ParseError> {
                     })
                 }
 
-                let expression = match build_expression(&mut tokens_iter) {
-                    Ok(ex) => ex,
-                    Err(e) => return Err(e)
-                };
+                let expression = build_expression(&mut tokens_iter)
+                    .map_err(|e| e.or_line(*line_number))?;
 
                 let check_statement = CheckStatement{ expression };
                 let statement = Statement::CheckStatement(check_statement);
@@ -186,17 +191,22 @@ pub fn parse(tokens: &Vec<SourceToken>) -> Result<Vec<Statement>, ParseError> {
                     })
                 }
 
-                let expression = match build_expression(&mut tokens_iter) {
-                    Ok(ex) => ex,
-                    Err(e) => return Err(e)
-                };
+                let expression = build_expression(&mut tokens_iter)
+                    .map_err(|e| e.or_line(*line_number))?;
 
                 let check_statement = ReturnStatement{ expression };
                 let statement = Statement::ReturnStatement(check_statement);
                 ast.push(statement);
             },
             None => { break; },
-            _ => (),
+            Some(SourceToken{ token: Token::Newline, ..}) => (),
+            Some(SourceToken{ token: Token::Test, line_number }) => {
+                // spec test blocks are not supported yet - skip them
+                skip_parens_group(&mut tokens_iter, *line_number)?;
+            },
+            Some(SourceToken{ line_number, ..}) => {
+                return Err(ParseError::new(ParseErrorType::UnexpectedToken, *line_number));
+            }
         }
     }
 
@@ -224,13 +234,10 @@ fn create_transfer(from: &str, tokens_iter: &mut std::slice::Iter<SourceToken>, 
     let from = get_transfer_value(&Token::Symbol(from.to_string()));
     let to = get_transfer_value(&transfer_target.token);
     let modifier = None;
-    let count = match tokens_iter.next() {
-        Some(SourceToken{ token: Token::Symbol(s), ..}) => {
-            if s == "end" {
-                Some(TransferCount::End)
-            } else {
-                None
-            }
+    let count = match tokens_iter.clone().next() {
+        Some(SourceToken{ token: Token::Symbol(s), ..}) if s == "end" => {
+            tokens_iter.next();
+            Some(TransferCount::End)
         },
         _ => None
     };
@@ -272,23 +279,32 @@ fn get_transfer_value(token: &Token) -> String {
 fn build_block(tokens_iter: &mut std::slice::Iter<SourceToken>) -> Result<Vec<Statement>, ParseError> {
     let mut body_tokens = vec!();
     let mut line_number = 0;
-    let mut open_bracket_count = 0;
 
+    // the block must start with '{', optionally on a following line
     loop {
         match tokens_iter.next() {
-            Some(SourceToken{ token: Token::CloseBracket, line_number }) => {
-                if open_bracket_count > 1 {
-                    open_bracket_count -= 1;
-                    body_tokens.push(
-                        SourceToken{ token: Token::CloseBracket, line_number: *line_number }
-                    );
-                } else {
-                    break;
-                }
+            Some(SourceToken{ token: Token::Newline, line_number: l }) => line_number = *l,
+            Some(SourceToken{ token: Token::OpenBracket, line_number: l }) => {
+                line_number = *l;
+                break;
             },
+            Some(SourceToken{ line_number: l, .. }) => {
+                return Err(ParseError::new(ParseErrorType::UnexpectedToken, *l))
+            },
+            None => return Err(ParseError::new(ParseErrorType::UnexpectedEndOfStream, line_number))
+        }
+    }
+
+    // nested blocks stay in the body and are parsed recursively
+    let mut depth = 0;
+    loop {
+        match tokens_iter.next() {
+            Some(SourceToken{ token: Token::CloseBracket, .. }) if depth == 0 => break,
             Some(t) => {
-                if t.token == Token::OpenBracket {
-                    open_bracket_count += 1;
+                match t.token {
+                    Token::OpenBracket => depth += 1,
+                    Token::CloseBracket => depth -= 1,
+                    _ => ()
                 }
                 line_number = t.line_number;
                 body_tokens.push(t.clone());
@@ -300,66 +316,161 @@ fn build_block(tokens_iter: &mut std::slice::Iter<SourceToken>) -> Result<Vec<St
     return parse(&body_tokens)
 }
 
+// Expression grammar, lowest precedence first:
+//   expression := and_expr ( "or" and_expr )*
+//   and_expr   := comparison ( "&" comparison )*
+//   comparison := primary ( "is" ["not"] primary )?
+//   primary    := literal | name | name "(" arguments ")" | "(" expression ")"
+// Parses the expression inside `check(...)`, `return(...)` or `if(...)`,
+// consuming the closing parens.
 fn build_expression(tokens_iter: &mut std::slice::Iter<SourceToken>) -> Result<Expression, ParseError> {
-    let left = match tokens_iter.next() {
-        Some(SourceToken{ token: Token::True, ..}) => Expression::Bool(true),
-        Some(SourceToken{ token: Token::False, ..}) => Expression::Bool(false),
-        Some(SourceToken{ token: Token::Symbol(s), ..}) => Expression::Symbol(s.to_string()),
-        Some(SourceToken{ token: Token::Number(n), ..}) => Expression::Number(*n),
-        Some(SourceToken{ token: Token::CurrentPlayer, ..}) => Expression::Symbol("current_player".to_string()),
-        Some(SourceToken{ token: Token::Deck, ..}) => Expression::Symbol("deck".to_string()),
-        Some(SourceToken{ token: Token::Players, ..}) => Expression::Symbol("players".to_string()),
-        None => return Err(ParseError::new(ParseErrorType::UnexpectedEndOfStream, 0)),
-        _ => return Err(ParseError::new(ParseErrorType::UnexpectedToken, 0))
-    };
-    combine_expression(tokens_iter, left)
-}
-
-fn combine_expression(tokens_iter: &mut std::slice::Iter<SourceToken>, left: Expression) -> Result<Expression, ParseError> {
+    let expression = parse_or(tokens_iter)?;
     match tokens_iter.next() {
-        None | Some(SourceToken{ token: Token::CloseParens, ..}) => Ok(left),
-        Some(SourceToken{ token: Token::Is, ..}) => {
-            let mut peekable = tokens_iter.clone().peekable();
-            let negative = match peekable.peek() {
-                Some(SourceToken{ token: Token::Not, .. }) => {
-                    tokens_iter.next();
-                    true
-                },
-                _ => false
-            };
-            let right = build_expression(tokens_iter)?;
-            let comparison = Comparison {
-                left,
-                right,
-                negative
-            };
-            Ok(Expression::Comparison(Box::new(comparison)))
-        },
-        Some(SourceToken{ token: Token::Ampersand, ..}) => {
-            let right = build_expression(tokens_iter)?;
-            let and = And {
-                left,
-                right
-            };
-            Ok(Expression::And(Box::new(and)))
-        },
-        Some(SourceToken{ token: Token::OpenParens, ..}) => {
-            match left {
-                Expression::Symbol(s) => {
-                    let arguments = build_call_arguments(tokens_iter)?;
-                    let function = FunctionCall{
-                        name: s.to_string(),
-                        arguments
-                    };
-                    combine_expression(tokens_iter, Expression::FunctionCall(function))
-                },
-                _ => Err(ParseError::new(ParseErrorType::UnexpectedToken, 0))
-            }
-        },
-        _ => Err(ParseError::new(ParseErrorType::UnexpectedToken, 0))
+        Some(SourceToken{ token: Token::CloseParens, ..}) => Ok(expression),
+        Some(SourceToken{ line_number, .. }) => Err(ParseError::new(ParseErrorType::UnexpectedToken, *line_number)),
+        None => Err(ParseError::new(ParseErrorType::UnexpectedEndOfStream, 0))
     }
 }
+
+// Parses a whole token group (e.g. one call argument) as a single expression.
+fn build_complete_expression(tokens_iter: &mut std::slice::Iter<SourceToken>) -> Result<Expression, ParseError> {
+    let expression = parse_or(tokens_iter)?;
+    match tokens_iter.next() {
+        None => Ok(expression),
+        Some(SourceToken{ line_number, .. }) => Err(ParseError::new(ParseErrorType::UnexpectedToken, *line_number))
+    }
+}
+
+fn peek_token(tokens_iter: &std::slice::Iter<SourceToken>) -> Option<Token> {
+    tokens_iter.clone().next().map(|t| t.token.clone())
+}
+
+fn parse_or(tokens_iter: &mut std::slice::Iter<SourceToken>) -> Result<Expression, ParseError> {
+    let mut left = parse_and(tokens_iter)?;
+    while peek_token(tokens_iter) == Some(Token::Or) {
+        tokens_iter.next();
+        let right = parse_and(tokens_iter)?;
+        left = Expression::Or(Box::new(Or{ left, right }));
+    }
+    Ok(left)
+}
+
+fn parse_and(tokens_iter: &mut std::slice::Iter<SourceToken>) -> Result<Expression, ParseError> {
+    let mut left = parse_comparison(tokens_iter)?;
+    while peek_token(tokens_iter) == Some(Token::Ampersand) {
+        tokens_iter.next();
+        let right = parse_comparison(tokens_iter)?;
+        left = Expression::And(Box::new(And{ left, right }));
+    }
+    Ok(left)
+}
+
+fn parse_comparison(tokens_iter: &mut std::slice::Iter<SourceToken>) -> Result<Expression, ParseError> {
+    let left = parse_primary(tokens_iter)?;
+    if peek_token(tokens_iter) != Some(Token::Is) {
+        return Ok(left);
+    }
+    tokens_iter.next();
+
+    let negative = peek_token(tokens_iter) == Some(Token::Not);
+    if negative {
+        tokens_iter.next();
+    }
+
+    let right = parse_primary(tokens_iter)?;
+    Ok(Expression::Comparison(Box::new(Comparison{ left, right, negative })))
+}
+
+fn parse_primary(tokens_iter: &mut std::slice::Iter<SourceToken>) -> Result<Expression, ParseError> {
+    let source_token = match tokens_iter.next() {
+        Some(t) => t,
+        None => return Err(ParseError::new(ParseErrorType::UnexpectedEndOfStream, 0))
+    };
+
+    let expression = match &source_token.token {
+        Token::True => Expression::Bool(true),
+        Token::False => Expression::Bool(false),
+        Token::Number(n) => Expression::Number(*n),
+        Token::CurrentPlayer => Expression::Symbol("current_player".to_string()),
+        Token::Deck => Expression::Symbol("deck".to_string()),
+        Token::Players => Expression::Symbol("players".to_string()),
+        Token::Symbol(s) => {
+            if peek_token(tokens_iter) == Some(Token::OpenParens) {
+                tokens_iter.next();
+                let arguments = build_call_arguments(tokens_iter)?;
+                Expression::FunctionCall(FunctionCall{ name: s.to_string(), arguments })
+            } else {
+                Expression::Symbol(s.to_string())
+            }
+        },
+        Token::OpenParens => {
+            let inner = parse_or(tokens_iter)?;
+            match tokens_iter.next() {
+                Some(SourceToken{ token: Token::CloseParens, ..}) => inner,
+                Some(SourceToken{ line_number, .. }) => {
+                    return Err(ParseError::new(ParseErrorType::UnexpectedToken, *line_number))
+                },
+                None => return Err(ParseError::new(ParseErrorType::UnexpectedEndOfStream, source_token.line_number))
+            }
+        },
+        _ => return Err(ParseError::new(ParseErrorType::UnexpectedToken, source_token.line_number))
+    };
+    Ok(expression)
+}
     
+
+// Parses the rest of an if statement, after the `if` keyword.
+fn build_if(tokens_iter: &mut std::slice::Iter<SourceToken>, line_number: u32) -> Result<IfStatement, ParseError> {
+    match tokens_iter.next() {
+        Some(SourceToken{ token: Token::OpenParens, ..}) => (),
+        _ => return Err(ParseError::new(ParseErrorType::UnexpectedToken, line_number))
+    }
+
+    let expression = build_expression(tokens_iter).map_err(|e| e.or_line(line_number))?;
+    let body = build_block(tokens_iter)?;
+    let else_body = build_else(tokens_iter, line_number)?;
+
+    Ok(IfStatement{ expression, body, else_body })
+}
+
+// Parses an optional `else { ... }` or `else if(...) { ... }` after an if block.
+fn build_else(tokens_iter: &mut std::slice::Iter<SourceToken>, line_number: u32) -> Result<Vec<Statement>, ParseError> {
+    // `else` may be on the line after the closing bracket
+    let mut lookahead = tokens_iter.clone();
+    loop {
+        match lookahead.next() {
+            Some(SourceToken{ token: Token::Newline, ..}) => (),
+            Some(SourceToken{ token: Token::Else, ..}) => break,
+            _ => return Ok(vec!())
+        }
+    }
+    *tokens_iter = lookahead;
+
+    if peek_token(tokens_iter) == Some(Token::If) {
+        tokens_iter.next();
+        let chained = build_if(tokens_iter, line_number)?;
+        return Ok(vec!(Statement::IfStatement(chained)));
+    }
+
+    build_block(tokens_iter)
+}
+
+fn skip_parens_group(tokens_iter: &mut std::slice::Iter<SourceToken>, line_number: u32) -> Result<(), ParseError> {
+    match tokens_iter.next() {
+        Some(SourceToken{ token: Token::OpenParens, ..}) => (),
+        _ => return Err(ParseError::new(ParseErrorType::UnexpectedToken, line_number))
+    }
+    let mut depth = 1;
+    while depth > 0 {
+        match tokens_iter.next() {
+            Some(SourceToken{ token: Token::OpenParens, ..}) => depth += 1,
+            Some(SourceToken{ token: Token::CloseParens, ..}) => depth -= 1,
+            Some(_) => (),
+            None => return Err(ParseError::new(ParseErrorType::UnexpectedEndOfStream, line_number))
+        }
+    }
+    Ok(())
+}
 
 // Parses the comma separated arguments of a function call, consuming
 // tokens up to and including the call's closing parens.
@@ -405,7 +516,7 @@ fn build_call_arguments(tokens_iter: &mut std::slice::Iter<SourceToken>) -> Resu
     }
 
     groups.iter().map(|group| {
-        build_expression(&mut group.iter()).map_err(|e| {
+        build_complete_expression(&mut group.iter()).map_err(|e| {
             let line = if e.line_number == 0 { group[0].line_number } else { e.line_number };
             ParseError::new(e.error_type, line)
         })
@@ -932,7 +1043,7 @@ mod test{
         ));
         let expression = Expression::Bool(true);
         let body = vec!();
-        let if_statement = IfStatement{ expression, body };
+        let if_statement = IfStatement{ expression, body, else_body: vec!() };
         let statement = Statement::IfStatement(if_statement);
         let expected = vec!(statement);
         let result = parse(&tokens);
@@ -952,7 +1063,7 @@ mod test{
         ));
         let expression = Expression::Bool(false);
         let body = vec!();
-        let if_statement = IfStatement{ expression, body };
+        let if_statement = IfStatement{ expression, body, else_body: vec!() };
         let statement = Statement::IfStatement(if_statement);
         let expected = vec!(statement);
         let result = parse(&tokens);
@@ -980,7 +1091,7 @@ mod test{
         };
         let expression = Expression::Comparison(Box::new(comparison));
         let body = vec!();
-        let if_statement = IfStatement{ expression, body };
+        let if_statement = IfStatement{ expression, body, else_body: vec!() };
         let statement = Statement::IfStatement(if_statement);
         let expected = vec!(statement);
         let result = parse(&tokens);
@@ -1008,7 +1119,7 @@ mod test{
             arguments: vec!(Expression::Symbol("deck".to_string()))
         };
         let body = vec!(Statement::FunctionCall(function_call));
-        let if_statement = IfStatement{ expression, body };
+        let if_statement = IfStatement{ expression, body, else_body: vec!() };
         let statement = Statement::IfStatement(if_statement);
         let expected = vec!(statement);
         let result = parse(&tokens);
@@ -1047,7 +1158,7 @@ mod test{
         };
         let expression = Expression::Comparison(Box::new(comparison));
         let body = vec!();
-        let if_statement = IfStatement{ expression, body };
+        let if_statement = IfStatement{ expression, body, else_body: vec!() };
         let statement = Statement::IfStatement(if_statement);
         let expected = vec!(statement);
         let result = parse(&tokens);
@@ -1153,7 +1264,7 @@ mod test{
 
         let expected = vec!(
             Statement::IfStatement(
-                IfStatement{
+                IfStatement{ else_body: vec!(),
                     expression: Expression::Comparison(Box::new(Comparison{
                         left: Expression::FunctionCall(FunctionCall{
                             name: "count".to_string(),
@@ -1229,7 +1340,7 @@ mod test{
 
         let body = vec!(
             Statement::IfStatement(
-                IfStatement{
+                IfStatement{ else_body: vec!(),
                     expression: Expression::Comparison(Box::new(Comparison{
                         left: Expression::FunctionCall(FunctionCall{
                             name: "count".to_string(),
@@ -1418,7 +1529,7 @@ mod test{
         };
         let expression = Expression::Comparison(Box::new(comparison));
         let body = vec!();
-        let if_statement = IfStatement{ expression, body };
+        let if_statement = IfStatement{ expression, body, else_body: vec!() };
         let statement = Statement::IfStatement(if_statement);
         let expected = vec!(statement);
         let result = parse(&tokens);
@@ -1434,6 +1545,14 @@ mod test{
     #[test]
     fn incomplete_or_invalid_source_is_a_parse_error_not_a_panic() {
         let cases = [
+            "define setup() }",
+            "define setup() x { }",
+            "}",
+            ")",
+            "5",
+            "name x 5",
+            "define setup(){ deck > middle 4 }",
+            "define setup(){ if true){ end() } }",
             "name",
             "players",
             "stack",
@@ -1472,7 +1591,7 @@ mod test{
             Token::Define, Token::OpenParens, Token::CloseParens, Token::Comma,
             Token::OpenBracket, Token::CloseBracket, Token::Transfer, Token::Check, Token::Is,
             Token::If, Token::Newline, Token::True, Token::False, Token::Ampersand,
-            Token::Return, Token::Test, Token::Not
+            Token::Return, Token::Test, Token::Not, Token::Or, Token::Else
         );
 
         // simple deterministic pseudo random generator, so failures are reproducible
@@ -1492,6 +1611,48 @@ mod test{
             let source_tokens = get_source_tokens(tokens.clone());
             let result = std::panic::catch_unwind(|| parse(&source_tokens));
             assert!(result.is_ok(), "parser panicked on {:?}", tokens);
+        }
+    }
+
+    #[test]
+    fn spec_test_blocks_are_skipped() {
+        let result = parse_source("name x\n.test(\n    anything (nested) here\n)\nplayers 2");
+        assert_eq!(result.unwrap().len(), 2);
+    }
+
+    #[test]
+    fn comparisons_bind_tighter_than_and() {
+        let result = parse_source("return(a is 1 & b is not 2)").unwrap();
+
+        let expected = Expression::And(Box::new(And{
+            left: Expression::Comparison(Box::new(Comparison{
+                left: Expression::Symbol("a".to_string()),
+                right: Expression::Number(1.0),
+                negative: false
+            })),
+            right: Expression::Comparison(Box::new(Comparison{
+                left: Expression::Symbol("b".to_string()),
+                right: Expression::Number(2.0),
+                negative: true
+            }))
+        }));
+
+        assert_eq!(result, vec!(Statement::ReturnStatement(ReturnStatement{ expression: expected })));
+    }
+
+    #[test]
+    fn invalid_expressions_and_else_are_parse_errors() {
+        let cases = [
+            "define setup(){ check(1 is 2 is 3) }",
+            "define setup(){ check(or true) }",
+            "define setup(){ check(true &) }",
+            "define setup(){ check((true) }",
+            "define setup(){ if(true){ } else }",
+            "define setup(){ else { } }",
+        ];
+
+        for case in cases.iter() {
+            assert!(parse_source(case).is_err(), "expected a parse error for {:?}", case);
         }
     }
 }

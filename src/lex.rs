@@ -10,7 +10,8 @@ enum TokenResult {
 #[derive(Debug, PartialEq, Clone)]
 pub enum LexErrorType{
     EmptySpecification,
-    ParseError
+    ParseError,
+    UnterminatedComment
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -22,6 +23,17 @@ pub struct LexError{
 impl LexError{
     pub fn new(error_type: LexErrorType, line_number: u32) -> LexError {
         LexError{ error_type, line_number }
+    }
+}
+
+impl std::fmt::Display for LexError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let message = match self.error_type {
+            LexErrorType::EmptySpecification => "the file is empty",
+            LexErrorType::ParseError => "unrecognised character (for example '-', '\"' or a decimal number)",
+            LexErrorType::UnterminatedComment => "a comment is never closed - missing ')'"
+        };
+        write!(f, "line {}: {}", self.line_number, message)
     }
 }
 
@@ -39,14 +51,18 @@ pub fn lexer(source: &str) -> Result<Vec<SourceToken>, LexError> {
         }
 
         let current_char = current_char_result.expect("expected a char");
+
+        // newlines inside a comment still count as lines
+        if current_char == '\n' && partial_token.is_some() {
+            line_number += 1;
+        }
+
         let next_char = chars.peek();
         let result = handle_char(&partial_token, current_char, next_char);
 
         match result {
             TokenResult::Token(t) => {
-                if t == Token::Newline {
-                    line_number += 1;
-                }
+                let is_newline = t == Token::Newline;
 
                 partial_token = None;
                 let source_token = SourceToken{
@@ -54,6 +70,11 @@ pub fn lexer(source: &str) -> Result<Vec<SourceToken>, LexError> {
                     line_number
                 };
                 tokens.push(source_token);
+
+                // a newline belongs to the line it ends
+                if is_newline {
+                    line_number += 1;
+                }
             },
             TokenResult::PartialToken(s) => {
                 partial_token = Some(s);
@@ -66,6 +87,10 @@ pub fn lexer(source: &str) -> Result<Vec<SourceToken>, LexError> {
                 return Err(lex_error);
             }
         }
+    }
+
+    if partial_token.is_some() {
+        return Err(LexError::new(LexErrorType::UnterminatedComment, line_number));
     }
 
     if tokens.len() == 0 {
@@ -98,7 +123,7 @@ fn handle_single_chars(current_char: char) -> Option<TokenResult> {
     match current_char {
         '(' => Some(TokenResult::Token(Token::OpenParens)),
         ')' => Some(TokenResult::Token(Token::CloseParens)),
-        ' ' => Some(TokenResult::Empty),
+        ' ' | '\t' | '\r' => Some(TokenResult::Empty),
         ',' => Some(TokenResult::Token(Token::Comma)),
         '{' => Some(TokenResult::Token(Token::OpenBracket)),
         '}' => Some(TokenResult::Token(Token::CloseBracket)),
@@ -144,6 +169,8 @@ fn handle_keyword(partial_token: &str, next_char: Option<&char>) -> Option<Token
         "return" => Some(TokenResult::Token(Token::Return)),
         ".test" => Some(TokenResult::Token(Token::Test)),
         "not" => Some(TokenResult::Token(Token::Not)),
+        "or" => Some(TokenResult::Token(Token::Or)),
+        "else" => Some(TokenResult::Token(Token::Else)),
         _ => None
     }
 }
@@ -494,5 +521,39 @@ this is a comment ) test2";
         );
 
         assert_eq!(result[0].token, expected[0]);
+    }
+
+    #[test]
+    fn tabs_and_carriage_returns_are_whitespace() {
+        let result = lexer("name\tx\r\nplayers 2\r\n").unwrap();
+        let tokens: Vec<Token> = result.iter().map(|t| t.token.clone()).collect();
+
+        assert_eq!(tokens, vec!(
+            Token::Name, Token::Symbol("x".to_string()), Token::Newline,
+            Token::Players, Token::Number(2.0), Token::Newline
+        ));
+    }
+
+    #[test]
+    fn newline_tokens_belong_to_the_line_they_end() {
+        let result = lexer("name x\nplayers 2").unwrap();
+
+        assert_eq!(result[2].token, Token::Newline);
+        assert_eq!(result[2].line_number, 1);
+        assert_eq!(result[3].line_number, 2);
+    }
+
+    #[test]
+    fn lines_inside_comments_are_counted() {
+        let result = lexer(".(one\ntwo\nthree)\nname x\n1foo").unwrap_err();
+
+        assert_eq!(result.line_number, 5);
+    }
+
+    #[test]
+    fn an_unterminated_comment_is_an_error() {
+        let result = lexer("name x\n.(oops\nplayers 2").unwrap_err();
+
+        assert_eq!(result.error_type, LexErrorType::UnterminatedComment);
     }
 }

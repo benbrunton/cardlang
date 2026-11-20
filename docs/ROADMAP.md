@@ -19,21 +19,22 @@ The interpreter now reports an error instead of panicking or looping. A randomis
 | 4b | Runtime crashes: `winner()` and `count()` with no arguments; `unknown > deck end`. | ✅ |
 | 5 | `cardlang test` exited `0` on failure. It now exits `1`. | ✅ |
 
-## Milestone 2: correct behaviour
+## Milestone 2: correct behaviour ✅
 
-Bugs that give game authors wrong results without any error. These matter most for the language being trustworthy.
+Bugs that gave game authors wrong results without any error.
 
 | # | Item | Status | Notes |
 |---|---|---|---|
-| 6 | `check` and `return` inside an `if` only end the `if` block. The function carries on, and the returned value is lost. | ⬜ | Make `handle_statements` return a control-flow result (continue / return value) and pass it up through `if` |
-| 7 | `&` binds wrongly: `a is 1 & b is 2` is parsed as `a is (1 & (b is 2))`. `true & f()` is always false. | ⬜ | Give comparisons higher precedence than `&` in the expression parser. Add `or`, and `else` for `if`, at the same time. |
-| 8 | A bare boolean value or function call used as a condition (`if(f(x))`) is always false | ⬜ | `resolve_to_bool` should evaluate the expression and use the result when it's a boolean |
-| 9 | Invalid input is accepted | 🟡 | `players two` and `name 5` are now rejected. A stray `}`, `)` or number at the top level is still silently ignored. |
-| 10 | Unknown pile names in transfers are silently ignored | ⬜ | Report at runtime, or better, check at parse time against the `stack` declarations |
-| 11 | Error line numbers are wrong after multi-line comments (off by the comment's line count). Some errors report line `0`. Newline tokens carry the next line's number. | ⬜ | Count newlines inside comments in the lexer |
-| 12 | Tabs and `\r` (Windows line endings) are lex errors | ⬜ | Treat them as whitespace |
-| 13 | Error messages are raw Rust debug output (`ParseError { error_type: … }`) | ⬜ | Implement `Display`: `line 5: expected a number after 'players'` |
-| 13b | `winner(x)` where `x` isn't a number records player `0` | ⬜ | Report an error instead |
+| 6 | `check` and `return` inside an `if` only ended the `if` block | ✅ | Statements now return a control-flow result that `if` passes up to the function |
+| 7 | `&` bound wrongly: `a is 1 & b is 2` was parsed as `a is (1 & (b is 2))` | ✅ | New precedence-based expression parser: `is` > `&` > `or`, with parentheses for grouping. Added `or`, `else` and `else if`. |
+| 8 | A bare boolean or function call used as a condition (`if(f(x))`) was always false | ✅ | A condition is true when it evaluates to the boolean `true` |
+| 9 | Invalid input was silently accepted | ✅ | `players two`, `name 5`, stray `}`/`)`/numbers, a number after a transfer, `if` without `(`, a block without `{`, a missing `)` and unclosed comments are all errors now. `.test(...)` blocks are skipped explicitly. |
+| 10 | Unknown pile names in transfers were silently ignored | 🟡 | Now reported on stderr when the transfer runs. Checking at parse time is still to do: it needs to know which names are parameters. |
+| 11 | Error line numbers were wrong after multi-line comments, newline tokens had the next line's number, and some errors reported line `0` | ✅ | |
+| 12 | Tabs and `\r` (Windows line endings) were lex errors | ✅ | Treated as whitespace |
+| 13 | Error messages were raw Rust debug output | ✅ | Now `error: line 5: unexpected word or symbol`. They could still say what was expected; see item 13c. |
+| 13b | `winner(x)` where `x` isn't a number recorded player `0` | ✅ | Prints an error instead |
+| 13c | Error messages should say what was found and what was expected (`line 5: expected a number after 'players', found 'two'`) | ⬜ | Needs the token stored in `ParseError` |
 
 ## Milestone 3: features to play Scopa
 
@@ -41,7 +42,7 @@ The old README todo list, plus what [`examples/simple_scopa.card`](../examples/s
 
 | # | Item | Status | Source |
 |---|---|---|---|
-| 14 | Transfer counts: `deck > middle 4` (the number is currently ignored) | ⬜ | README "limit on stack transfer" |
+| 14 | Transfer counts: `deck > middle 4` (currently a parse error) | ⬜ | README "limit on stack transfer" |
 | 15 | A real `deck` declaration (currently ignored), including `deck filter(StandardDeck, not_royal)` | ⬜ | README "filter deck in declaration" |
 | 16 | Move input: `player_move(player, move)`, plus a CLI way to choose cards | ⚠️ | Scopa |
 | 17 | Moving specific cards in a transfer: `a > b - move:cards` | ⚠️ | README "specify cards on transfer" |
