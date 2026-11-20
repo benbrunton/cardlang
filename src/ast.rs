@@ -16,7 +16,8 @@ pub enum Expression {
     Comparison(Box<Comparison>),
     Bool(bool),
     FunctionCall(FunctionCall),
-    And(Box<And>)
+    And(Box<And>),
+    Or(Box<Or>)
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -44,7 +45,8 @@ pub struct Definition {
 #[derive(Debug, PartialEq, Clone)]
 pub struct IfStatement {
     pub expression: Expression,
-    pub body: Vec<Statement>
+    pub body: Vec<Statement>,
+    pub else_body: Vec<Statement>
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -90,6 +92,12 @@ pub struct ReturnStatement {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct And {
+    pub left: Expression,
+    pub right: Expression
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct Or {
     pub left: Expression,
     pub right: Expression
 }

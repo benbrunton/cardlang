@@ -18,8 +18,8 @@ A cardlang file (`.card`) contains **declarations**, which set up the table, and
 | Comments | `.( any text )`. They can span lines, and nested parentheses are allowed: `.(a (b) c)`. |
 | Words (symbols) | Start with a letter. Can contain letters, digits, `_` and `:`. Case-sensitive. |
 | Numbers | Whole numbers only, such as `2` or `26`. |
-| Whitespace | Spaces and newlines. **Tabs and `\r` (Windows line endings) are lex errors.** |
-| Keywords | `name`, `deck`, `players`, `current_player`, `stack`, `define`, `if`, `check`, `return`, `is`, `not`, `true`, `false` |
+| Whitespace | Spaces, tabs and newlines. Windows (`\r\n`) line endings are fine. |
+| Keywords | `name`, `deck`, `players`, `current_player`, `stack`, `define`, `if`, `else`, `check`, `return`, `is`, `not`, `or`, `true`, `false` |
 
 Write one statement per line.
 
@@ -74,13 +74,15 @@ How calls work:
 |---|---|
 | `from > to` / `from > to end` | Move cards. See [Transfers](#transfers). |
 | `name(args…)` | Call a function and discard its result. |
-| `if(condition){ … }` | Run the block when the condition is true. There is no `else`. |
-| `check(condition)` | When the condition is false, stop the current block. In a function body this means the function returns `false`. |
-| `return(expression)` | Stop the function and give back the value. |
+| `if(condition){ … }` | Run the block when the condition is true. |
+| `if(condition){ … } else { … }` | Run the first block when the condition is true, otherwise the second. `else` can go on the line after the `}`. |
+| `if(a){ … } else if(b){ … } else { … }` | Run the block for the first condition that is true. |
+| `check(condition)` | When the condition is false, stop the function and return `false`. This works inside `if` blocks too. |
+| `return(expression)` | Stop the function and give back the value. This works inside `if` blocks too. |
 
-**Conditions** (in `if` and `check`) must be a comparison, `true`, `false`, or an `&` of these. Anything else, including a bare function call or parameter, counts as false. Write `if(f(x) is true)`, not `if(f(x))`.
+A **condition** (in `if` and `check`) is true only when it evaluates to the boolean `true`. A function call or parameter can be used directly: `if(is_out(player))`. A number, text or stack is never true, so `if(count(deck))` is false. Write `if(count(deck) is not 0)`.
 
-> **Inside an `if` block**, `check` and `return` only end the `if` block. The rest of the function still runs, and a `return` value there is lost. Put `check` and `return` directly in the function body. See [Known limitations](limitations.md).
+A failing `check` in `player_move` stops the move. The CLI doesn't print anything when that happens.
 
 ## Transfers
 
@@ -105,7 +107,7 @@ Valid names for `from` or `to`:
 - `p:hand`, where `p` is a player object, such as the `player` argument of `player_move`
 - `players` (as a destination only)
 
-Moving from an empty pile does nothing. A name that isn't a pile is silently ignored. A number after the destination (`deck > middle 4`) is not supported yet and is ignored.
+Moving from an empty pile does nothing. If a name isn't a pile, the transfer is skipped and `transfer ignored: unknown stack '<name>'` is printed to stderr. Moving a set number of cards (`deck > middle 4`) is not supported yet and is a parse error.
 
 ## Expressions and values
 
@@ -124,10 +126,12 @@ Values are numbers, booleans (`true` / `false`), text, and stacks (lists of card
 | `a is b` | `true` if the values are equal |
 | `a is not b` | `true` if the values differ |
 | `a & b` | `true` if both are `true` |
+| `a or b` | `true` if either is `true` |
+| `( … )` | grouping |
+
+**Precedence**, tightest first: `is` / `is not`, then `&`, then `or`. So `a is 1 & b is 2 or c is 3` means `((a is 1) & (b is 2)) or (c is 3)`. Use parentheses to group differently: `a is 1 & (b is 2 or c is 3)`. A comparison can't be chained: `a is b is c` is a parse error.
 
 Equality compares type as well as value: the number `1` is not equal to the text `1`. Two stacks are equal when they hold the same cards in the same order.
-
-> `&` is unreliable at the moment. `a is 1 & b is 2` is parsed as `a is (1 & (b is 2))` and gives the wrong answer. To require several things, write a helper function with one `check` per condition, then `return(true)`. See [Known limitations](limitations.md).
 
 ## Built-in functions
 
@@ -136,7 +140,7 @@ Equality compares type as well as value: the number `1` is not equal to the text
 | `shuffle(deck)` | Shuffles the main deck. It always shuffles `deck`, whatever you pass. | nothing |
 | `count(stack)` | Counts cards. Gives `0` for anything that isn't a stack, or when called with no argument. | number |
 | `filter(stack, f)` | Calls your function `f` with each card. Keeps the cards where `f` returns `true`. The original stack is not changed. | stack |
-| `winner(id)` | Adds a player to the winners list. Call it more than once for several winners. With no argument it prints an error and does nothing. | nothing |
+| `winner(id)` | Adds a player to the winners list. Call it more than once for several winners. Without a number it prints an error and does nothing. | nothing |
 | `end()` | Ends the game. Later moves are ignored. | nothing |
 | `next_player()` | Moves `current_player` to the next player, wrapping from the last back to 1. | nothing |
 

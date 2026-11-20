@@ -164,7 +164,7 @@ fn build_game(command: Vec<&str>) -> CommandResult {
 fn parse_game(source: String) -> Option<Game> {
     let lex_result = lex::lexer(&source);
     if lex_result.is_err() {
-        println!("parse error: {:?}", lex_result.unwrap_err());
+        eprintln!("error: {}", lex_result.unwrap_err());
         return None;
     }
 
@@ -173,7 +173,7 @@ fn parse_game(source: String) -> Option<Game> {
     let parse_result = parse::parse(&tokens);
 
     if parse_result.is_err() {
-        println!("parse error: {:?}", parse_result.unwrap_err());
+        eprintln!("error: {}", parse_result.unwrap_err());
         // maybe this should be an additional debug flag?
         //println!("{:?}", &tokens);
         return None;

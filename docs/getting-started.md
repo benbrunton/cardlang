@@ -38,8 +38,6 @@ So far this only describes the table:
 
 Every game also starts with a standard 52-card deck called `deck`.
 
-> **Indent with spaces, not tabs**, and save the file with Unix (LF) line endings. Tabs and Windows line endings currently cause a lex error.
-
 ### Setting up
 
 The `setup` function runs when the game starts. Add:
@@ -66,7 +64,7 @@ define is_out(p){
 define player_move(player){
     check(player:id is current_player)
     player:hand > middle
-    if(is_out(player) is true){
+    if(is_out(player)){
         winner(player:id)
         end()
     }
@@ -78,11 +76,9 @@ Line by line:
 
 1. `check(player:id is current_player)`: if it isn't this player's turn, stop here and ignore the move.
 2. `player:hand > middle`: move the top card of the player's hand onto the middle pile.
-3. `is_out` is a function you wrote. It returns `true` when the player's hand is empty. `if(is_out(player) is true)` calls it.
+3. `is_out` is a function you wrote. It returns `true` when the player's hand is empty. `if(is_out(player))` calls it and runs the block when it returns `true`.
 4. `winner(player:id)` records the winner and `end()` finishes the game.
 5. `next_player()` passes the turn to the next player. After the last player it goes back to player 1.
-
-> Write `if(is_out(player) is true)`, not `if(is_out(player))`. A condition has to be a comparison (`is` / `is not`), `true`, `false`, or an `&` of those. A bare function call is always treated as false. See [Known limitations](limitations.md).
 
 The full file is in [`examples/race.card`](../examples/race.card).
 
@@ -92,7 +88,7 @@ The full file is in [`examples/race.card`](../examples/race.card).
 cardlang test race.card
 ```
 
-prints `Game loaded` and `success!` when the file is valid. If it isn't, it prints a parse error with a line number. See [Known limitations](limitations.md#reading-error-messages) for how to read it.
+prints `Game loaded` and `success!` when the file is valid. If it isn't, it prints an error with the line number, such as `error: line 12: unexpected word or symbol`. See [Known limitations](limitations.md#reading-error-messages) for common causes.
 
 ## 4. Play it
 

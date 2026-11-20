@@ -17,7 +17,7 @@ define is_out(p){
 define player_move(player){
     check(player:id is current_player)
     player:hand > middle
-    if(is_out(player) is true){
+    if(is_out(player)){
         winner(player:id)
         end()
     }

@@ -52,6 +52,22 @@ pub struct Callbacks {
     pub definitions: HashMap<String, Definition>
 }
 
+// The result of running a block of statements: either it ran to the end,
+// or a `return` or failing `check` ended the enclosing function.
+enum Flow {
+    Continue,
+    Return(PrimitiveValue)
+}
+
+impl Flow {
+    fn value(self) -> PrimitiveValue {
+        match self {
+            Flow::Return(v) => v,
+            Flow::Continue => PrimitiveValue::Bool(false)
+        }
+    }
+}
+
 const INTERNAL_REF: &str = "_ref";
 const MAX_CALL_DEPTH: usize = 256;
 
@@ -107,7 +123,10 @@ impl Runtime {
                 };
                 let player_id = match self.resolve_expression(argument) {
                     PrimitiveValue::Number(n) => n,
-                    _ => 0.0
+                    other => {
+                        eprintln!("winner: expected a player id, got {:?}", other);
+                        return None;
+                    }
                 };
 
                 winner(&mut self.winners, player_id);
@@ -178,7 +197,7 @@ impl Runtime {
         }
 
         self.call_stack.push(call_stack_frame);
-        let result = self.handle_statements(&definition.body);
+        let result = self.handle_statements(&definition.body).value();
         self.call_stack.pop();
         Some(result)
     }
@@ -255,28 +274,31 @@ impl Runtime {
         }
     }
 
-    fn handle_statements(&mut self, statements: &Vec<Statement>) -> PrimitiveValue {
-        let default_return = PrimitiveValue::Bool(false);
+    fn handle_statements(&mut self, statements: &[Statement]) -> Flow {
         for statement in statements.iter() {
             match statement {
                 Statement::Transfer(t) => self.handle_transfer(t),
                 Statement::FunctionCall(f) => {
                     let _ = self.handle_function_call(f);
                 },
-                Statement::IfStatement(i) => self.handle_if_statement(i),
+                Statement::IfStatement(i) => {
+                    if let Flow::Return(v) = self.handle_if_statement(i) {
+                        return Flow::Return(v);
+                    }
+                },
                 Statement::CheckStatement(c) => {
                     if !self.resolve_to_bool(&c.expression) {
-                        return default_return;
+                        return Flow::Return(PrimitiveValue::Bool(false));
                     }
                 },
                 Statement::ReturnStatement(r) => {
-                    return self.resolve_expression(&r.expression);
+                    return Flow::Return(self.resolve_expression(&r.expression));
                 }
                 _ => ()
             }
         }
 
-        default_return
+        Flow::Continue
     }
 
     fn resolve_expression(&mut self, expression: &Expression) -> PrimitiveValue {
@@ -310,8 +332,10 @@ impl Runtime {
             },
             Expression::FunctionCall(f) => self.handle_function_call(&f).unwrap_or(PrimitiveValue::Bool(false)),
             Expression::Number(n) => PrimitiveValue::Number(*n),
-            Expression::Bool(_) | Expression::Comparison(_) => PrimitiveValue::Bool(self.resolve_to_bool(expression)),
-            _ => PrimitiveValue::Bool(false)
+            Expression::Bool(_)
+                | Expression::Comparison(_)
+                | Expression::And(_)
+                | Expression::Or(_) => PrimitiveValue::Bool(self.resolve_to_bool(expression))
         }
     }
 
@@ -346,6 +370,12 @@ impl Runtime {
         let from = self.get_stack(&t.from);
         let to = self.get_stack(&t.to);
 
+        for (name, stack) in [(&t.from, &from), (&t.to, &to)].iter() {
+            if stack.is_none() {
+                eprintln!("transfer ignored: unknown stack '{}'", name);
+            }
+        }
+
         let transfer_result = transfer(from, to, t.count.as_ref());
 
         let (new_from, new_to) = match transfer_result {
@@ -357,9 +387,11 @@ impl Runtime {
         self.set_stack(&t.to, new_to);
     }
 
-    fn handle_if_statement(&mut self, i: &IfStatement) {
+    fn handle_if_statement(&mut self, i: &IfStatement) -> Flow {
         if self.resolve_to_bool(&i.expression) {
-            self.handle_statements(&i.body.clone());
+            self.handle_statements(&i.body)
+        } else {
+            self.handle_statements(&i.else_body)
         }
     }
 
@@ -371,7 +403,9 @@ impl Runtime {
                 equal != c.negative
             },
             Expression::And(c) => self.resolve_to_bool(&c.left) && self.resolve_to_bool(&c.right),
-            _ => false
+            Expression::Or(c) => self.resolve_to_bool(&c.left) || self.resolve_to_bool(&c.right),
+            // values and function calls count as true only when they are the boolean true
+            _ => self.resolve_expression(expression) == PrimitiveValue::Bool(true)
         }
     }
 
@@ -509,7 +543,7 @@ impl Runtime {
             let card_obj = Self::build_card_object(*card);
             call_stack_frame.insert(card_arg.clone(), card_obj);
             self.call_stack.push(call_stack_frame);
-            let keep_card = self.handle_statements(&function.body.clone());
+            let keep_card = self.handle_statements(&function.body).value();
             self.call_stack.pop();
             match keep_card {
                 PrimitiveValue::Bool(b) => b,
