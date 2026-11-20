@@ -71,7 +71,7 @@ Bugs that gave game authors wrong results without any error.
 | 32 | CLI tests | ✅ `tests/cli.rs` |
 | 33 | One list of known work: this file replaces the README todo list | ✅ |
 
-CI uses the latest stable Rust, so a new Rust release can add clippy lints that fail the build. When that happens, fix the new warnings, or pin a toolchain with a `rust-toolchain.toml` if it becomes a nuisance.
+The Rust version is pinned in `rust-toolchain.toml` (currently 1.100.0), and both CI and local builds use it. This stops a new Rust release from adding clippy warnings that fail the build. To upgrade, change the version there, run `cargo clippy --all-targets -- -D warnings`, and fix anything new (`cargo clippy --fix` handles most of it).
 
 ## Milestone 5: towards full Scopa and multi-round games
 
