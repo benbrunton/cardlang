@@ -117,3 +117,50 @@ fn help_lists_the_commands() {
     assert!(stdout.contains("build <file>"));
     assert!(stdout.contains("take 7h / 3c 4s"));
 }
+
+#[test]
+fn show_before_start_says_to_start() {
+    let output = run_interactive("build ./examples/simple_scopa.card\nshow middle\nshow player 1\nshow game\nexit\n");
+    let stdout = stdout_of(&output);
+    assert_eq!(stdout.matches("the game hasn't started - type 'start' to deal").count(), 2);
+    assert!(stdout.contains("pending"));
+}
+
+#[test]
+fn the_table_is_shown_after_start_and_after_each_move() {
+    let output = run_interactive("build ./examples/simple_scopa.card\nstart\nexit\n");
+    let stdout = stdout_of(&output);
+    assert!(stdout.contains("player 1 to play"));
+    assert!(stdout.contains("  deck: 42 cards"));
+    assert!(stdout.contains("  middle: "));
+    assert!(stdout.contains("  player 1 hand: "));
+    assert!(stdout.contains("  collection: player 1: 0 cards, player 2: 0 cards"));
+
+}
+
+#[test]
+fn the_table_after_a_move_shows_the_next_player() {
+    // Simple Scopa without the shuffle, so the deal is always the same:
+    // middle king/queen/jack/ten of diamonds, player 1 nine/seven/five of diamonds
+    let source = std::fs::read_to_string("examples/simple_scopa.card").unwrap()
+        .replace("    shuffle(deck)\n", "");
+    let dir = std::env::temp_dir().join(format!("cardlang-cli-table-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("unshuffled_scopa.card");
+    std::fs::write(&file, source).unwrap();
+
+    let output = run_interactive(&format!("build {}\nstart\ndrop 9d\nexit\n", file.display()));
+    std::fs::remove_dir_all(&dir).ok();
+    let stdout = stdout_of(&output);
+
+    assert!(stdout.contains("  player 1 hand: nine diamonds, seven diamonds, five diamonds"));
+    assert!(stdout.contains("player 2 to play"));
+    assert!(stdout.contains("  middle: king diamonds, queen diamonds, jack diamonds, ten diamonds, nine diamonds"));
+    assert!(stdout.contains("  player 2 hand: eight diamonds, six diamonds, four diamonds"));
+}
+
+#[test]
+fn a_rejected_move_says_why() {
+    let output = run_interactive("build ./examples/simple_scopa.card\nstart\nplay 7h\nexit\n");
+    assert!(stdout_of(&output).contains("move ignored: not allowed: unknown move 'play' - valid moves: take, drop"));
+}

@@ -1,6 +1,7 @@
 use crate::ast::*;
 use std::fmt::Display;
 use std::collections::HashMap;
+use crate::cards::Card;
 use crate::runtime::{
     MoveInput,
     Runtime,
@@ -122,6 +123,70 @@ impl Game {
     pub fn start(&mut self) {
         self.runtime = Runtime::new(self.initial_values.clone(), self.callbacks.clone());
         self.runtime.setup();
+    }
+
+    pub fn is_started(&self) -> bool {
+        self.runtime.get_status() != "pending"
+    }
+
+    // A summary of the table, shown after `start` and after each move:
+    // whose turn it is, the deck, the shared piles, the current player's
+    // hand and how many cards are in each player's own piles.
+    pub fn table(&self) -> String {
+        let mut lines = vec!();
+
+        let winners = self.runtime.get_winners();
+        if self.runtime.get_status() == "game over" {
+            if winners.is_empty() {
+                lines.push("game over".to_string());
+            } else {
+                lines.push(format!("game over - winners: {}", Self::display_list(&winners)));
+            }
+        } else {
+            lines.push(format!("player {} to play", self.runtime.get_current_player()));
+        }
+
+        // the deck is face down, so only its size is shown
+        let deck = self.runtime.get_deck();
+        if !deck.is_empty() {
+            lines.push(format!("  deck: {}", Self::plural(deck.len(), "card")));
+        }
+
+        for name in self.initial_values.card_stacks.iter() {
+            if let Some(cards) = self.runtime.find_custom_item(name) {
+                lines.push(format!("  {}: {}", name, Self::cards_or_count(&cards)));
+            }
+        }
+
+        let current = self.runtime.get_current_player();
+        if self.runtime.get_status() != "game over" {
+            if let Some(player) = self.runtime.get_player(current.wrapping_sub(1)) {
+                lines.push(format!("  player {} hand: {}", current, Self::display_list(&player.get_hand())));
+            }
+        }
+
+        for name in self.initial_values.player_stacks.iter() {
+            let counts: Vec<String> = self.runtime.get_players().iter().map(|p| {
+                let size = p.get_stack(name).map_or(0, |cards| cards.len());
+                format!("player {}: {}", p.get_id(), Self::plural(size, "card"))
+            }).collect();
+            lines.push(format!("  {}: {}", name, counts.join(", ")));
+        }
+
+        lines.join("\n")
+    }
+
+    // long piles are summarised so the table stays readable
+    fn cards_or_count(cards: &Vec<Card>) -> String {
+        match cards.len() {
+            0 => "empty".to_string(),
+            1..=10 => Self::display_list(cards),
+            n => format!("{} cards, top: {}", n, cards[n - 1])
+        }
+    }
+
+    fn plural(n: usize, word: &str) -> String {
+        if n == 1 { format!("1 {}", word) } else { format!("{} {}s", n, word) }
     }
 
     // a move with no name or cards, as a specific player
@@ -1354,7 +1419,10 @@ def player_move(player){
 }
 ");
         game.start();
-        assert_eq!(game.player_move(1), Err("not allowed".to_string()));
+        assert_eq!(
+            game.player_move(1),
+            Err("not allowed: check failed in player_move: has_no_cards(player) is true".to_string())
+        );
 
         assert_eq!(game.show("game"), "active");
     }
@@ -2082,7 +2150,10 @@ def drop(player, move){
         game.start();
 
         // the target is moved before the sum check fails, so it must be put back
-        assert_eq!(play(&mut game, "take 9d / jd"), Err("not allowed".to_string()));
+        assert_eq!(
+            play(&mut game, "take 9d / jd"),
+            Err("not allowed: check failed in take: sum(move:target) is sum(move:cards)".to_string())
+        );
 
         assert_eq!(game.show("player 1 collection"), "");
         assert_eq!(game.show("middle"), "king diamonds, queen diamonds, jack diamonds, ten diamonds");
@@ -2110,7 +2181,10 @@ def drop(player, move){
         let mut game = game_from_source(MOVES_GAME);
         game.start();
 
-        assert_eq!(play(&mut game, "steal 9d"), Err("not allowed".to_string()));
+        assert_eq!(
+            play(&mut game, "steal 9d"),
+            Err("not allowed: unknown move 'steal' - valid moves: take, drop".to_string())
+        );
         assert_eq!(game.show("player 1"), "nine diamonds, seven diamonds, five diamonds");
     }
 
@@ -2213,5 +2287,30 @@ def drop(player, move){
 
         assert_eq!(cards_shown(&game, "player 1"), hand);
         assert_eq!(cards_shown(&game, "middle"), middle);
+    }
+
+    #[test]
+    fn a_rejected_move_without_a_name_explains_every_attempt() {
+        let mut game = game_from_source(MOVES_GAME);
+        game.start();
+
+        // two cards: take needs one played card, and so does drop
+        assert_eq!(
+            play(&mut game, "9d 7d"),
+            Err("not allowed: no valid move - check failed in take: count(move:cards) is 1; \
+                 check failed in drop: count(move:cards) is 1".to_string())
+        );
+    }
+
+    #[test]
+    fn a_failed_transfer_explains_which_card_is_missing() {
+        let mut game = game_from_source(MOVES_GAME);
+        game.start();
+
+        assert_eq!(
+            play(&mut game, "drop kc"),
+            Err("not allowed: transfer failed in drop: player:hand > middle taking move:cards \
+                 (king clubs is not in player:hand)".to_string())
+        );
     }
 }

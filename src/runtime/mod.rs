@@ -106,7 +106,11 @@ pub struct Runtime {
     card_values: HashMap<String, f64>,
     call_stack: Vec<HashMap<String, ArgumentValue>>,
     // the player and move objects of the move being made, for valid_moves
-    current_move: Option<(ArgumentValue, ArgumentValue)>
+    current_move: Option<(ArgumentValue, ArgumentValue)>,
+    // names of the game functions being run, innermost last
+    function_names: Vec<String>,
+    // why the most recent check, transfer or move failed
+    failure: Option<String>
 }
 
 impl Runtime {
@@ -124,6 +128,8 @@ impl Runtime {
             current_player: initial_values.current_player,
             call_stack: vec!(),
             current_move: None,
+            function_names: vec!(),
+            failure: None,
             card_stacks,
             card_values: initial_values.card_values.iter().cloned().collect(),
             players: Self::generate_players(initial_values.players, &initial_values.player_stacks),
@@ -250,7 +256,9 @@ impl Runtime {
         }
 
         self.call_stack.push(call_stack_frame);
+        self.function_names.push(definition.name.clone());
         let result = self.handle_statements(&definition.body).value();
+        self.function_names.pop();
         self.call_stack.pop();
         Some(result)
     }
@@ -263,7 +271,9 @@ impl Runtime {
         }
         let call_stack_frame = definition.arguments.iter().cloned().zip(values).collect();
         self.call_stack.push(call_stack_frame);
+        self.function_names.push(definition.name.clone());
         let result = self.handle_statements(&definition.body);
+        self.function_names.pop();
         self.call_stack.pop();
         result
     }
@@ -338,15 +348,21 @@ impl Runtime {
 
         // a move either happens completely or not at all
         let before = self.snapshot();
+        self.failure = None;
         self.current_move = Some((player, move_object));
         self.call_stack.push(call_stack_frame);
+        self.function_names.push(p_move.name.clone());
         let result = self.handle_statements(&p_move.body);
+        self.function_names.pop();
         self.call_stack.pop();
         self.current_move = None;
 
         if Self::failed(&result) {
             self.restore(before);
-            return Err("not allowed".to_string());
+            return Err(match self.failure.take() {
+                Some(reason) => format!("not allowed: {}", reason),
+                None => "not allowed".to_string()
+            });
         }
         Ok(())
     }
@@ -427,18 +443,22 @@ impl Runtime {
                 Some(definition) => !Self::failed(&self.call_with_values(definition, values)),
                 None => {
                     let names: Vec<String> = moves.iter().map(|d| d.name.clone()).collect();
-                    eprintln!("unknown move '{}' - valid moves: {}", name, names.join(", "));
+                    self.failure = Some(format!("unknown move '{}' - valid moves: {}", name, names.join(", ")));
                     false
                 }
             },
             None => {
+                let mut reasons = vec!();
                 for definition in moves.iter() {
                     let before = self.snapshot();
+                    self.failure = None;
                     if !Self::failed(&self.call_with_values(definition, values.clone())) {
                         return true;
                     }
                     self.restore(before);
+                    reasons.push(self.failure.take().unwrap_or_else(|| format!("{} failed", definition.name)));
                 }
+                self.failure = Some(format!("no valid move - {}", reasons.join("; ")));
                 false
             }
         }
@@ -446,11 +466,23 @@ impl Runtime {
 
     pub fn setup(&mut self) {
         self.status = GameState::Active;
-        let setup = self.callbacks.setup.clone();
-        match setup {
-            Some(setup) => { self.handle_statements(&setup.body.clone()); },
-            _ => ()
+        if let Some(setup) = self.callbacks.setup.clone() {
+            self.failure = None;
+            self.function_names.push(setup.name.clone());
+            let result = self.handle_statements(&setup.body);
+            self.function_names.pop();
+            if Self::failed(&result) {
+                if let Some(reason) = self.failure.take() {
+                    eprintln!("setup stopped: {}", reason);
+                }
+            }
         }
+    }
+
+    // records why something failed, e.g. "check failed in take: count(move:cards) is 1"
+    fn fail(&mut self, what: &str, detail: String) {
+        let function = self.function_names.last().cloned().unwrap_or_else(|| "game".to_string());
+        self.failure = Some(format!("{} in {}: {}", what, function, detail));
     }
 
     fn handle_statements(&mut self, statements: &[Statement]) -> Flow {
@@ -476,11 +508,16 @@ impl Runtime {
                 },
                 Statement::CheckStatement(c) => {
                     if !self.resolve_to_bool(&c.expression) {
+                        self.fail("check failed", c.expression.to_string());
                         return Flow::Return(PrimitiveValue::Bool(false));
                     }
                 },
                 Statement::ReturnStatement(r) => {
-                    return Flow::Return(self.resolve_expression(&r.expression));
+                    let value = self.resolve_expression(&r.expression);
+                    if value == PrimitiveValue::Bool(false) {
+                        self.fail("returned false", format!("return({})", r.expression));
+                    }
+                    return Flow::Return(value);
                 }
                 _ => ()
             }
@@ -596,15 +633,12 @@ impl Runtime {
         let from = self.get_stack(&t.from);
         let to = self.get_stack(&t.to);
 
-        let mut known = true;
         for (name, stack) in [(&t.from, &from), (&t.to, &to)].iter() {
             if stack.is_none() {
-                eprintln!("transfer failed: unknown stack '{}'", name);
-                known = false;
+                let detail = format!("{} (unknown stack '{}')", t, name);
+                self.fail("transfer failed", detail);
+                return false;
             }
-        }
-        if !known {
-            return false;
         }
 
         if let Some(TransferCount::Taking(cards)) = &t.count {
@@ -613,7 +647,10 @@ impl Runtime {
 
         let (new_from, new_to) = match transfer(from, to, t.count.as_ref()) {
             Some((a, b)) => (a, b),
-            None => return false
+            None => {
+                self.fail("transfer failed", t.to_string());
+                return false;
+            }
         };
 
         self.set_stack(&t.from, new_from);
@@ -632,7 +669,7 @@ impl Runtime {
         let (mut from_stack, mut to_stack) = match (from, to) {
             (Some(TransferTarget::Stack(f)), Some(TransferTarget::Stack(t))) => (f, t),
             _ => {
-                eprintln!("transfer failed: 'taking' needs a single stack on each side");
+                self.fail("transfer failed", format!("{} ('taking' needs a single stack on each side)", t));
                 return false;
             }
         };
@@ -640,7 +677,7 @@ impl Runtime {
         let wanted = match self.resolve_expression(cards) {
             PrimitiveValue::Stack(c) => c,
             other => {
-                eprintln!("transfer failed: 'taking' needs cards, got {:?}", other);
+                self.fail("transfer failed", format!("{} ('taking' needs cards, got {:?})", t, other));
                 return false;
             }
         };
@@ -649,7 +686,10 @@ impl Runtime {
             match from_stack.iter().position(|c| c == card) {
                 Some(i) => { from_stack.remove(i); },
                 // not all the cards are there, so move none of them
-                None => return false
+                None => {
+                    self.fail("transfer failed", format!("{} ({} is not in {})", t, card, t.from));
+                    return false;
+                }
             }
             to_stack.push(*card);
         }
@@ -777,7 +817,9 @@ impl Runtime {
             let card_obj = self.build_card_object(*card);
             call_stack_frame.insert(card_arg.clone(), card_obj);
             self.call_stack.push(call_stack_frame);
+            self.function_names.push(function.name.clone());
             let keep_card = self.handle_statements(&function.body).value();
+            self.function_names.pop();
             self.call_stack.pop();
             match keep_card {
                 PrimitiveValue::Bool(b) => b,

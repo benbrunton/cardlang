@@ -100,29 +100,29 @@ Cardlang interpreter
 > build ./race.card
 Game loaded
 > start
-> show players
-player 1 (cards: 26), player 2 (cards: 26)
+player 1 to play
+  middle: empty
+  player 1 hand: seven diamonds, ace clubs, …
 > move
-> show current_player
-2
+player 2 to play
+  middle: seven clubs
+  player 2 hand: jack spades, two spades, …
 > 1 move
-move ignored: not allowed
-> show players
-player 1 (cards: 25), player 2 (cards: 26)
+move ignored: not allowed: check failed in player_move: player:id is current_player
 > move
-> show middle
-six diamonds, seven clubs
-> show game
-active
+player 1 to play
+  middle: seven clubs, eight clubs
+  player 1 hand: seven diamonds, ace clubs, …
 ```
 
-Any line that isn't one of the CLI's own commands is a move. `move` makes a move for the current player. Race's moves don't need a name or cards, so any word would do. `1 move` tries to move as player 1. That's rejected because it's player 2's turn, so the `check` fails. Your cards will differ because the deck is shuffled.
+`start` deals the cards and shows the table: whose turn it is, the piles, and the current player's hand (shortened here; a hand is listed bottom first, so the card played is the last one). Any line that isn't one of the CLI's own commands is a move. `move` makes a move for the current player. Race's moves don't need a name or cards, so any word would do. After each move the table is shown again.
 
-Keep typing `move`. When player 1 plays their last card, `show game` prints:
+`1 move` tries to move as player 1. It's rejected because it's player 2's turn, and the message shows which rule failed. Your cards will differ because the deck is shuffled.
+
+Keep typing `move`. When player 1 plays their last card, the table shows:
 
 ```
-game over
-winners: 1
+game over - winners: 1
 ```
 
 Moves made after the game is over are ignored. Type `start` to deal a fresh game, `help` to list the commands, or `exit` to quit. All the commands are in [Using the CLI](cli.md).

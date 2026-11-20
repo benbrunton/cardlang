@@ -19,12 +19,12 @@ With no arguments, `cardlang` opens a prompt (`>`) that takes one line at a time
 | Command | What it does |
 |---|---|
 | `build <path>` | Loads a game file. Prints `Game loaded` or an error. Building again replaces the current game. |
-| `start` | Starts the game: resets the table, then runs `setup`. Running it again starts a fresh game. |
+| `start` | Starts the game: resets the table, runs `setup`, then shows [the table](#the-table). Running it again starts a fresh game. |
 | `show <what>` | Prints part of the game state (see below). |
 | `help` | Lists the commands and the move syntax. |
 | `exit` | Quits. End of input (Ctrl-D, or the end of a piped script) also quits. |
 
-Empty lines are ignored. Until a game has been built, moves, `start` and `show` print `no game loaded - use 'build <file>' first`.
+Empty lines are ignored. Until a game has been built, moves, `start` and `show` print `no game loaded - use 'build <file>' first`. After `build` but before `start`, nothing has been dealt yet, so `show` prints `the game hasn't started - type 'start' to deal` (except `show game` and `show name`).
 
 These five words are reserved. A game can't define a function called `build`, `start`, `show`, `help` or `exit`.
 
@@ -60,9 +60,29 @@ For games where a move needs no name or cards, such as [Race](../examples/race.c
 
 Case doesn't matter. A word that looks like a card (`as`, `seven`, `10`) is always read as a card, so it can't be used as a move name.
 
+### The table
+
+After `start` and after every accepted move, the CLI shows the state of the game:
+
+```
+player 2 to play
+  deck: 42 cards
+  middle: three hearts, ten clubs, ace clubs, ten diamonds
+  player 2 hand: six clubs, ace diamonds, eight hearts
+  collection: player 1: 0 cards, player 2: 2 cards
+```
+
+- the first line says whose turn it is, or `game over - winners: …`
+- the deck shows only how many cards are left, because it's face down
+- every pile declared with `stack` is listed; a pile with more than 10 cards shows its size and top card
+- the current player's hand is shown in full, so the CLI works for players passing the keyboard round
+- piles declared with `stack <name> per player` show how many cards each player has
+
+The `show` commands below give more detail.
+
 ### When a move is ignored
 
-A move either happens completely or not at all. If it's rejected, nothing in the game changes.
+A move either happens completely or not at all. If it's rejected, nothing in the game changes, and the CLI says why.
 
 | Situation | Message |
 |---|---|
@@ -70,11 +90,14 @@ A move either happens completely or not at all. If it's rejected, nothing in the
 | after the game has ended | `move ignored: the game is over` |
 | the game has no `player_move` function | `move ignored: this game does not define player_move` |
 | no such player (e.g. `0 move`, or `3 move` with 2 players) | `move ignored: there is no player 3 (players: 2)` |
-| the game's rules reject it (a failed `check` or transfer, or no valid move) | `move ignored: not allowed` |
+| a `check` in the game fails | `move ignored: not allowed: check failed in take: sum(move:target) is sum(move:cards)` |
+| a transfer can't happen | `move ignored: not allowed: transfer failed in drop: player:hand > middle taking move:cards (king clubs is not in player:hand)` |
+| no move name given, and no move works | `move ignored: not allowed: no valid move - check failed in take: …; check failed in drop: …` (one reason per move tried) |
+| an unknown move name | `move ignored: not allowed: unknown move 'play' - valid moves: take, drop` |
 | something that isn't a card | `'7x' is not a card (try 7h, 10d, ks or 'seven hearts')` |
 | the old `move 2` syntax | `to move as player 2, put the number first: '2 move'` |
 
-`move ignored: not allowed` doesn't yet say *which* rule failed. Naming an unknown move also prints `unknown move '<name>' - valid moves: …`.
+The reason shows the game's rule as it's written in the `.card` file, so it helps to know the game's rules.
 
 ### `show`
 

@@ -131,3 +131,46 @@ pub const RANK_NAMES: [&str; 13] = [
     "Ace", "Two", "Three", "Four", "Five", "Six", "Seven",
     "Eight", "Nine", "Ten", "Jack", "Queen", "King"
 ];
+
+// Source-like text for expressions and transfers, used in messages
+impl std::fmt::Display for Expression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Expression::Symbol(s) => write!(f, "{}", s),
+            Expression::Number(n) if n.fract() == 0.0 => write!(f, "{}", *n as i64),
+            Expression::Number(n) => write!(f, "{}", n),
+            Expression::Bool(b) => write!(f, "{}", b),
+            Expression::FunctionCall(c) => {
+                let arguments: Vec<String> = c.arguments.iter().map(|a| a.to_string()).collect();
+                write!(f, "{}({})", c.name, arguments.join(", "))
+            },
+            Expression::Comparison(c) => {
+                let is = if c.negative { "is not" } else { "is" };
+                write!(f, "{} {} {}", c.left, is, c.right)
+            },
+            Expression::And(a) => write!(f, "{} & {}", a.left, a.right),
+            Expression::Or(o) => write!(f, "({} or {})", o.left, o.right),
+            Expression::Binary(b) => {
+                let op = match b.op {
+                    BinaryOp::Add => "+",
+                    BinaryOp::Subtract => "-",
+                    BinaryOp::LessThan => "<",
+                    BinaryOp::GreaterThan => ">"
+                };
+                write!(f, "{} {} {}", b.left, op, b.right)
+            }
+        }
+    }
+}
+
+impl std::fmt::Display for Transfer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} > {}", self.from, self.to)?;
+        match &self.count {
+            None => Ok(()),
+            Some(TransferCount::End) => write!(f, " end"),
+            Some(TransferCount::Number(n)) => write!(f, " {}", n),
+            Some(TransferCount::Taking(cards)) => write!(f, " taking {}", cards)
+        }
+    }
+}
