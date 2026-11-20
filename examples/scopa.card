@@ -107,28 +107,21 @@ def new_hand(){
     deck > players 3
 }
 
-def player_move(player, move){
-    check(player:id is current_player, it's not your turn)
-    valid_moves(take, drop)
-    next_player()
-    after_move()
-}
-
 
 .(Moves)
 
-def take(player, move){
-    check(count(move:cards) is 1, play one card from your hand, e.g. take 5d / 2c 3s)
-    check(count(move:target) > 0, put a / before the cards you're capturing, e.g. take 5d / 2c 3s)
-    check(cards_in_stack(move:cards, player:hand), you can only play a card from your hand)
-    check(cards_in_stack(move:target, middle), you can only capture cards from the middle)
-    check(sum(move:target) is sum(move:cards), the cards you capture must add up to the card you play)
-    if(any card c in middle: c:value is sum(move:cards)){
-        check(count(move:target) is 1, a card in the middle matches yours - you must take that card on its own)
+move take(player, played, captured){
+    check(count(played) is 1, play one card from your hand, e.g. take 5d / 2c 3s)
+    check(count(captured) > 0, put a / before the cards you're capturing, e.g. take 5d / 2c 3s)
+    check(cards_in_stack(played, player:hand), you can only play a card from your hand)
+    check(cards_in_stack(captured, middle), you can only capture cards from the middle)
+    check(sum(captured) is sum(played), the cards you capture must add up to the card you play)
+    if(any card c in middle: c:value is sum(played)){
+        check(count(captured) is 1, a card in the middle matches yours - you must take that card on its own)
     }
 
-    middle > player:collection taking move:target
-    player:hand > player:collection taking move:cards
+    middle > player:collection taking captured
+    player:hand > player:collection taking played
     last_capturer = player:id
 
     .(clearing the middle is a scopa, unless it was the last play of the hand)
@@ -137,12 +130,11 @@ def take(player, move){
     }
 }
 
-def drop(player, move){
-    check(count(move:cards) is 1, drop one card, e.g. drop 5d)
-    check(count(move:target) is 0, to capture cards use take, e.g. take 5d / 2c 3s)
-    check(cards_in_stack(move:cards, player:hand), you can only drop a card from your hand)
+move drop(player, played){
+    check(count(played) is 1, drop one card, e.g. drop 5d)
+    check(cards_in_stack(played, player:hand), you can only drop a card from your hand)
     check(can_capture(player) is false, you can capture, so you must - use take)
-    player:hand > middle taking move:cards
+    player:hand > middle taking played
 }
 
 .(true if any card in the hand can capture: some cards in the middle add up to it)
@@ -158,6 +150,7 @@ def is_last_play(){
     return(count(deck) is 0 & every player p: count(p:hand) is 0)
 }
 
+.(after_move runs after every successful move)
 def after_move(){
     if(every player p: count(p:hand) is 0){
         if(count(deck) > 0){

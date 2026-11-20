@@ -42,6 +42,8 @@ pub enum Token {
     Most,
     // the `number` declaration keyword
     NumberType,
+    // `move take(...)`: a definition players can use as a move
+    Move,
     // free text, e.g. the message in check(rule, message)
     Text(String)
 }

@@ -269,6 +269,7 @@ fn handle_keyword(partial_token: &str, next_char: Option<&char>) -> Option<Token
         "any" => Some(TokenResult::Token(Token::Any)),
         "most" => Some(TokenResult::Token(Token::Most)),
         "number" => Some(TokenResult::Token(Token::NumberType)),
+        "move" => Some(TokenResult::Token(Token::Move)),
         _ => None
     }
 }

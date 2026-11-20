@@ -6,7 +6,7 @@ use crate::cards::{card_code, Card};
 // What the CLI can offer when the player presses Tab
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct CompletionContext {
-    // the moves named in the game's valid_moves(...) calls
+    // the game's moves, declared with `move`
     pub move_names: Vec<String>,
     // shared piles declared with `stack`
     pub stacks: Vec<String>,
@@ -19,26 +19,6 @@ pub struct CompletionContext {
     pub table: Vec<String>
 }
 
-// finds the function names passed to valid_moves(...) anywhere in a body
-fn collect_valid_moves(statements: &[Statement], names: &mut Vec<String>) {
-    for statement in statements {
-        match statement {
-            Statement::FunctionCall(f) if f.name == "valid_moves" => {
-                for argument in f.arguments.iter() {
-                    if let Expression::Symbol(name) = argument {
-                        names.push(name.clone());
-                    }
-                }
-            },
-            Statement::IfStatement(i) => {
-                collect_valid_moves(&i.body, names);
-                collect_valid_moves(&i.else_body, names);
-            },
-            Statement::Every(e) => collect_valid_moves(&e.body, names),
-            _ => ()
-        }
-    }
-}
 use crate::runtime::{
     MoveInput,
     Runtime,
@@ -71,13 +51,20 @@ impl Game {
         };
 
         let mut callbacks = Callbacks {
-            definitions: HashMap::new()
+            definitions: HashMap::new(),
+            moves: vec![]
         };
 
         for statement in ast.iter() {
             match statement {
                 Statement::Definition(d) => {
                     callbacks.definitions.insert(d.name.clone(), d.clone());
+                },
+                Statement::MoveDefinition(d) => {
+                    callbacks.definitions.insert(d.name.clone(), d.clone());
+                    if !callbacks.moves.contains(&d.name) {
+                        callbacks.moves.push(d.name.clone());
+                    }
                 },
                 Statement::Declaration(Declaration{
                     key: GlobalKey::Name,
@@ -173,12 +160,7 @@ impl Game {
 
     // What tab completion at the CLI can offer for this game right now
     pub fn completion_context(&self) -> CompletionContext {
-        let mut move_names = vec![];
-        for definition in self.callbacks.definitions.values() {
-            collect_valid_moves(&definition.body, &mut move_names);
-        }
-        move_names.sort();
-        move_names.dedup();
+        let move_names = self.callbacks.moves.clone();
 
         let started = self.is_started();
         let current = self.runtime.get_current_player();
@@ -632,9 +614,9 @@ mod test{
             )
         ];
 
-        let name = "player_move".to_owned();
+        let name = "play".to_owned();
         let definition = Definition{ arguments: vec![], name, body };
-        let statement = Statement::Definition(definition);
+        let statement = Statement::MoveDefinition(definition);
 
         let ast = vec![statement];
 
@@ -668,9 +650,9 @@ mod test{
             )
         ];
 
-        let name = "player_move".to_owned();
+        let name = "play".to_owned();
         let definition = Definition{ arguments: vec!["player".to_string()], name, body };
-        let statement = Statement::Definition(definition);
+        let statement = Statement::MoveDefinition(definition);
 
         let ast = vec![
             players,
@@ -706,12 +688,21 @@ mod test{
             )
         ];
 
-        let name = "player_move".to_owned();
+        let name = "play".to_owned();
         let definition = Definition{ arguments: vec!["player".to_string()], name, body };
-        let statement = Statement::Definition(definition);
+        let statement = Statement::MoveDefinition(definition);
+
+        // it's player 2's turn
+        let current = Statement::Declaration(
+            Declaration {
+                key: GlobalKey::CurrentPlayer,
+                value: Expression::Number(2.0)
+            }
+        );
 
         let ast = vec![
             players,
+            current,
             statement
         ];
 
@@ -825,9 +816,9 @@ mod test{
             )
         ];
 
-        let name = "player_move".to_owned();
+        let name = "play".to_owned();
         let definition = Definition{ arguments: vec![], name, body };
-        let statement = Statement::Definition(definition);
+        let statement = Statement::MoveDefinition(definition);
 
         let ast = vec![
             players,
@@ -862,9 +853,9 @@ mod test{
             )
         ];
 
-        let name = "player_move".to_owned();
+        let name = "play".to_owned();
         let definition = Definition{ arguments: vec![], name, body };
-        let statement = Statement::Definition(definition);
+        let statement = Statement::MoveDefinition(definition);
 
         let body = vec![
             Statement::FunctionCall(
@@ -934,9 +925,9 @@ mod test{
             )
         ];
 
-        let name = "player_move".to_owned();
+        let name = "play".to_owned();
         let definition = Definition{ arguments: vec!["player".to_string()], name, body };
-        let statement = Statement::Definition(definition);
+        let statement = Statement::MoveDefinition(definition);
         let ast = vec![declaration, statement];
 
         let mut game = Game::new(ast);
@@ -1124,9 +1115,9 @@ mod test{
             Statement::IfStatement(if_statement)
         ];
 
-        let name = "player_move".to_owned();
+        let name = "play".to_owned();
         let definition = Definition{ name, body, arguments: vec![] };
-        let statement = Statement::Definition(definition);
+        let statement = Statement::MoveDefinition(definition);
         ast.push(statement);
 
         let mut game = Game::new(ast);
@@ -1193,9 +1184,9 @@ mod test{
             Statement::IfStatement(if_statement)
         ];
 
-        let name = "player_move".to_owned();
+        let name = "play".to_owned();
         let definition = Definition{ name, body, arguments: vec!["player".to_string()] };
-        let statement = Statement::Definition(definition);
+        let statement = Statement::MoveDefinition(definition);
         ast.push(statement);
 
         let mut game = Game::new(ast);
@@ -1439,9 +1430,9 @@ mod test{
             )
         ];
 
-        let name = "player_move".to_owned();
+        let name = "play".to_owned();
         let definition = Definition{ arguments: vec!["pl".to_string()], name, body };
-        let statement = Statement::Definition(definition);
+        let statement = Statement::MoveDefinition(definition);
 
         let ast = vec![
             players,
@@ -1491,7 +1482,7 @@ def has_no_cards(p){
     return(count(p:hand) is 0)
 }
 
-def player_move(player){
+move play(player){
     check(has_no_cards(player) is true)
     end()
 }
@@ -1515,7 +1506,7 @@ def setup(){
     deck > players end
 }
 
-def player_move(player){
+move play(player){
     check(has_no_cards(player) is true)
     end()
 }
@@ -1523,7 +1514,7 @@ def player_move(player){
         game.start();
         assert_eq!(
             game.player_move(1),
-            Err("not allowed: check failed in player_move: has_no_cards(player) is true".to_string())
+            Err("not allowed: check failed in play: has_no_cards(player) is true".to_string())
         );
 
         assert_eq!(game.show("game"), "active");
@@ -1543,7 +1534,7 @@ def setup(){
     deck > players
 }
 
-def player_move(player){
+move play(player){
     discard(player)
 }
 ");
@@ -1657,7 +1648,7 @@ def setup(){
     deck > players
 }
 
-def player_move(player){
+move play(player){
     player:hand > middle
     if(count(player:hand) is 0){
         end()
@@ -1716,7 +1707,7 @@ players 2
         let mut game = game_from_source("
 players 2
 
-def player_move(player){
+move play(player){
     end()
 }
 ");
@@ -1725,7 +1716,7 @@ def player_move(player){
         assert!(game.player_move(0).is_err());
         assert!(game.player_move(3).is_err());
         assert_eq!(game.show("game"), "active");
-        assert!(game.player_move(2).is_ok());
+        assert!(game.player_move(1).is_ok());
     }
 
     #[test]
@@ -2063,13 +2054,14 @@ def setup(){
     fn per_player_stacks_can_be_used_through_a_player_object() {
         let mut game = game_from_source("
 players 2
+current_player 2
 player stack collection
 
 def setup(){
     deck > players 2
 }
 
-def player_move(player){
+move play(player){
     player:hand > player:collection
     if(count(player:collection) is 1 & count(player:hand) is 1){
         end()
@@ -2211,20 +2203,16 @@ def setup(){
     deck > players 3
 }
 
-def player_move(player, move){
-    valid_moves(take, drop)
+move take(player, played, captured){
+    check(count(played) is 1)
+    middle > player:collection taking captured
+    check(sum(captured) is sum(played))
+    player:hand > player:collection taking played
 }
 
-def take(player, move){
-    check(count(move:cards) is 1)
-    middle > player:collection taking move:target
-    check(sum(move:target) is sum(move:cards))
-    player:hand > player:collection taking move:cards
-}
-
-def drop(player, move){
-    check(count(move:cards) is 1)
-    player:hand > middle taking move:cards
+move drop(player, played){
+    check(count(played) is 1)
+    player:hand > middle taking played
 }
 ";
 
@@ -2254,7 +2242,7 @@ def drop(player, move){
         // the target is moved before the sum check fails, so it must be put back
         assert_eq!(
             play(&mut game, "take 9d / jd"),
-            Err("not allowed: check failed in take: sum(move:target) is sum(move:cards)".to_string())
+            Err("not allowed: check failed in take: sum(captured) is sum(played)".to_string())
         );
 
         assert_eq!(game.show("player 1 collection"), "");
@@ -2263,7 +2251,7 @@ def drop(player, move){
     }
 
     #[test]
-    fn without_a_name_the_first_valid_move_is_used() {
+    fn without_a_name_the_first_move_that_works_is_used() {
         let mut game = game_from_source(MOVES_GAME);
         game.start();
 
@@ -2271,11 +2259,11 @@ def drop(player, move){
         play(&mut game, "9d / 10d").unwrap();
         assert_eq!(game.show("player 1 collection"), "ten diamonds, nine diamonds");
 
-        // take fails (jack is 11, not 7) and is undone, so the card is dropped
-        play(&mut game, "7d / jd").unwrap();
-        assert_eq!(game.show("player 1 collection"), "ten diamonds, nine diamonds");
-        assert_eq!(game.show("middle"), "king diamonds, queen diamonds, jack diamonds, seven diamonds");
-        assert_eq!(game.show("player 1"), "five diamonds");
+        // player 2: take fails (nothing adds up to 8) and is undone, so the card is dropped
+        play(&mut game, "8d").unwrap();
+        assert_eq!(game.show("player 2 collection"), "");
+        assert_eq!(game.show("middle"), "king diamonds, queen diamonds, jack diamonds, eight diamonds");
+        assert_eq!(game.show("player 2"), "six diamonds, four diamonds");
     }
 
     #[test]
@@ -2285,19 +2273,87 @@ def drop(player, move){
 
         assert_eq!(
             play(&mut game, "steal 9d"),
-            Err("not allowed: unknown move 'steal' - valid moves: take, drop".to_string())
+            Err("unknown move 'steal' - the moves are: take, drop".to_string())
         );
         assert_eq!(game.show("player 1"), "nine diamonds, seven diamonds, five diamonds");
     }
 
     #[test]
-    fn moves_can_be_made_for_another_player() {
+    fn only_the_current_player_can_move_and_then_the_turn_passes_on() {
         let mut game = game_from_source(MOVES_GAME);
         game.start();
 
+        assert_eq!(play(&mut game, "2 drop 8d"), Err("it's not your turn".to_string()));
+        play(&mut game, "drop 9d").unwrap();
+        assert_eq!(game.show("current_player"), "2");
         play(&mut game, "2 drop 8d").unwrap();
+        assert_eq!(game.show("current_player"), "1");
+        // a failed move doesn't pass the turn
+        assert!(play(&mut game, "drop 4d").is_err());
+        assert_eq!(game.show("current_player"), "1");
+    }
 
-        assert_eq!(game.show("player 2"), "six diamonds, four diamonds");
+    #[test]
+    fn a_move_given_more_groups_than_it_takes_is_rejected() {
+        let mut game = game_from_source(MOVES_GAME);
+        game.start();
+
+        assert_eq!(play(&mut game, "drop 9d / 10d"), Err("drop takes one group of cards, without a /".to_string()));
+        assert_eq!(play(&mut game, "take 9d / 10d / kd"), Err("take takes at most 2 groups of cards, separated by /".to_string()));
+    }
+
+    #[test]
+    fn after_move_runs_after_each_move_and_a_move_can_choose_who_plays_next() {
+        let mut game = game_from_source("
+players 3
+number moves
+
+def setup(){
+    deck > players 3
+}
+
+move play(player){
+    player:hand > deck
+}
+
+move again(player){
+    player:hand > deck
+    current_player = player:id
+}
+
+def after_move(){
+    moves = moves + 1
+}
+");
+        game.start();
+
+        play(&mut game, "play").unwrap();
+        assert_eq!(game.show("current_player"), "2");
+        // again keeps the turn with the same player, even though that's who already had it
+        play(&mut game, "2 again").unwrap();
+        assert_eq!(game.show("current_player"), "2");
+        play(&mut game, "2 play").unwrap();
+        assert_eq!(game.show("current_player"), "3");
+        assert_eq!(game.show("moves"), "3");
+    }
+
+    #[test]
+    fn a_game_without_moves_says_so() {
+        let mut game = game_from_source("
+players 2
+");
+        game.start();
+        assert_eq!(game.player_move(1), Err("this game has no moves - declare them with 'move'".to_string()));
+    }
+
+    #[test]
+    fn move_names_cannot_look_like_cards() {
+        for name in ["seven", "as", "10"].iter() {
+            let source = format!("move {}(player){{ end() }}", name);
+            let tokens = crate::lex::lexer(&source);
+            let parsed = tokens.map(|t| crate::parse::parse(&t));
+            assert!(!matches!(parsed, Ok(Ok(_))), "{} should not be allowed as a move name", name);
+        }
     }
 
     #[test]
@@ -2402,7 +2458,7 @@ def drop(player, move){
         assert_eq!(play(&mut game, "take 8d / 10d"), Err("you can only play a card from your hand".to_string()));
         assert_eq!(play(&mut game, "take 9d / 3c"), Err("you can only capture cards from the middle".to_string()));
         assert_eq!(play(&mut game, "take 9d / 10d"), Err("the cards you capture must add up to the card you play".to_string()));
-        assert_eq!(play(&mut game, "drop 9d / 10d"), Err("to capture cards use take, e.g. take 9d / 4c 5s".to_string()));
+        assert_eq!(play(&mut game, "drop 9d / 10d"), Err("drop takes one group of cards, without a /".to_string()));
         assert_eq!(play(&mut game, "2 drop 8d"), Err("it's not your turn".to_string()));
         play(&mut game, "drop 9d").unwrap();
     }
@@ -2434,8 +2490,8 @@ def drop(player, move){
         // two cards: take needs one played card, and so does drop
         assert_eq!(
             play(&mut game, "9d 7d"),
-            Err("not allowed: no valid move - check failed in take: count(move:cards) is 1; \
-                 check failed in drop: count(move:cards) is 1".to_string())
+            Err("not allowed: no valid move - check failed in take: count(played) is 1; \
+                 check failed in drop: count(played) is 1".to_string())
         );
     }
 
@@ -2446,7 +2502,7 @@ def drop(player, move){
 
         assert_eq!(
             play(&mut game, "drop kc"),
-            Err("not allowed: transfer failed in drop: player:hand > middle taking move:cards \
+            Err("not allowed: transfer failed in drop: player:hand > middle taking played \
                  (king clubs is not in player:hand)".to_string())
         );
     }
@@ -2461,8 +2517,8 @@ def setup(){
     deck > players 3
 }
 
-def player_move(player, move){
-    check(count(move:target) > 0, put a / before the cards you're capturing, e.g. take 7h / 7c)
+move take(player, played, captured){
+    check(count(captured) > 0, put a / before the cards you're capturing, e.g. take 7h / 7c)
     end()
 }
 ");
@@ -2480,23 +2536,19 @@ def player_move(player, move){
         let mut game = game_from_source("
 players 2
 
-def player_move(player, move){
-    valid_moves(take, drop)
+move take(player, played, captured){
+    check(count(captured) > 0, nothing to take)
 }
 
-def take(player, move){
-    check(count(move:target) > 0, nothing to take)
-}
-
-def drop(player, move){
-    check(count(move:cards) is 0)
+move drop(player, played){
+    check(count(played) is 0)
 }
 ");
         game.start();
 
         assert_eq!(
             play(&mut game, "9d"),
-            Err("not allowed: no valid move - nothing to take; check failed in drop: count(move:cards) is 0".to_string())
+            Err("not allowed: no valid move - nothing to take; check failed in drop: count(played) is 0".to_string())
         );
     }
 
@@ -2572,7 +2624,7 @@ def setup(){
     deck > players 2
 }
 
-def player_move(player){
+move play(player){
     check(every card c in player:hand: c:suit is Diamonds, all diamonds)
     end()
 }
@@ -2829,7 +2881,7 @@ def setup(){
     current_player = 3
 }
 
-def player_move(player){
+move play(player){
     current_player = 7
 }
 ");
@@ -2837,7 +2889,7 @@ def player_move(player){
         assert_eq!(game.show("current_player"), "3");
         assert_eq!(
             game.player_move(3),
-            Err("not allowed: assignment failed in player_move: current_player = 7 (there is no player 7)".to_string())
+            Err("not allowed: assignment failed in play: current_player = 7 (there is no player 7)".to_string())
         );
     }
 
@@ -2847,7 +2899,7 @@ def player_move(player){
 players 2
 number total
 
-def player_move(player){
+move play(player){
     total = 5
     missing = 1
 }
@@ -2855,7 +2907,7 @@ def player_move(player){
         game.start();
         assert_eq!(
             game.player_move(1),
-            Err("not allowed: assignment failed in player_move: missing = 1 ('missing' isn't a declared number)".to_string())
+            Err("not allowed: assignment failed in play: missing = 1 ('missing' isn't a declared number)".to_string())
         );
         // the failed move is undone, including the earlier assignment
         assert_eq!(game.show("total"), "0");

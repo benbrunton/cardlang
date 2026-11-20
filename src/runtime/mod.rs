@@ -60,7 +60,9 @@ pub struct InitialValues {
 // The game's functions by name. `setup` and `player_move` are called by
 // the interpreter; the rest are called by the game itself.
 pub struct Callbacks {
-    pub definitions: HashMap<String, Definition>
+    pub definitions: HashMap<String, Definition>,
+    // the names of the functions declared with `move`, in file order
+    pub moves: Vec<String>
 }
 
 // The result of running a block of statements: either it ran to the end,
@@ -153,8 +155,9 @@ pub struct Runtime {
     numbers: HashMap<String, f64>,
     named_values: HashMap<String, HashMap<String, f64>>,
     call_stack: Vec<HashMap<String, ArgumentValue>>,
-    // the player and move objects of the move being made, for valid_moves
-    current_move: Option<(ArgumentValue, ArgumentValue)>,
+    // set when a move assigns current_player or calls next_player(), so the
+    // turn isn't passed on a second time
+    current_player_set: bool,
     // names of the game functions being run, innermost last
     function_names: Vec<String>,
     // why the most recent check, transfer or move failed
@@ -179,7 +182,7 @@ impl Runtime {
             winners: vec![],
             current_player: initial_values.current_player,
             call_stack: vec![],
-            current_move: None,
+            current_player_set: false,
             function_names: vec![],
             failure: None,
             failure_is_message: false,
@@ -234,11 +237,8 @@ impl Runtime {
                 Some(PrimitiveValue::Number(c as f64))
             },
             "next_player" => {
-                self.current_player = if self.current_player < self.players.len() {
-                    self.current_player + 1
-                } else {
-                    1
-                };
+                self.advance_player();
+                self.current_player_set = true;
                 None
             },
             "sum" => {
@@ -251,7 +251,6 @@ impl Runtime {
                 };
                 Some(PrimitiveValue::Number(total))
             },
-            "valid_moves" => Some(PrimitiveValue::Bool(self.valid_moves(&f.arguments))),
             "gather" => {
                 // every card from every pile and hand back into the deck
                 let mut cards = vec![];
@@ -388,6 +387,10 @@ impl Runtime {
         self.winners.clone()
     }
 
+    // A player makes a move: `take 9d / 4c 5s`, or `9d / 4c 5s` to try each
+    // of the game's moves in order. Only the current player can move. After a
+    // successful move, after_move() runs and the turn passes on, unless the
+    // move set current_player itself. A move that fails changes nothing.
     pub fn player_move(&mut self, input: MoveInput) -> Result<(), String> {
         match self.status {
             GameState::Pending => return Err("the game has not started - use 'start'".to_string()),
@@ -395,64 +398,100 @@ impl Runtime {
             GameState::Active => ()
         }
 
-        let p_move = match self.callbacks.definitions.get("player_move").cloned() {
-            Some(m) => m,
-            None => return Err("this game does not define player_move".to_string())
-        };
+        if self.callbacks.moves.is_empty() {
+            return Err("this game has no moves - declare them with 'move'".to_string());
+        }
 
         let n = input.player.unwrap_or(self.current_player);
         if n < 1 || n > self.players.len() {
             return Err(format!("there is no player {} (players: {})", n, self.players.len()));
         }
-
-        if input.groups.len() > 2 {
-            return Err("a move can have at most two groups of cards (cards / target)".to_string());
+        if n != self.current_player {
+            return Err("it's not your turn".to_string());
         }
+
+        let candidates: Vec<Definition> = match &input.name {
+            Some(name) => match self.callbacks.moves.iter().find(|m| *m == name) {
+                Some(m) => vec![self.callbacks.definitions[m].clone()],
+                None => return Err(format!(
+                    "unknown move '{}' - the moves are: {}", name, self.callbacks.moves.join(", ")
+                ))
+            },
+            None => self.callbacks.moves.iter().map(|m| self.callbacks.definitions[m].clone()).collect()
+        };
 
         let player = Self::build_player_object(self.players[n - 1].clone());
-        let move_object = Self::build_move_object(&input);
+        let mut reasons = vec![];
+        let mut reason_is_message = false;
+        for definition in candidates.iter() {
+            let before = self.snapshot();
+            self.failure = None;
+            self.failure_is_message = false;
+            self.current_player_set = false;
 
-        let mut call_stack_frame = HashMap::new();
-        if let Some(arg) = p_move.arguments.first() {
-            call_stack_frame.insert(arg.clone(), player.clone());
-        }
-        if let Some(arg) = p_move.arguments.get(1) {
-            call_stack_frame.insert(arg.clone(), move_object.clone());
-        }
-
-        // a move either happens completely or not at all
-        let before = self.snapshot();
-        self.failure = None;
-        self.current_move = Some((player, move_object));
-        self.call_stack.push(call_stack_frame);
-        self.function_names.push(p_move.name.clone());
-        let result = self.handle_statements(&p_move.body);
-        self.function_names.pop();
-        self.call_stack.pop();
-        self.current_move = None;
-
-        if Self::failed(&result) {
-            self.restore(before);
-            if self.failure_is_message {
-                if let Some(message) = self.failure.take() {
-                    return Err(message);
+            match self.try_move(definition, &player, &input.groups) {
+                Ok(()) => {
+                    // the turn passes on, unless the move decided who plays next
+                    if !self.current_player_set {
+                        self.advance_player();
+                    }
+                    return Ok(());
+                },
+                Err(reason) => {
+                    self.restore(before);
+                    reason_is_message = self.failure_is_message;
+                    reasons.push(reason);
                 }
             }
-            return Err(match self.failure.take() {
-                Some(reason) => format!("not allowed: {}", reason),
-                None => "not allowed".to_string()
+        }
+
+        // one move tried: its reason; several: each of them
+        if reasons.len() == 1 {
+            let reason = reasons.remove(0);
+            return Err(if reason_is_message { reason } else { format!("not allowed: {}", reason) });
+        }
+        Err(format!("not allowed: no valid move - {}", reasons.join("; ")))
+    }
+
+    // runs one move and then after_move(); Err gives the reason it failed
+    fn try_move(&mut self, definition: &Definition, player: &ArgumentValue, groups: &[Vec<Card>]) -> Result<(), String> {
+        // the parameters after the player receive the groups of cards, in order
+        let group_parameters = definition.arguments.len().saturating_sub(1);
+        if groups.len() > group_parameters {
+            self.failure_is_message = true;
+            return Err(match group_parameters {
+                0 => format!("{} doesn't take any cards", definition.name),
+                1 => format!("{} takes one group of cards, without a /", definition.name),
+                n => format!("{} takes at most {} groups of cards, separated by /", definition.name, n)
             });
+        }
+
+        let mut values = vec![player.clone()];
+        for i in 0..group_parameters {
+            let group = groups.get(i).cloned().unwrap_or_default();
+            values.push(ArgumentValue::Value(PrimitiveValue::Stack(group)));
+        }
+
+        let reason = |runtime: &mut Self, name: &str| runtime.failure.take().unwrap_or_else(|| format!("{} failed", name));
+
+        if Self::failed(&self.call_with_values(definition, values)) {
+            return Err(reason(self, &definition.name));
+        }
+
+        if let Some(after_move) = self.callbacks.definitions.get("after_move").cloned() {
+            if Self::failed(&self.call_with_values(&after_move, vec![])) {
+                return Err(reason(self, "after_move"));
+            }
         }
         Ok(())
     }
 
-    fn build_move_object(input: &MoveInput) -> ArgumentValue {
-        let group = |i: usize| PrimitiveValue::Stack(input.groups.get(i).cloned().unwrap_or_default());
-        let mut move_object = HashMap::new();
-        move_object.insert("name".to_string(), PrimitiveValue::String(input.name.clone().unwrap_or_default()));
-        move_object.insert("cards".to_string(), group(0));
-        move_object.insert("target".to_string(), group(1));
-        ArgumentValue::Obj(move_object)
+    fn advance_player(&mut self) {
+        self.current_player = if self.current_player < self.players.len() {
+            self.current_player + 1
+        } else {
+            1
+        };
     }
 
     // a function failed if a check or transfer stopped it, or it returned false
@@ -480,71 +519,6 @@ impl Runtime {
         self.players = snapshot.players;
         self.card_stacks = snapshot.card_stacks;
         self.numbers = snapshot.numbers;
-    }
-
-    // valid_moves(take, drop): runs the move the player named, or if they
-    // didn't name one, the first of these that succeeds
-    fn valid_moves(&mut self, arguments: &[Expression]) -> bool {
-        let (player, move_object) = match self.current_move.clone() {
-            Some(m) => m,
-            None => {
-                eprintln!("valid_moves can only be used while a player is making a move");
-                return false;
-            }
-        };
-
-        let mut moves = vec![];
-        for argument in arguments {
-            match argument {
-                Expression::Symbol(name) => match self.callbacks.definitions.get(name) {
-                    Some(d) => moves.push(d.clone()),
-                    None => {
-                        eprintln!("valid_moves: no function called '{}'", name);
-                        return false;
-                    }
-                },
-                other => {
-                    eprintln!("valid_moves: expected function names, got {:?}", other);
-                    return false;
-                }
-            }
-        }
-
-        let requested = match &move_object {
-            ArgumentValue::Obj(o) => match o.get("name") {
-                Some(PrimitiveValue::String(s)) if !s.is_empty() => Some(s.clone()),
-                _ => None
-            },
-            _ => None
-        };
-
-        let values = vec![player, move_object];
-        match requested {
-            Some(name) => match moves.iter().find(|d| d.name == name) {
-                Some(definition) => !Self::failed(&self.call_with_values(definition, values)),
-                None => {
-                    let names: Vec<String> = moves.iter().map(|d| d.name.clone()).collect();
-                    self.failure = Some(format!("unknown move '{}' - valid moves: {}", name, names.join(", ")));
-                    self.failure_is_message = false;
-                    false
-                }
-            },
-            None => {
-                let mut reasons = vec![];
-                for definition in moves.iter() {
-                    let before = self.snapshot();
-                    self.failure = None;
-                    if !Self::failed(&self.call_with_values(definition, values.clone())) {
-                        return true;
-                    }
-                    self.restore(before);
-                    reasons.push(self.failure.take().unwrap_or_else(|| format!("{} failed", definition.name)));
-                }
-                self.failure = Some(format!("no valid move - {}", reasons.join("; ")));
-                self.failure_is_message = false;
-                false
-            }
-        }
     }
 
     pub fn setup(&mut self) {
@@ -579,11 +553,7 @@ impl Runtime {
                     }
                 },
                 Statement::FunctionCall(f) => {
-                    let result = self.handle_function_call(f);
-                    // a move that isn't valid stops player_move, like a failed check
-                    if f.name == "valid_moves" && result == Some(PrimitiveValue::Bool(false)) {
-                        return Flow::Return(PrimitiveValue::Bool(false));
-                    }
+                    let _ = self.handle_function_call(f);
                 },
                 Statement::IfStatement(i) => {
                     if let Flow::Return(v) = self.handle_if_statement(i) {
@@ -1037,6 +1007,7 @@ impl Runtime {
                 return false;
             }
             self.current_player = value as usize;
+            self.current_player_set = true;
             return true;
         }
 
@@ -1128,7 +1099,8 @@ mod test{
         };
 
         let callbacks = Callbacks{
-            definitions: HashMap::new()
+            definitions: HashMap::new(),
+            moves: vec![]
         };
 
         let mut runtime = Runtime::new(initial_values, callbacks);
@@ -1163,7 +1135,8 @@ mod test{
         };
 
         let callbacks = Callbacks{
-            definitions: HashMap::new()
+            definitions: HashMap::new(),
+            moves: vec![]
         };
 
         let mut runtime = Runtime::new(initial_values, callbacks);
@@ -1202,7 +1175,8 @@ mod test{
         };
 
         let callbacks = Callbacks{
-            definitions: HashMap::new()
+            definitions: HashMap::new(),
+            moves: vec![]
         };
 
         let mut runtime = Runtime::new(initial_values, callbacks);
@@ -1241,7 +1215,8 @@ mod test{
         };
 
         let callbacks = Callbacks{
-            definitions: HashMap::new()
+            definitions: HashMap::new(),
+            moves: vec![]
         };
 
         let mut runtime = Runtime::new(initial_values, callbacks);

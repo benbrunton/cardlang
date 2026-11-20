@@ -150,7 +150,8 @@ pub fn parse(tokens: &[SourceToken]) -> Result<Vec<Statement>, ParseError> {
                 let entries = build_value_table(&mut tokens_iter, *line_number)?;
                 ast.push(Statement::ValueTable(ValueTable{ name, entries }));
             },
-            Some(SourceToken{ token: Token::Define, line_number }) => {
+            Some(SourceToken{ token: definition_token @ (Token::Define | Token::Move), line_number }) => {
+                let is_move = *definition_token == Token::Move;
                 let next_token = match tokens_iter.next() {
                     Some(t) => t,
                     None => return Err(ParseError::new(ParseErrorType::UnexpectedEndOfStream, *line_number))
@@ -158,6 +159,10 @@ pub fn parse(tokens: &[SourceToken]) -> Result<Vec<Statement>, ParseError> {
                 let name = match &next_token.token {
                     // the CLI's own commands can't be used as function (move) names
                     Token::Symbol(s) if crate::move_input::RESERVED_WORDS.contains(&s.as_str()) => {
+                        return Err(ParseError::new(ParseErrorType::UnexpectedToken, next_token.line_number))
+                    },
+                    // a move name that reads as a card (as, seven, 10) couldn't be typed at the CLI
+                    Token::Symbol(s) if is_move && crate::cards::starts_a_card(s) => {
                         return Err(ParseError::new(ParseErrorType::UnexpectedToken, next_token.line_number))
                     },
                     Token::Symbol(s) => s.to_owned(),
@@ -178,8 +183,7 @@ pub fn parse(tokens: &[SourceToken]) -> Result<Vec<Statement>, ParseError> {
                 let body = build_block(&mut tokens_iter)?;
 
                 let definition = Definition{ arguments, name, body };
-                let statement = Statement::Definition(definition);
-                ast.push(statement);
+                ast.push(if is_move { Statement::MoveDefinition(definition) } else { Statement::Definition(definition) });
             },
             Some(SourceToken{token: Token::Symbol(name), line_number }) => {
                 match tokens_iter.next() {

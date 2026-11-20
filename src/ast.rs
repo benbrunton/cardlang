@@ -2,6 +2,8 @@
 pub enum Statement {
     Declaration(Declaration),
     Definition(Definition),
+    // move take(player, played, captured) { ... }: something a player can do
+    MoveDefinition(Definition),
     Transfer(Transfer),
     FunctionCall(FunctionCall),
     IfStatement(IfStatement),
