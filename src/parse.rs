@@ -1,7 +1,6 @@
 use crate::token::{Token, SourceToken};
 use crate::ast::*;
 
-use std::iter::Peekable;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum ParseErrorType{

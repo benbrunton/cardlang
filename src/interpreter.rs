@@ -12,7 +12,6 @@ use crate::runtime::{
 #[derive(Clone, Debug)]
 pub struct Game {
     name: Option<String>,
-    ast: Vec<Statement>,
     runtime: Runtime,
     initial_values: InitialValues,
     callbacks: Callbacks
@@ -90,7 +89,6 @@ impl Game {
 
         Game {
             name,
-            ast,
             runtime,
             initial_values: initial_values.clone(),
             callbacks: callbacks.clone()
