@@ -66,11 +66,14 @@ test('comments, including nested brackets and several lines', () => {
 });
 
 test('declarations', () => {
-  const source = 'name scopa\nplayers 2\nstack middle\nstack collection per player\nvar score per player\nvalues primiera {\n    Seven 21\n}';
+  const source = 'name scopa\nplayers 2\nstack middle\nplayer stack collection\nnumber dealer\nplayer number score\nvalues primiera {\n    Seven 21\n}';
   assert.equal(scopeOf(source, 'scopa'), 'entity.name.type.game.cardlang');
   assert.equal(scopeOf(source, 'players'), 'storage.type.declaration.cardlang');
-  assert.equal(scopeOf(source, 'middle'), 'variable.other.stack.cardlang');
-  assert.equal(scopeOf(source, 'per'), 'keyword.other.per.cardlang');
+  assert.equal(scopeOf(source, 'middle'), 'variable.other.declared.cardlang');
+  assert.equal(scopeOf(source, 'player'), 'storage.modifier.player.cardlang');
+  assert.equal(scopeOf(source, 'collection'), 'variable.other.declared.cardlang');
+  assert.equal(scopeOf(source, 'number'), 'storage.type.declaration.cardlang');
+  assert.equal(scopeOf(source, 'dealer'), 'variable.other.declared.cardlang');
   assert.equal(scopeOf(source, 'score'), 'variable.other.declared.cardlang');
   assert.equal(scopeOf(source, 'primiera'), 'variable.other.values-table.cardlang');
   assert.equal(scopeOf(source, 'Seven'), 'variable.other.enummember.card.cardlang');
@@ -110,7 +113,9 @@ test('a check message can continue on the next line', () => {
 });
 
 test('every and any', () => {
-  const source = 'every player p {\n}\nreturn(any card c in middle: any group g in p:hand: sum(g) is c:value)';
+  const source = 'every player p {\n}\nreturn(any card c in middle: any group g in p:hand: sum(g) is c:value)\nwinner(most player q: q:score)';
+  assert.equal(scopeOf(source, 'most'), 'keyword.control.loop.cardlang');
+  assert.equal(scopeOf(source, 'q'), 'variable.parameter.loop.cardlang');
   assert.equal(scopeOf(source, 'every'), 'keyword.control.loop.cardlang');
   assert.equal(scopeOf(source, 'any'), 'keyword.control.loop.cardlang');
   assert.equal(scopeOf(source, 'card'), 'storage.type.loop-kind.cardlang');
@@ -118,7 +123,7 @@ test('every and any', () => {
   assert.equal(scopeOf(source, 'c'), 'variable.parameter.loop.cardlang');
 });
 
-test('keywords, constants and proposed syntax', () => {
+test('keywords, constants, deck declarations and card literals', () => {
   const source = 'if(a is not 1 or b >= 2 & true){\n} else {\n    p:score = p:score + 1\n    check(cards_in_stack([7d], p:collection))\n}\ndeck standard without Eight Nine Ten';
   assert.equal(scopeOf(source, 'if'), 'keyword.control.cardlang');
   assert.equal(scopeOf(source, 'else'), 'keyword.control.cardlang');

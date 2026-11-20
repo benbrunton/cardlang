@@ -2,11 +2,11 @@
 
 Syntax highlighting for cardlang `.card` files. It covers:
 - comments, `.( … )`, including nested brackets
-- declarations: `name`, `players`, `stack … per player`, `values { … }`, and the proposed `var` and `deck … without`
-- functions and calls, built-ins, and fields such as `p:hand` or `players:2:collection`
+- declarations: `name`, `players`, `deck standard without …`, `stack`, `number`, `player stack`, `player number`, `values` and `values <name>`
+- functions and calls, built-ins, assignment (`p:score = …`), and fields such as `p:hand` or `players:2:collection`
 - `check(rule, message)`, with the message shown as text
-- `every` loops and tests, and the proposed `any` and `group`
-- card ranks and suits, and the proposed `[7d]` card literals
+- `every`, `any` and `most`, including `group`
+- card ranks and suits, and card literals such as `[7d]`
 
 Brackets auto-close, and the "toggle block comment" command uses `.( … )`.
 
