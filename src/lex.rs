@@ -44,13 +44,7 @@ pub fn lexer(source: &str) -> Result<Vec<SourceToken>, LexError> {
 
     let mut partial_token: Option<String> = None;
 
-    loop {
-        let current_char_result = chars.next();
-        if current_char_result.is_none() {
-            break;
-        }
-
-        let current_char = current_char_result.expect("expected a char");
+    while let Some(current_char) = chars.next() {
 
         // newlines inside a comment still count as lines
         if current_char == '\n' && partial_token.is_some() {
@@ -105,12 +99,10 @@ pub fn lexer(source: &str) -> Result<Vec<SourceToken>, LexError> {
 fn handle_char(partial_token: &Option<String>, current_char: char, next_char: Option<&char>) -> TokenResult {
     match partial_token {
         None => {
-            let single_char = handle_single_chars(current_char);
-            if single_char.is_some() {
-                return single_char.expect("should have a single char");
+            match handle_single_chars(current_char) {
+                Some(result) => result,
+                None => handle_partial(current_char.to_string(), next_char)
             }
-            
-            handle_partial(current_char.to_string(), next_char)
         },
         Some(x) => {
             let new_partial = format!("{}{}", x, current_char);
@@ -139,10 +131,8 @@ fn handle_single_chars(current_char: char) -> Option<TokenResult> {
 }
 
 fn handle_partial(current_partial: String, next_char: Option<&char>) -> TokenResult {
-    let keyword_result = handle_keyword(&current_partial, next_char);
-
-    if keyword_result.is_some() {
-        return keyword_result.expect("should be a keyword");
+    if let Some(keyword) = handle_keyword(&current_partial, next_char) {
+        return keyword;
     }
 
     if is_word_finished(next_char) {
@@ -181,7 +171,10 @@ fn handle_keyword(partial_token: &str, next_char: Option<&char>) -> Option<Token
 
 fn resolve_partial(partial_token: String) -> TokenResult {
     let mut chars = partial_token.chars();
-    let first = chars.next().expect("unable to find first char in partial token");
+    let first = match chars.next() {
+        Some(c) => c,
+        None => return TokenResult::Error
+    };
     match first {
         'A'..='z' => TokenResult::Token(Token::Symbol(partial_token)),
         '.' => {

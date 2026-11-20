@@ -170,40 +170,37 @@ fn build_game(command: Vec<&str>) -> CommandResult {
         return CommandResult::CommandFailed;
     }
 
-    let file_result = fs::read_to_string(command[1]);
+    let source = match fs::read_to_string(command[1]) {
+        Ok(s) => s,
+        Err(_) => {
+            println!("unable to read '{}'", command[1]);
+            return CommandResult::CommandFailed;
+        }
+    };
 
-    if file_result.is_err() {
-        println!("unable to read '{}'", command[1]);
-        return CommandResult::CommandFailed;
-    }
-
-    let game = parse_game(file_result.expect("unable to read file"));
-
-    match game {
+    match parse_game(source) {
         Some(g) => CommandResult::Game(g),
-        None => CommandResult::CommandFailed 
+        None => CommandResult::CommandFailed
     }
 }
 
 fn parse_game(source: String) -> Option<Game> {
-    let lex_result = lex::lexer(&source);
-    if lex_result.is_err() {
-        eprintln!("error: {}", lex_result.unwrap_err());
-        return None;
-    }
+    let tokens = match lex::lexer(&source) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("error: {}", e);
+            return None;
+        }
+    };
 
-    let tokens = lex_result.expect("unable to unwrap tokens");
+    let ast = match parse::parse(&tokens) {
+        Ok(a) => a,
+        Err(e) => {
+            eprintln!("error: {}", e);
+            return None;
+        }
+    };
 
-    let parse_result = parse::parse(&tokens);
-
-    if parse_result.is_err() {
-        eprintln!("error: {}", parse_result.unwrap_err());
-        // maybe this should be an additional debug flag?
-        //println!("{:?}", &tokens);
-        return None;
-    }
-
-    let ast = parse_result.expect("unable to unwrap ast!");
     let game = Game::new(ast);
     println!("Game loaded");
     Some(game)
