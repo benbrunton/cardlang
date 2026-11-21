@@ -1,0 +1,233 @@
+.(GIN RUMMY - DRAFT. Uses proposed syntax, so it doesn't parse yet.
+  Proposals used: 1 let, 2 none, 3 face up and face down, 4 numbered piles,
+  5 :top and :pile, 7 in, 8 pile +, 9 quantifiers, 10 players are their
+  numbers, 11 flag and card, 12 not, 16 must. See PROPOSALS.md.
+
+  HOW TO PLAY
+
+  Gin Rummy is a game for two players. You try to arrange your hand into
+  melds, and catch the other player with unmatched cards. The first player
+  to 100 points wins.
+
+  Melds
+    A meld is either
+    - a set: 3 or 4 cards of the same rank, like 5s 5d 5c, or
+    - a run: 3 or more cards in a row in one suit, like 7h 8h 9h.
+      Aces are low: A 2 3 is a run, but Q K A isn't.
+    Cards that aren't in a meld are deadwood. Deadwood is worth its number:
+    Aces 1, Jacks, Queens and Kings 10.
+
+  Dealing
+    Deal 10 cards to each player. Turn the next card face up to start the
+    discard pile. The rest of the deck is the stock. The player who didn't
+    deal goes first. The deal alternates between hands.
+
+  Your turn
+    First take a card:
+    - draw: the top card of the stock, or
+    - take: the top card of the discard pile.
+    Then end your turn:
+    - discard 7h: put a card face up on the discard pile. It can't be the
+      card you just took from the discard pile.
+    - or knock, if your deadwood adds up to 10 or less. Discard face down,
+      then lay out your melds, each after a /:
+          knock 2c / 7h 8h 9h / 5s 5d 5c
+      If you have no deadwood at all, that's gin.
+    If the stock gets down to its last two cards and nobody has knocked,
+    nobody scores: deal again.
+
+  After a knock
+    The other player lays out their own melds, one at a time:
+        meld 4s 5s 6s
+    and can add cards to the knocker's melds, unless the knocker went gin:
+        lay 10h / 9h   .(adds 10h to the knocker's meld that has 9h in it)
+    Then they type done, and the hand is scored.
+
+  Scoring
+    - Gin: the knocker scores 25, plus the other player's deadwood.
+    - Knock: if the knocker has less deadwood, they score the difference.
+    - Undercut: if the other player has the same or less deadwood, they
+      score 25 plus the difference.
+    The first player to reach 100 points wins.
+
+  Left out to keep this short: the first-turn option to pass on the
+  upcard, and the end-of-game bonuses, which don't change who wins.)
+
+name gin_rummy
+players 2
+
+.(deadwood counts each card by its number, with Jack, Queen and King as 10.
+  Runs use the usual values: Ace 1 to King 13.)
+values deadwood {
+    Ace 1, Two 2, Three 3, Four 4, Five 5, Six 6, Seven 7
+    Eight 8, Nine 9, Ten 10, Jack 10, Queen 10, King 10
+}
+
+stack stock face down
+stack discards
+player stack melds 3       .(each player can lay out up to three melds)
+
+number dealer
+player number score
+player flag drawn          .(has taken a card this turn)
+player flag knocked
+player card taken          .(the card they took from the discard pile this turn, if any)
+
+
+def setup(){
+    dealer = 1
+    new_hand()
+}
+
+def new_hand(){
+    gather()
+    shuffle(deck)
+    every player p {
+        p:drawn = false
+        p:knocked = false
+        p:taken = none
+    }
+    deck > players 10
+    deck > discards
+    deck > stock end
+    current_player = next player after dealer
+}
+
+def next_hand(){
+    dealer = next player after dealer
+    new_hand()
+}
+
+
+.(Taking a card)
+
+move draw(player){
+    must(not player:drawn, you've already taken a card - now discard or knock, e.g. discard 7h)
+    stock > player:hand
+    player:drawn = true
+    current_player = player    .(still your turn: discard or knock next)
+}
+
+move take(player){
+    must(not player:drawn, you've already taken a card - now discard or knock, e.g. discard 7h)
+    player:taken = discards:top
+    discards > player:hand
+    player:drawn = true
+    current_player = player
+}
+
+
+.(Ending your turn)
+
+move discard(player, played){
+    must(player:drawn, take a card first: draw from the stock, or take from the discard pile)
+    must(count(played) is 1, discard one card, e.g. discard 7h)
+    must(played:top is not player:taken, you can't discard the card you just took)
+    player:hand > discards taking played
+    player:drawn = false
+    player:taken = none
+    if(count(stock) <= 2){
+        new_hand()    .(the stock has run down: nobody scores, the same dealer deals again)
+    }
+}
+
+move knock(player, played, meld1, meld2, meld3){
+    must(player:drawn, take a card first: draw from the stock, or take from the discard pile)
+    must(count(played) is 1, discard one card first, then your melds, e.g. knock 2c / 7h 8h 9h / 5s 5d 5c)
+    must(played:top is not player:taken, you can't discard the card you just took)
+    must(meld_or_nothing(meld1) & meld_or_nothing(meld2) & meld_or_nothing(meld3),
+        each group after a / must be a meld: 3 or 4 of a kind, or 3 or more in a row in one suit)
+    must(played + meld1 + meld2 + meld3 in player:hand, you can only use cards from your hand)
+    player:hand > discards taking played face down
+    player:hand > player:melds:1 taking meld1
+    player:hand > player:melds:2 taking meld2
+    player:hand > player:melds:3 taking meld3
+    must(deadwood(player) <= 10, your deadwood adds up to more than 10 - you can't knock yet)
+    player:knocked = true
+}
+
+
+.(After a knock: the other player's moves)
+
+move meld(player, cards){
+    must(answering(player), you can only lay out melds after the other player knocks)
+    must(is_meld(cards), that's not a meld: 3 or 4 of a kind, or 3 or more in a row in one suit)
+    let space = first pile m in player:melds: count(m) is 0
+    must(space is not none, you've laid out three melds already)
+    player:hand > space taking cards
+    current_player = player
+}
+
+move lay(player, cards, onto){
+    must(answering(player), you can only add to melds after the other player knocks)
+    must(count(onto) is 1, name a card in the meld to add to, e.g. lay 10h / 9h)
+    let knocker = first player p: p:knocked
+    let meld = onto:top:pile
+    must(deadwood(knocker) > 0, you can't add to the melds of a gin hand)
+    must(meld in knocker:melds, you can only add to the knocker's melds)
+    must(is_meld(meld + cards), those cards don't fit that meld)
+    player:hand > meld taking cards
+    current_player = player
+}
+
+move done(player){
+    must(answering(player), you can only finish after the other player knocks)
+    score_hand()
+}
+
+.(the player answering a knock: the other player has knocked, and this one hasn't)
+def answering(player){
+    return(not player:knocked & any player p: p:knocked)
+}
+
+
+.(Scoring)
+
+def score_hand(){
+    let knocker = first player p: p:knocked
+    let other = first player p: not p:knocked
+    let difference = deadwood(other) - deadwood(knocker)
+    if(deadwood(knocker) is 0){
+        knocker:score = knocker:score + 25 + deadwood(other)    .(gin)
+    } else if(difference > 0){
+        knocker:score = knocker:score + difference
+    } else {
+        other:score = other:score + 25 - difference             .(undercut)
+    }
+
+    if(any player p: p:score >= 100){
+        winner(most player p: p:score)
+        end()
+    } else {
+        next_hand()
+    }
+}
+
+.(the cards still in a player's hand: everything they haven't melded)
+def deadwood(p){
+    return(sum card c in p:hand: c:deadwood)
+}
+
+
+.(Melds)
+
+def is_meld(cards){
+    return(is_set(cards) or is_run(cards))
+}
+
+def meld_or_nothing(cards){
+    return(count(cards) is 0 or is_meld(cards))
+}
+
+.(3 or 4 cards of one rank)
+def is_set(cards){
+    return(count(cards) >= 3 & every card c in cards: c:rank is cards:top:rank)
+}
+
+.(3 or more cards in a row in one suit. In one suit no two cards have the
+  same value, so they're in a row when the highest is count - 1 above the lowest)
+def is_run(cards){
+    return(count(cards) >= 3
+        & (every card c in cards: c:suit is cards:top:suit)
+        & max(cards) - min(cards) is count(cards) - 1)
+}

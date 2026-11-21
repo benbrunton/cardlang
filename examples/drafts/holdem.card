@@ -1,0 +1,249 @@
+.(TEXAS HOLD'EM - DRAFT. Uses proposed syntax, so it doesn't parse yet.
+  Proposals used: 1 let, 3 face up and face down, 8 pile +, 9 quantifiers,
+  10 players are their numbers, 11 flag, 12 not, 13 number parameters,
+  14 * and /, 15 use, 16 must. See PROPOSALS.md.
+
+  HOW TO PLAY
+
+  Texas Hold'em is poker with two private cards each and five shared cards
+  on the table. Win chips by having the best hand, or by betting so that
+  everyone else gives up.
+
+  Chips
+    Everyone starts with 100 chips. The game ends when one player has
+    them all. A player with no chips left is out.
+
+  A hand
+    The dealer moves one seat to the left each hand. The two players after
+    the dealer put in forced bets, the blinds: 1 chip for the small blind
+    and 2 for the big blind. Then everyone is dealt two cards, face down.
+
+    There are four rounds of betting. After the first, three cards are
+    turned face up in the middle (the flop). After the second, one more
+    card (the turn). After the third, a last card (the river).
+
+  Betting
+    On your turn, do one of these:
+    - fold: give up the hand. The chips you've put in stay in the pot.
+    - check: stay in without betting. Only when there's nothing to match.
+    - call: put in enough chips to match the biggest bet so far.
+    - raise 10: match the biggest bet, then raise it by 10 chips (or any
+      amount, at least 2). If nobody has bet yet, this is simply a bet.
+    Before the flop, betting starts after the big blind. In later rounds it
+    starts with the first player after the dealer. A round ends when
+    everyone still in has had a turn and put in the same amount.
+
+    Table limit: nobody can bet more than every other player still in the
+    hand could match. So there are no side pots. A player who has put all
+    their chips in stays in the hand but has no more turns.
+
+  The showdown
+    If everyone but one player folds, that player wins the pot. Otherwise,
+    after the last round, everyone still in shows their cards. Each player
+    makes the best five-card hand from their two cards and the five in the
+    middle. The best hand wins the pot. Tied hands share it, and any odd
+    chips stay in the pot for the next hand.
+
+  Hands, best first
+    Straight flush   five in a row, all one suit: 9h 8h 7h 6h 5h
+    Four of a kind   four cards of one rank: Qs Qh Qc Qd
+    Full house       three of one rank and two of another: 7s 7h 7d 4c 4s
+    Flush            five of one suit
+    Straight         five in a row: Ace can be high (A K Q J 10) or low (5 4 3 2 A)
+    Three of a kind
+    Two pair
+    Pair
+    High card
+    Aces are high. Between hands of the same kind, the higher cards win:
+    first in the sets that make the hand, then the remaining cards.
+
+  Left out to keep this short: side pots, and the special blinds when
+  only two players are left.)
+
+name holdem
+players 4
+
+.(the poker library gives poker_rank: see the Showdown section)
+use poker
+
+stack board
+
+number dealer
+number pot
+number highest_bet       .(the biggest bet in this round of betting)
+
+player number chips
+player number bet        .(chips this player has put in this round)
+player flag folded
+player flag acted        .(has had a turn this round)
+
+
+def setup(){
+    every player p {
+        p:chips = 100
+    }
+    dealer = 1
+    new_hand()
+}
+
+def new_hand(){
+    gather()
+    shuffle(deck)
+    highest_bet = 2
+    every player p {
+        p:folded = p:chips is 0    .(players with no chips are out of the game)
+        p:bet = 0
+        p:acted = false
+        if(in_hand(p)){
+            deck > p:hand 2
+        }
+    }
+    let small = next player p after dealer: in_hand(p)
+    let big = next player p after small: in_hand(p)
+    pay(small, min(1, small:chips))
+    pay(big, min(2, big:chips))
+    current_player = next player p after big: can_act(p)
+}
+
+def next_hand(){
+    if(players_with_chips() is 1){
+        winner(first player p: p:chips > 0)
+        end()
+    } else {
+        dealer = next player p after dealer: p:chips > 0
+        new_hand()
+    }
+}
+
+
+.(Betting)
+
+move fold(player){
+    player:folded = true
+}
+
+move check(player){
+    must(player:bet is highest_bet, there's a bet to match - call, raise or fold)
+    player:acted = true
+}
+
+move call(player){
+    must(player:bet < highest_bet, there's nothing to call - check instead)
+    pay(player, min(highest_bet - player:bet, player:chips))
+    player:acted = true
+}
+
+move raise(player, number amount){
+    must(amount >= 2, the smallest raise is 2 chips)
+    must(every player p: p:folded or p:bet + p:chips >= highest_bet + amount,
+        someone still in the hand couldn't match that - bet less)
+    highest_bet = highest_bet + amount
+    pay(player, highest_bet - player:bet)
+    player:acted = true
+}
+
+def pay(p, amount){
+    p:chips = p:chips - amount
+    p:bet = p:bet + amount
+    pot = pot + amount
+}
+
+.(still in this hand: hasn't folded)
+def in_hand(p){
+    return(not p:folded)
+}
+
+.(can still bet: in the hand, with chips left)
+def can_act(p){
+    return(in_hand(p) & p:chips > 0)
+}
+
+def players_with_chips(){
+    return(count player p: p:chips > 0)
+}
+
+def players_in_hand(){
+    return(count player p: in_hand(p))
+}
+
+def players_who_can_act(){
+    return(count player p: can_act(p))
+}
+
+.(everyone who can bet has had a turn and matched the biggest bet)
+def betting_done(){
+    return(every player p: not can_act(p) or (p:acted & p:bet is highest_bet))
+}
+
+.(after_move runs after every successful move)
+def after_move(){
+    if(players_in_hand() is 1){
+        let survivor = first player p: in_hand(p)
+        survivor:chips = survivor:chips + pot
+        pot = 0
+        next_hand()
+    } else if(betting_done()){
+        next_street()
+    } else {
+        current_player = next player p: can_act(p)
+    }
+}
+
+
+.(The flop, the turn and the river)
+
+def next_street(){
+    if(count(board) is 5){
+        showdown()
+        next_hand()
+    } else {
+        if(count(board) is 0){
+            deck > board 3    .(the flop)
+        } else {
+            deck > board      .(the turn, then the river)
+        }
+        start_betting()
+    }
+}
+
+def start_betting(){
+    highest_bet = 0
+    every player p {
+        p:bet = 0
+        p:acted = false
+    }
+    if(players_who_can_act() < 2){
+        next_street()    .(nobody left to bet against: deal the rest)
+    } else {
+        current_player = next player p after dealer: can_act(p)
+    }
+}
+
+
+.(The showdown)
+
+def showdown(){
+    every player p {
+        if(in_hand(p)){
+            turn_up(p:hand)
+        }
+    }
+    let best = max player p: strength(p)
+    let winners = count player p: strength(p) is best
+    let share = pot / winners
+    every player p {
+        if(strength(p) is best){
+            p:chips = p:chips + share
+            pot = pot - share
+        }
+    }
+}
+
+.(how good a player's best five cards are, from their two and the five on
+  the board: a higher number is a better hand. 0 if they've folded)
+def strength(p){
+    if(p:folded){
+        return(0)
+    }
+    return(poker_rank(p:hand + board))
+}

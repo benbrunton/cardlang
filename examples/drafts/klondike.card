@@ -1,0 +1,125 @@
+.(KLONDIKE - DRAFT. Uses proposed syntax, so it doesn't parse yet.
+  Proposals used: 1 let, 2 none, 3 face up and face down, 4 numbered piles,
+  5 :top and :pile, 6 from, 7 in, 9 first, 16 must, 17 card:colour.
+  See PROPOSALS.md.
+
+  HOW TO PLAY
+
+  Klondike is the classic patience game for one player. The aim is to move
+  every card onto four foundations, one per suit, from Ace up to King.
+
+  The layout
+    Shuffle, then deal seven columns. Column 1 gets 1 card, column 2 gets 2,
+    and so on up to column 7 with 7 cards. Every card is face down except
+    the top card of each column. The rest of the deck is the stock.
+
+  Your turn
+    Do one of these:
+    - draw: turn the top card of the stock face up onto the waste pile.
+      When the stock is empty, turn the waste over to make a new stock.
+    - put: move a face-up card onto a column whose top card is one higher
+      and the other colour. For example, a red 7 goes on a black 8. Any
+      cards on top of it in its column move with it. Write the card to move
+      and the card to put it on: put 7h / 8s
+    - space: move a King, and any cards on top of it, into an empty column:
+      space kh
+    - home: move a card to its foundation. An Ace starts a foundation; after
+      that each card must be the next one up in the same suit: home 2h
+    Cards can be moved from the waste or a foundation, but only the top card.
+    When a column's top card is face down, it is turned face up.
+
+  Winning
+    You win when all 52 cards are on the foundations. Type resign to give up.)
+
+name klondike
+players 1
+
+stack stock face down
+stack waste
+stack foundations 4
+stack columns 7
+
+
+def setup(){
+    shuffle(deck)
+    every pile column in columns {
+        deck > column column:id face down    .(column 1 gets 1 card, column 7 gets 7)
+        turn_up(column:top)
+    }
+    deck > stock end
+}
+
+
+.(Moves)
+
+move draw(player){
+    if(count(stock) is 0){
+        must(count(waste) > 0, there are no cards left to draw)
+        waste > stock end    .(turning the waste over makes it the stock again)
+    } else {
+        stock > waste
+    }
+}
+
+move put(player, moving, onto){
+    must(count(moving) is 1 & count(onto) is 1, name the card to move and the card to put it on, e.g. put 7h / 8s)
+    let card = moving:top
+    let target = onto:top
+    must(can_lift(card), you can only move a face-up card, and only the top card of the waste or a foundation)
+    must(target:pile in columns & target is target:pile:top, you can only put cards on the top card of a column)
+    must(card:value is target:value - 1, it must be one lower than the card it goes on)
+    must(card:colour is not target:colour, it must be the other colour)
+    card:pile > target:pile from card
+}
+
+move space(player, moving){
+    must(count(moving) is 1, name the king to move, e.g. space kh)
+    let card = moving:top
+    must(card:rank is King, only a king can go in an empty column)
+    must(can_lift(card), you can only move a face-up card, and only the top card of the waste or a foundation)
+    let space = first pile column in columns: count(column) is 0
+    must(space is not none, there's no empty column)
+    card:pile > space from card
+}
+
+move home(player, moving){
+    must(count(moving) is 1, name the card to move, e.g. home 2h)
+    let card = moving:top
+    must(card:face_up & card is card:pile:top, only the top card of a pile can go home)
+    let foundation = first pile f in foundations: goes_home(card, f)
+    must(foundation is not none, that card can't go home yet: it needs the card one below it in the same suit)
+    card:pile > foundation from card
+}
+
+move resign(player){
+    end()
+}
+
+
+.(after_move runs after every successful move)
+def after_move(){
+    every pile column in columns {
+        turn_up(column:top)    .(does nothing if it's already face up, or the column is empty)
+    }
+    if(every pile f in foundations: count(f) is 13){
+        winner(1)
+        end()
+    }
+}
+
+
+.(Rules about cards)
+
+.(from a column you can lift any face-up card, with the cards on top of it;
+  from the waste or a foundation, only the top card)
+def can_lift(card){
+    return(card:face_up & (card:pile in columns or card is card:pile:top))
+}
+
+.(an Ace goes on an empty foundation; anything else on the card one below it in the same suit)
+def goes_home(card, foundation){
+    if(count(foundation) is 0){
+        return(card:rank is Ace)
+    }
+    return(card:suit is foundation:top:suit & card:value is foundation:top:value + 1)
+}
