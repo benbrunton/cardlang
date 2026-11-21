@@ -5,6 +5,8 @@ use self::std::*;
 use crate::ast::*;
 use crate::cards::{standard_deck, Card, Player};
 use ::std::{fmt, collections::HashMap};
+use rand::SeedableRng;
+use rand_chacha::ChaCha8Rng;
 use transfer::{transfer, TransferTarget};
 
 #[derive(Clone, PartialEq, Debug)]
@@ -99,7 +101,8 @@ struct Snapshot {
     current_player: usize,
     players: Vec<Player>,
     card_stacks: HashMap<String, Vec<Card>>,
-    numbers: HashMap<String, f64>
+    numbers: HashMap<String, f64>,
+    rng: ChaCha8Rng
 }
 
 const INTERNAL_REF: &str = "_ref";
@@ -141,6 +144,12 @@ impl EveryItems {
 }
 const MAX_CALL_DEPTH: usize = 256;
 
+// How much work setup or one move can do, counted in statements and
+// expressions run. Recursion depth is capped, but a function that calls
+// itself twice would still run for ever; this stops it. The heaviest move in
+// the example games uses a few thousand steps.
+pub const DEFAULT_STEP_LIMIT: u64 = 1_000_000;
+
 #[derive(Clone, Debug)]
 pub struct Runtime {
     callbacks: Callbacks,
@@ -163,11 +172,22 @@ pub struct Runtime {
     // why the most recent check, transfer or move failed
     failure: Option<String>,
     // true when the failure is the game's own message from check(rule, message)
-    failure_is_message: bool
+    failure_is_message: bool,
+    // shuffles come from this, so the same seed always deals the same cards.
+    // ChaCha8 gives the same sequence on every platform and in every version
+    // of rand_chacha, unlike rand's StdRng.
+    rng: ChaCha8Rng,
+    seed: u64,
+    // warnings for the caller to show; not undone when a move fails, since
+    // they explain what went wrong
+    messages: Vec<String>,
+    // work done so far by setup or the current move; see DEFAULT_STEP_LIMIT
+    steps: u64,
+    step_limit: u64
 }
 
 impl Runtime {
-    pub fn new(initial_values: InitialValues, callbacks: Callbacks) -> Runtime {
+    pub fn new(initial_values: InitialValues, callbacks: Callbacks, seed: u64) -> Runtime {
 
         let mut card_stacks: HashMap<String, Vec<Card>> = HashMap::new();
         for stack in initial_values.card_stacks.iter() {
@@ -186,6 +206,11 @@ impl Runtime {
             function_names: vec![],
             failure: None,
             failure_is_message: false,
+            rng: ChaCha8Rng::seed_from_u64(seed),
+            seed,
+            messages: vec![],
+            steps: 0,
+            step_limit: DEFAULT_STEP_LIMIT,
             card_stacks,
             card_values: initial_values.card_values.iter().cloned().collect(),
             named_values: initial_values.named_values.iter()
@@ -204,21 +229,21 @@ impl Runtime {
                 None
             },
             "shuffle" => {
-                shuffle(&mut self.deck);
+                shuffle(&mut self.deck, &mut self.rng);
                 None
             },
             "winner" => {
                 let argument = match f.arguments.first() {
                     Some(a) => a,
                     None => {
-                        eprintln!("winner: expected a player id");
+                        self.warn("winner: expected a player id".to_string());
                         return None;
                     }
                 };
                 let player_id = match self.resolve_expression(argument) {
                     PrimitiveValue::Number(n) => n,
                     other => {
-                        eprintln!("winner: expected a player id, got {:?}", other);
+                        self.warn(format!("winner: expected a player id, got {:?}", other));
                         return None;
                     }
                 };
@@ -245,7 +270,7 @@ impl Runtime {
                 let total = match f.arguments.first().map(|a| self.resolve_expression(a)) {
                     Some(PrimitiveValue::Stack(cards)) => cards.iter().map(|c| self.card_value(c)).sum(),
                     _ => {
-                        eprintln!("sum: expected a stack of cards");
+                        self.warn("sum: expected a stack of cards".to_string());
                         0.0
                     }
                 };
@@ -276,7 +301,7 @@ impl Runtime {
                         cards_in_stack(&cards, &stack)
                     },
                     _ => {
-                        eprintln!("cards_in_stack: expected two stacks of cards");
+                        self.warn("cards_in_stack: expected two stacks of cards".to_string());
                         false
                     }
                 };
@@ -294,7 +319,7 @@ impl Runtime {
                 match definition {
                     Some(d) => Some(PrimitiveValue::Stack(self.filter(stack, d))),
                     None => {
-                        eprintln!("filter: expected a function name as the second argument");
+                        self.warn("filter: expected a function name as the second argument".to_string());
                         Some(PrimitiveValue::Stack(vec![]))
                     }
                 }
@@ -303,7 +328,7 @@ impl Runtime {
                 let definition = match self.callbacks.definitions.get(name) {
                     Some(d) => d.clone(),
                     None => {
-                        eprintln!("unknown function '{}'", name);
+                        self.warn(format!("unknown function '{}'", name));
                         return None;
                     }
                 };
@@ -314,7 +339,7 @@ impl Runtime {
 
     fn call_user_function(&mut self, definition: &Definition, arguments: &[Expression]) -> Option<PrimitiveValue> {
         if self.call_stack.len() >= MAX_CALL_DEPTH {
-            eprintln!("maximum call depth exceeded in '{}'", definition.name);
+            self.warn(format!("maximum call depth exceeded in '{}'", definition.name));
             return None;
         }
 
@@ -339,7 +364,7 @@ impl Runtime {
     // calls a game function with values that are already resolved
     fn call_with_values(&mut self, definition: &Definition, values: Vec<ArgumentValue>) -> Flow {
         if self.call_stack.len() >= MAX_CALL_DEPTH {
-            eprintln!("maximum call depth exceeded in '{}'", definition.name);
+            self.warn(format!("maximum call depth exceeded in '{}'", definition.name));
             return Flow::Return(PrimitiveValue::Bool(false));
         }
         let call_stack_frame = definition.arguments.iter().cloned().zip(values).collect();
@@ -361,6 +386,32 @@ impl Runtime {
             }
         }
         ArgumentValue::Value(self.resolve_expression(expression))
+    }
+
+    pub fn set_step_limit(&mut self, limit: u64) {
+        self.step_limit = limit;
+    }
+
+    // counts one step of work; false once setup or the move has done too much,
+    // after which everything stops as quickly as it can
+    fn step(&mut self) -> bool {
+        self.steps += 1;
+        self.steps <= self.step_limit
+    }
+
+    fn out_of_steps(&self) -> bool {
+        self.steps > self.step_limit
+    }
+
+    fn out_of_steps_message(&self, what: &str) -> String {
+        format!(
+            "{} stopped: it did too much work (over {} steps) - look for a function that calls itself too often",
+            what, self.step_limit
+        )
+    }
+
+    pub fn get_seed(&self) -> u64 {
+        self.seed
     }
 
     pub fn get_status(&self) -> String {
@@ -421,6 +472,7 @@ impl Runtime {
         };
 
         let player = Self::build_player_object(self.players[n - 1].clone());
+        self.steps = 0;
         let mut reasons = vec![];
         let mut reason_is_message = false;
         for definition in candidates.iter() {
@@ -429,7 +481,14 @@ impl Runtime {
             self.failure_is_message = false;
             self.current_player_set = false;
 
-            match self.try_move(definition, &player, &input.groups) {
+            let result = self.try_move(definition, &player, &input.groups);
+            // checked first: running out of steps can look like success when
+            // the statement that ran out ignores its result
+            if self.out_of_steps() {
+                self.restore(before);
+                return Err(self.out_of_steps_message("the move"));
+            }
+            match result {
                 Ok(()) => {
                     // the turn passes on, unless the move decided who plays next
                     if !self.current_player_set {
@@ -507,7 +566,8 @@ impl Runtime {
             current_player: self.current_player,
             players: self.players.clone(),
             card_stacks: self.card_stacks.clone(),
-            numbers: self.numbers.clone()
+            numbers: self.numbers.clone(),
+            rng: self.rng.clone()
         }
     }
 
@@ -519,21 +579,37 @@ impl Runtime {
         self.players = snapshot.players;
         self.card_stacks = snapshot.card_stacks;
         self.numbers = snapshot.numbers;
+        self.rng = snapshot.rng;
     }
 
     pub fn setup(&mut self) {
         self.status = GameState::Active;
         if let Some(setup) = self.callbacks.definitions.get("setup").cloned() {
             self.failure = None;
+            self.steps = 0;
             self.function_names.push(setup.name.clone());
             let result = self.handle_statements(&setup.body);
             self.function_names.pop();
-            if Self::failed(&result) {
+            if self.out_of_steps() {
+                let message = self.out_of_steps_message("setup");
+                self.warn(message);
+            } else if Self::failed(&result) {
                 if let Some(reason) = self.failure.take() {
-                    eprintln!("setup stopped: {}", reason);
+                    self.warn(format!("setup stopped: {}", reason));
                 }
             }
         }
+    }
+
+    // a problem in the game's rules that doesn't stop it, e.g. calling an
+    // unknown function. The caller decides how to show these.
+    fn warn(&mut self, message: String) {
+        self.messages.push(message);
+    }
+
+    // the warnings since the last call, oldest first
+    pub fn take_messages(&mut self) -> Vec<String> {
+        ::std::mem::take(&mut self.messages)
     }
 
     // records why something failed, e.g. "check failed in take: count(move:cards) is 1"
@@ -545,6 +621,9 @@ impl Runtime {
 
     fn handle_statements(&mut self, statements: &[Statement]) -> Flow {
         for statement in statements.iter() {
+            if !self.step() {
+                return Flow::Return(PrimitiveValue::Bool(false));
+            }
             match statement {
                 Statement::Transfer(t) => {
                     // a transfer that can't happen stops the function, like a failed check
@@ -598,6 +677,9 @@ impl Runtime {
     }
 
     fn resolve_expression(&mut self, expression: &Expression) -> PrimitiveValue {
+        if !self.step() {
+            return PrimitiveValue::Bool(false);
+        }
         match expression {
             // todo - could push globals into top of call stack
             Expression::Symbol(s) => {
@@ -614,7 +696,7 @@ impl Runtime {
                     return match value {
                         Some(v) => v,
                         None => {
-                            eprintln!("unknown player field '{}'", s);
+                            self.warn(format!("unknown player field '{}'", s));
                             PrimitiveValue::Bool(false)
                         }
                     };
@@ -696,7 +778,7 @@ impl Runtime {
         let (l, r) = match (&left, &right) {
             (PrimitiveValue::Number(l), PrimitiveValue::Number(r)) => (*l, *r),
             _ => {
-                eprintln!("{:?} needs two numbers, got {:?} and {:?}", b.op, left, right);
+                self.warn(format!("{:?} needs two numbers, got {:?} and {:?}", b.op, left, right));
                 return PrimitiveValue::Bool(false);
             }
         };
@@ -715,7 +797,7 @@ impl Runtime {
         let pile_cards = |runtime: &mut Self, pile: &Expression| match runtime.resolve_expression(pile) {
             PrimitiveValue::Stack(cards) => Some(cards),
             other => {
-                eprintln!("'{}' is not a pile of cards (got {:?})", pile, other);
+                runtime.warn(format!("'{}' is not a pile of cards (got {:?})", pile, other));
                 None
             }
         };
@@ -729,10 +811,10 @@ impl Runtime {
             },
             EveryKind::Group(pile) => match pile_cards(self, pile) {
                 Some(cards) if cards.len() > MAX_GROUP_PILE => {
-                    eprintln!(
+                    self.warn(format!(
                         "'{}' has {} cards - too many to try every group (at most {})",
                         pile, cards.len(), MAX_GROUP_PILE
-                    );
+                    ));
                     EveryItems::Objects(vec![])
                 },
                 Some(cards) => EveryItems::Groups(cards),
@@ -753,6 +835,9 @@ impl Runtime {
             self.call_stack.pop();
             if let Flow::Return(v) = flow {
                 return Flow::Return(v);
+            }
+            if self.out_of_steps() {
+                return Flow::Return(PrimitiveValue::Bool(false));
             }
         }
         Flow::Continue
@@ -775,7 +860,7 @@ impl Runtime {
             let value = match value {
                 PrimitiveValue::Number(n) => n,
                 other => {
-                    eprintln!("most: expected a number for player {}, got {:?}", id, other);
+                    self.warn(format!("most: expected a number for player {}, got {:?}", id, other));
                     continue;
                 }
             };
@@ -804,6 +889,9 @@ impl Runtime {
             self.call_stack.push(frame);
             let holds = self.resolve_to_bool(&every.condition);
             self.call_stack.pop();
+            if self.out_of_steps() {
+                return false;
+            }
             if every.any && holds {
                 return true;
             }
@@ -1103,7 +1191,7 @@ mod test{
             moves: vec![]
         };
 
-        let mut runtime = Runtime::new(initial_values, callbacks);
+        let mut runtime = Runtime::new(initial_values, callbacks, 0);
 
         let filtered_cards = runtime.filter(cards, func);
 
@@ -1139,7 +1227,7 @@ mod test{
             moves: vec![]
         };
 
-        let mut runtime = Runtime::new(initial_values, callbacks);
+        let mut runtime = Runtime::new(initial_values, callbacks, 0);
 
         let filtered_cards = runtime.filter(cards, func);
 
@@ -1179,7 +1267,7 @@ mod test{
             moves: vec![]
         };
 
-        let mut runtime = Runtime::new(initial_values, callbacks);
+        let mut runtime = Runtime::new(initial_values, callbacks, 0);
 
         let filtered_cards = runtime.filter(cards, func);
 
@@ -1219,7 +1307,7 @@ mod test{
             moves: vec![]
         };
 
-        let mut runtime = Runtime::new(initial_values, callbacks);
+        let mut runtime = Runtime::new(initial_values, callbacks, 0);
 
         let filtered_cards = runtime.filter(cards, func);
 

@@ -191,5 +191,45 @@ fn play_builds_and_starts_a_game() {
 fn play_without_a_file_is_an_error() {
     let output = run_with_args(&["play"], "");
     assert_eq!(output.status.code(), Some(1));
-    assert!(String::from_utf8_lossy(&output.stderr).contains("usage: cardlang play <file>"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("usage: cardlang play <file> [--seed <number>]"));
+}
+
+#[test]
+fn start_with_a_seed_deals_the_same_cards_every_time() {
+    let input = "build ./examples/simple_scopa.card\nstart seed 42\nshow deck\nshow seed\nstart seed 42\nshow deck\nexit\n";
+    let stdout = stdout_of(&run_interactive(input));
+    let decks: Vec<&str> = stdout.lines().filter(|l| l.matches(", ").count() > 30).collect();
+    assert_eq!(decks.len(), 2, "{}", stdout);
+    assert_eq!(decks[0], decks[1]);
+    assert!(stdout.contains("> 42\n"), "show seed: {}", stdout);
+}
+
+#[test]
+fn start_with_a_bad_seed_says_how_to_use_it() {
+    let output = run_interactive("build ./examples/simple_scopa.card\nstart seed x\nstart 3\nexit\n");
+    let stdout = stdout_of(&output);
+    assert!(stdout.contains("the seed must be a whole number, e.g. start seed 42"));
+    assert!(stdout.contains("usage: start, or start seed <number>"));
+}
+
+#[test]
+fn play_takes_a_seed() {
+    let first = stdout_of(&run_with_args(&["play", "examples/simple_scopa.card", "--seed", "7"], "exit\n"));
+    let second = stdout_of(&run_with_args(&["play", "examples/simple_scopa.card", "--seed", "7"], "exit\n"));
+    assert!(first.contains("> start seed 7\nplayer 1 to play"));
+    assert_eq!(first, second);
+}
+
+#[test]
+fn warnings_about_the_game_go_to_stderr() {
+    let dir = std::env::temp_dir().join(format!("cardlang-cli-warn-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("warns.card");
+    std::fs::write(&file, "name warns\nplayers 1\ndef setup(){\n    no_such_function()\n}\n").unwrap();
+
+    let output = run_interactive(&format!("build {}\nstart\nexit\n", file.display()));
+    std::fs::remove_dir_all(&dir).ok();
+
+    assert!(String::from_utf8_lossy(&output.stderr).contains("unknown function 'no_such_function'"));
+    assert!(!stdout_of(&output).contains("unknown function"));
 }

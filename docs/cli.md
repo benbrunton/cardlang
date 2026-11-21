@@ -18,6 +18,14 @@ cardlang play examples/simple_scopa.card
 
 This loads the game, starts it, and leaves you at the prompt, ready to make the first move. It's the same as running `cardlang` and typing `build <file>` then `start`.
 
+To get the same deal every time, give a seed:
+
+```sh
+cardlang play examples/simple_scopa.card --seed 42
+```
+
+That's the same as `start seed 42` (see below).
+
 ## Interactive mode: `cardlang`
 
 With no arguments, `cardlang` opens a prompt (`>`) that takes one line at a time. A line is either a command or a move.
@@ -45,9 +53,12 @@ When input is piped in (for example `cardlang < moves.txt`), lines are read plai
 |---|---|
 | `build <path>` | Loads a game file. Prints `Game loaded` or an error. Building again replaces the current game. |
 | `start` | Starts the game: resets the table, runs `setup`, then shows [the table](#the-table). Running it again starts a fresh game. |
+| `start seed <n>` | Starts the game with a seed, a whole number. The same seed always gives the same shuffles, so a game can be replayed: to share a game you found a bug in, or to try a different move from the same deal. `show seed` gives the seed of the current game, including one started with plain `start`. |
 | `show <what>` | Prints part of the game state (see below). |
 | `help` | Lists the commands, the move syntax and the keys. |
 | `exit` | Quits. End of input (Ctrl-D, or the end of a piped script) also quits. |
+
+Problems with the game's rules that don't stop it, such as calling a function that doesn't exist, are printed to stderr, separately from the table.
 
 Empty lines are ignored. Until a game has been built, moves, `start` and `show` print `no game loaded - use 'build <file>' first`. After `build` but before `start`, nothing has been dealt yet, so `show` prints `the game hasn't started - type 'start' to deal` (except `show game` and `show name`).
 
@@ -141,6 +152,7 @@ Games can give their own messages, as Simple Scopa does. Otherwise the reason sh
 | `show player <n>` | player `n`'s hand | `king diamonds, jack clubs` |
 | `show player <n> <field>` | one of player `n`'s piles (`hand`, or one declared with `player stack`) or numbers (`player number`) | `jack spades, jack diamonds` or `4` |
 | `show current_player` | whose turn it is | `2` |
+| `show seed` | the seed the game was started with | `42` |
 | `show deck` | the cards in the deck | `ace spades, two spades, …` |
 | `show <pile>` | the cards in a pile declared with `stack` | `four hearts` |
 | `show <number>` | a number declared with `number` | `2` |

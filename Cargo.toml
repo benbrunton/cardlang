@@ -8,5 +8,6 @@ edition = "2021"
 
 [dependencies]
 rand = "0.8.3"
+rand_chacha = "0.3"
 rustyline = { version = "14", default-features = false }
 

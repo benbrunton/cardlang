@@ -2,17 +2,9 @@ use std::{fs, env, process, io::{stdin, stdout, IsTerminal, Write}};
 
 use rustyline::{error::ReadlineError, history::DefaultHistory, CompletionType, Config, Editor};
 
-mod lex;
-mod parse;
-mod token;
-mod ast;
-mod interpreter;
-mod cards;
-mod runtime;
-mod move_input;
 mod completion;
 
-use interpreter::Game;
+use cardlang::{Game, MoveInput};
 
 enum CommandResult {
     // boxed: a game is much larger than the other variants
@@ -20,8 +12,9 @@ enum CommandResult {
     CommandFailed,
     Exit,
     Show(String),
-    Start,
-    Move(runtime::MoveInput),
+    // with a seed, the shuffles are the same every time
+    Start(Option<u64>),
+    Move(MoveInput),
     Nothing
 }
 
@@ -37,10 +30,13 @@ fn main() {
             }
         },
         // build and start a game in one step
-        "play"    => match args.get(2) {
-            Some(path) => interactive(vec![format!("build {}", path), "start".to_string()]),
-            None => {
-                eprintln!("usage: cardlang play <file>");
+        "play"    => match (args.get(2), args.get(3).map(String::as_str), args.get(4)) {
+            (Some(path), None, None) => interactive(vec![format!("build {}", path), "start".to_string()]),
+            (Some(path), Some("--seed"), Some(seed)) if seed.parse::<u64>().is_ok() => {
+                interactive(vec![format!("build {}", path), format!("start seed {}", seed)])
+            },
+            _ => {
+                eprintln!("usage: cardlang play <file> [--seed <number>]");
                 process::exit(1);
             }
         },
@@ -169,6 +165,13 @@ fn run_line(input: &str, game: &mut Option<Game>) -> bool {
     }
 
     handle_game_command(command_result, game);
+
+    // warnings about the game's rules go to stderr, apart from the table
+    if let Some(g) = game {
+        for message in g.take_messages() {
+            eprintln!("{}", message);
+        }
+    }
     true
 }
 
@@ -181,13 +184,26 @@ fn translate_command(command: Vec<&str>) -> CommandResult {
             let display_list = &command[1..];
             CommandResult::Show(display_list.join(" "))
         },
-        "start" => CommandResult::Start,
+        "start" => match command[1..] {
+            [] => CommandResult::Start(None),
+            ["seed", n] => match n.parse::<u64>() {
+                Ok(seed) => CommandResult::Start(Some(seed)),
+                Err(_) => {
+                    println!("the seed must be a whole number, e.g. start seed 42");
+                    CommandResult::CommandFailed
+                }
+            },
+            _ => {
+                println!("usage: start, or start seed <number>");
+                CommandResult::CommandFailed
+            }
+        },
         "help" => {
             print_help();
             CommandResult::Nothing
         },
         // anything else is a move, e.g. `take 7h / 3c 4s`
-        _ => match move_input::parse_move(&command.join(" ")) {
+        _ => match cardlang::parse_move(&command.join(" ")) {
             Ok(input) => CommandResult::Move(input),
             Err(e) => {
                 println!("{}", e);
@@ -201,8 +217,9 @@ fn print_help() {
     println!("commands:
   build <file>        load a game
   start               start (or restart) the game
-  show <what>         game, name, players, current_player, deck, <stack>,
-                      player <n> [stack]
+  start seed <n>      start with the same shuffles every time
+  show <what>         game, name, players, current_player, deck, seed,
+                      <stack>, player <n> [stack]
   exit                quit
 moves:
   [player] [name] [cards] [/ cards]
@@ -221,8 +238,11 @@ fn handle_game_command(command: CommandResult, game: &mut Option<Game>) {
                 println!("the game hasn't started - type 'start' to deal");
             },
             CommandResult::Show(c) => println!("{}", g.show(&c)),
-            CommandResult::Start => {
-                g.start();
+            CommandResult::Start(seed) => {
+                match seed {
+                    Some(seed) => g.start_with_seed(seed),
+                    None => g.start()
+                }
                 println!("{}", g.table());
             },
             CommandResult::Move(input) => {
@@ -234,7 +254,7 @@ fn handle_game_command(command: CommandResult, game: &mut Option<Game>) {
             _ => ()
         },
         None => match command {
-            CommandResult::Show(_) | CommandResult::Start | CommandResult::Move(_) => {
+            CommandResult::Show(_) | CommandResult::Start(_) | CommandResult::Move(_) => {
                 println!("no game loaded - use 'build <file>' first");
             },
             _ => ()
@@ -263,23 +283,14 @@ fn build_game(command: Vec<&str>) -> CommandResult {
 }
 
 fn parse_game(source: String) -> Option<Game> {
-    let tokens = match lex::lexer(&source) {
-        Ok(t) => t,
+    match Game::from_source(&source) {
+        Ok(game) => {
+            println!("Game loaded");
+            Some(game)
+        },
         Err(e) => {
             eprintln!("error: {}", e);
-            return None;
+            None
         }
-    };
-
-    let ast = match parse::parse(&tokens) {
-        Ok(a) => a,
-        Err(e) => {
-            eprintln!("error: {}", e);
-            return None;
-        }
-    };
-
-    let game = Game::new(ast);
-    println!("Game loaded");
-    Some(game)
+    }
 }
