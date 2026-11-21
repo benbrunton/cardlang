@@ -189,6 +189,7 @@ The work is the proposals in [PROPOSALS.md](../examples/drafts/PROPOSALS.md). Su
 | P18 | Suits in value tables | ⬜ | Pusoy Dos |
 | P19 | Variants: `extends` and `base()` | ⬜ | Pickering |
 | P20 | Jokers and wildcards (`with jokers`, `version`) | ⬜ | Pickering |
+| P21 | A range of players (`players 2 to 6`, `start 3`, `count player`) | ⬜ | both Pusoy Dos. Also changes how the CLI and an embedding program start a game |
 | P1 | `let` | ⬜ | all |
 | P2 | `none` | ⬜ | Klondike, Gin |
 | P10 | Players are their numbers | ⬜ | Hold'em, Gin |

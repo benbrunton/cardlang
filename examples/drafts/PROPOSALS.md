@@ -8,7 +8,7 @@ Four games written in the cardlang we'd like to have, to find out what it's miss
 | [`holdem.card`](holdem.card) | chips and betting, skipping players who've folded, moves that take a number, ranking poker hands |
 | [`gin_rummy.card`](gin_rummy.card) | a turn made of two moves (take, then discard), melds that players lay out, remembering a card between moves |
 | [`pusoy_dos.card`](pusoy_dos.card) | a game's own rank order (Twos high), suit order to break ties, rounds that end when everyone else passes, comparing combinations |
-| [`pusoy_dos_pickering.card`](pusoy_dos_pickering.card) | a variant written as changes to another game, jokers as wildcards, a card order that turns round mid-game |
+| [`pusoy_dos_pickering.card`](pusoy_dos_pickering.card) | a variant written as changes to another game, jokers as wildcards, a card order that turns round mid-game, any number of players |
 
 The existing language held up better than expected: `move` with `/` groups fits Gin's `knock 2c / 7h 8h 9h / 5s 5d 5c` exactly, `after_move` plus setting `current_player` covers both a two-step turn and poker's turn order, and `every …: … or …` handles the poker table limit without anything new. Pusoy Dos needed only one new thing (18): its rank order is a `values` table, a round ending after three passes is a `number` and `after_move`, and the turn comes back to the last player who played without the game having to set it.
 
@@ -190,11 +190,26 @@ max version v in cards: strength(v)
 
 Wildcards in other games (Canasta's twos, Rummy's jokers) fit the same pattern. **Pusoy Dos (Pickering).**
 
+### 21. A range of players
+```
+players 2 to 6
+players 2 or more
+
+count player        .(how many are playing)
+```
+Many games take a range of players: Pickering Pusoy Dos takes two or more, Hold'em anything from two to ten. Writing one file per count would be silly.
+- `players 4` works as now. `players 2 to 6` and `players 2 or more` give a range.
+- The number is chosen when the game starts: `start 3` at the CLI, `cardlang play pickering.card 3`, or a number passed to the engine when it's embedded. For a game with a range, `start` on its own says which numbers it takes.
+- `count player` is the number playing: proposal 9's `count` with no condition, like `next player after dealer`. Pusoy Dos ends a round when `passes is (count player) - 1`.
+- Most of the language already copes: `player stack` and `player number` give every player their own, `deck > players end` deals everything round the table, and `every`, `next` and `most` go through however many there are. What doesn't cope is a number written into the game, such as `passes is 3`, or a deal of a fixed size (`deck > players 13`) when there aren't enough cards for everyone.
+- A game that can't work above some number should give it with `to`. `or more` really means any number; with enough players some hands are empty, and that's the game's problem.
+
+A variant can change the number with its own `players` declaration (proposal 19), which is how Pickering takes two or more players when the standard game takes four. **Pusoy Dos (both).**
+
 ## Smaller observations
 
 - **A turn made of two moves** (Gin's take, then discard) works today: the first move sets `current_player = player` and a flag. `keep_turn()` would say it more clearly, but it doesn't seem worth a new built-in yet.
 - **A flag shared by the game** (`flag reversed`) follows from proposal 11, the same way `number` goes with `player number`.
-- **The number of players can't be read.** Pusoy Dos ends a round after `passes is 3`, which is right for four players but would need changing for three. `count player` (proposal 9 with no condition) would give it, so this probably doesn't need anything new.
 - **`>` means two things**: a transfer as a statement, "greater than" inside an expression. Statement position separates them and the drafts never got confused, but it's worth keeping in mind before adding more symbols.
 - **`:` also means two things**: a field (`p:score`) and the start of a condition (`every player p: …`). `every player p: p:score > 0` has both. Spacing helps; it hasn't been a problem yet.
 

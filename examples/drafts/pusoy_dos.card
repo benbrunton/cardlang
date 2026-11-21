@@ -1,6 +1,6 @@
 .(PUSOY DOS - DRAFT. Uses proposed syntax, so it doesn't parse yet.
   Proposals used: 1 let, 5 :top, 7 in, 9 quantifiers, 14 *, 16 must,
-  18 suits in value tables. See PROPOSALS.md.
+  18 suits in value tables, 21 count player. See PROPOSALS.md.
 
   HOW TO PLAY
 
@@ -38,7 +38,7 @@
     The first player plays any combination: play 3c 3h
     Each player after that either plays a better combination with the same
     number of cards, or passes. Passing doesn't stop you playing later in the
-    same round. When the other three players have all passed one after the
+    same round. When all the other players have passed one after the
     other, the round is over: the cards are cleared and the player who
     played last starts again with any combination.
 
@@ -71,7 +71,7 @@ number passes         .(passes in a row since the last play)
 
 def setup(){
     shuffle(deck)
-    deck > players 13
+    deck > players end
     current_player = first player p: [3c] in p:hand
 }
 
@@ -103,13 +103,18 @@ move pass(player){
     passes = passes + 1
 }
 
-.(after the other three pass in a row, the turn has come back round to
+.(after everyone else passes in a row, the turn has come back round to
   whoever played last: clear the middle so they can start a new round)
 def after_move(){
-    if(passes is 3){
+    if(passes is others()){
         middle > played
         passes = 0
     }
+}
+
+.(everyone except the player who played last)
+def others(){
+    return((count player) - 1)
 }
 
 

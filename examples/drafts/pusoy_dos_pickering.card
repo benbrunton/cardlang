@@ -1,10 +1,15 @@
 .(PUSOY DOS, PICKERING RULES - DRAFT. Uses proposed syntax, so it doesn't
   parse yet. Proposals used: 11 flag, 12 not, 14 /, 19 extends and base,
-  20 jokers and wildcards. See PROPOSALS.md.
+  20 jokers and wildcards, 21 player ranges. See PROPOSALS.md.
 
   HOW TO PLAY
 
   Play Pusoy Dos (see pusoy_dos.card), with these changes.
+
+  Players
+    Two or more. All 54 cards are dealt round the table, so some players
+    may have one more card than others. Whoever has the three of clubs
+    starts.
 
   Suit order
     Clubs (lowest), hearts, diamonds, spades (highest). So 2s is the best
@@ -17,9 +22,7 @@
     The pack has two jokers (typed jk). A joker is wild: it stands for
     whichever card makes your combination best. A joker on its own is the
     best single card there is. A joker can't stand in for the three of clubs
-    on the first play. Each player is dealt 13 cards as usual, so the last
-    two cards aren't used. (Still to settle: who starts if the three of
-    clubs is one of those two?)
+    on the first play.
 
   Reversal
     Playing a four of a kind reverses the order of every card: 3c becomes
@@ -31,6 +34,7 @@
 name pickering_pusoy_dos
 extends pusoy_dos
 
+players 2 or more
 deck standard with jokers
 
 .(replaces the standard game's table of the same name)
