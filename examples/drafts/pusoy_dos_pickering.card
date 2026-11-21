@@ -1,0 +1,67 @@
+.(PUSOY DOS, PICKERING RULES - DRAFT. Uses proposed syntax, so it doesn't
+  parse yet. Proposals used: 11 flag, 12 not, 14 /, 19 extends and base,
+  20 jokers and wildcards. See PROPOSALS.md.
+
+  HOW TO PLAY
+
+  Play Pusoy Dos (see pusoy_dos.card), with these changes.
+
+  Suit order
+    Clubs (lowest), hearts, diamonds, spades (highest). So 2s is the best
+    card and 3c the worst. As in the standard game, the suit decides
+    between cards of the same rank: singles, the highest cards of pairs,
+    threes, straights and flushes, and the sets in full houses and four of
+    a kinds.
+
+  Jokers
+    The pack has two jokers (typed jk). A joker is wild: it stands for
+    whichever card makes your combination best. A joker on its own is the
+    best single card there is. A joker can't stand in for the three of clubs
+    on the first play. Each player is dealt 13 cards as usual, so the last
+    two cards aren't used. (Still to settle: who starts if the three of
+    clubs is one of those two?)
+
+  Reversal
+    Playing a four of a kind reverses the order of every card: 3c becomes
+    the best card and 2s the worst. Ranks and suits both turn round, but
+    the kinds of five-card hands keep their order. The next player has to
+    beat the four of a kind in the new order. Another four of a kind turns
+    the order back.)
+
+name pickering_pusoy_dos
+extends pusoy_dos
+
+deck standard with jokers
+
+.(replaces the standard game's table of the same name)
+values suit_order {
+    Clubs 1, Hearts 2, Diamonds 3, Spades 4
+}
+
+flag reversed
+
+
+.(Jokers: try every card each joker could be, and keep the best. Every
+  comparison in the standard game goes through strength, so this is the
+  only change jokers need.)
+def strength(cards){
+    return(max version v in cards: base(v))
+}
+
+
+.(Reversal: card_strength gives 5 for the worst card and 56 for the best,
+  so 61 minus it turns the order round)
+def card_strength(card){
+    if(reversed){
+        return(61 - base(card))
+    }
+    return(base(card))
+}
+
+.(after a play, not a pass: a four of a kind scores 400 and something)
+def after_move(){
+    if(passes is 0 & count(middle) is 5 & strength(middle) / 100 is 4){
+        reversed = not reversed
+    }
+    base()
+}

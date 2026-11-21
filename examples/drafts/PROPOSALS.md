@@ -1,14 +1,16 @@
-# Draft specs: Klondike, Texas Hold'em and Gin Rummy
+# Draft specs: Klondike, Texas Hold'em, Gin Rummy and Pusoy Dos
 
-Three games written in the cardlang we'd like to have, to find out what it's missing. None of them parse yet. Everything new is listed below once, with the drafts that use it.
+Four games written in the cardlang we'd like to have, to find out what it's missing. None of them parse yet. Everything new is listed below once, with the drafts that use it.
 
 | Draft | What it pushed on |
 |---|---|
 | [`klondike.card`](klondike.card) | face-down cards, several piles of the same kind, moving a card *and everything on top of it*, asking which pile a card is in |
 | [`holdem.card`](holdem.card) | chips and betting, skipping players who've folded, moves that take a number, ranking poker hands |
 | [`gin_rummy.card`](gin_rummy.card) | a turn made of two moves (take, then discard), melds that players lay out, remembering a card between moves |
+| [`pusoy_dos.card`](pusoy_dos.card) | a game's own rank order (Twos high), suit order to break ties, rounds that end when everyone else passes, comparing combinations |
+| [`pusoy_dos_pickering.card`](pusoy_dos_pickering.card) | a variant written as changes to another game, jokers as wildcards, a card order that turns round mid-game |
 
-The existing language held up better than expected: `move` with `/` groups fits Gin's `knock 2c / 7h 8h 9h / 5s 5d 5c` exactly, `after_move` plus setting `current_player` covers both a two-step turn and poker's turn order, and `every …: … or …` handles the poker table limit without anything new.
+The existing language held up better than expected: `move` with `/` groups fits Gin's `knock 2c / 7h 8h 9h / 5s 5d 5c` exactly, `after_move` plus setting `current_player` covers both a two-step turn and poker's turn order, and `every …: … or …` handles the poker table limit without anything new. Pusoy Dos needed only one new thing (18): its rank order is a `values` table, a round ending after three passes is a `number` and `after_move`, and the turn comes back to the last player who played without the game having to set it.
 
 ## Proposals
 
@@ -17,7 +19,7 @@ The existing language held up better than expected: `move` with `/` groups fits 
 let card = moving:top
 let knocker = first player p: p:knocked
 ```
-A name that lasts until the end of the function. It can hold any value (card, pile, player, number) and be changed with `=`. Without it, every draft repeated `moving:top` and `onto:top:pile` many times or split moves into helper functions just to name something. **All three.**
+A name that lasts until the end of the function. It can hold any value (card, pile, player, number) and be changed with `=`. Without it, every draft repeated `moving:top` and `onto:top:pile` many times or split moves into helper functions just to name something. **All four.**
 
 ### 2. `none`
 The value for "nothing": what `first pile c in columns: …` gives when no pile matches, the `:top` of an empty pile, and a `card` declaration that hasn't been set yet. You test it with `is none` / `is not none`. **Klondike, Gin.**
@@ -52,7 +54,7 @@ moving:top               .(the top card, as a card)
 target:pile              .(the pile a card is in)
 foundation:top:suit
 ```
-A move's card group is a pile, so a one-card move needed `count(played) is 1` and then had no way to ask about *the* card. `:top` (and `:bottom`) fixes that. `card:pile` saves the player typing which pile they mean: `put 7h / 8s` finds both piles from the cards. **Klondike, Gin.**
+A move's card group is a pile, so a one-card move needed `count(played) is 1` and then had no way to ask about *the* card. `:top` (and `:bottom`) fixes that. `card:pile` saves the player typing which pile they mean: `put 7h / 8s` finds both piles from the cards. **Klondike, Gin, Pusoy Dos.**
 
 ### 6. Transfers: `from`, and counts as expressions
 ```
@@ -66,7 +68,7 @@ deck > column column:id              .(the count can be any number expression)
 played in player:hand          .(replaces cards_in_stack(played, player:hand))
 card:pile in columns           .(is this pile one of the columns?)
 ```
-`cards_in_stack` would be removed. **Klondike, Gin.**
+`cards_in_stack` would be removed. **Klondike, Gin, Pusoy Dos.**
 
 ### 8. Adding and taking away piles: `+` and `-`
 ```
@@ -90,7 +92,7 @@ Today there are `every`, `any` and `most`. The drafts needed a few more. They al
 - `next` starts after the current player, or after the one named with `after`. Its condition is optional: `next player after dealer`.
 - The functions `count(pile)`, `sum(pile)`, `min(pile)` and `max(pile)` stay, as short forms that use the card values. `min` and `max` also take two numbers: `min(2, big:chips)`.
 
-`next` replaces the need for a "skip folded players" feature. **All three.**
+`next` replaces the need for a "skip folded players" feature. **All four.**
 
 The condition still runs to the end of the brackets, so `count player p: in_hand(p) is 1` doesn't mean what it looks like. The drafts put each count in a small function (`players_in_hand() is 1`), which reads better anyway. If that gets annoying, the alternative is to make the condition stop at `is`, `<` and `>` when the quantifier gives a number.
 
@@ -122,7 +124,7 @@ move raise(player, number amount)     .(typed as: raise 10)
 Move parameters are card groups unless marked `number`, matching how declarations are typed. This avoids a clash with cards, since a bare `10` reads as the ten. **Hold'em.**
 
 ### 14. `*` and `/` (roadmap 39b)
-Splitting a pot needs `/`: `let share = pot / winners`. Division rounds down. **Hold'em.**
+Splitting a pot needs `/`: `let share = pot / winners`. Division rounds down. **Hold'em.** Pusoy Dos uses `*` to rank every card in the deck: `card:pusoy * 4 + card:suit_order`.
 
 ### 15. `use`: libraries, and poker hands as a built-in
 ```
@@ -130,12 +132,15 @@ use poker      .(gives poker_rank(cards): higher is better)
 ```
 Most of poker ranking is easy to write in cardlang: sets, flushes and straights are a few lines each, the same as Gin's `is_set` and `is_run`. The hard part is breaking ties, where kickers are compared one by one. That needs sorting and comparing lists, and fitting it into a single number overflows. Adding sorting and lists to the language for one game would make it bigger for everyone. Instead, `poker_rank` would be a library written in Rust that gives each hand a number (kind × 15⁵ plus the deciding cards in order), and a game uses it with `use poker`. The same `use` could later load libraries written in cardlang. Lots of games use poker hands (Stud, Draw, Pai Gow, video poker), so it's a reasonable thing to provide. **Hold'em.**
 
+### 15b. Not every game with poker hands needs `use poker`
+Pusoy Dos has straights, flushes, full houses and so on, but writes them in about 40 lines of cardlang without the library. Hands of the same kind are compared by one card (the highest, or the rank of the three or the four), so each hand fits in one number: `kind × 100 + that card`. Hold'em needs the library because of kickers, where several cards are compared one after another. That's a reason to keep `use poker` small, and Hold'em the only game that needs it.
+
 ### 16. `must` replaces `check`
 ```
 must(count(played) is 1, play one card, e.g. drop 9d)
 must(card:colour is not target:colour, it must be the other colour)
 ```
-Same behaviour as `check`, with a better name. A rule reads as a rule: "the card must be the other colour". It also frees up `check` as a move name, so Hold'em has a real `check` move alongside `call`. `check` would be kept working for a while and then removed. **All three.**
+Same behaviour as `check`, with a better name. A rule reads as a rule: "the card must be the other colour". It also frees up `check` as a move name, so Hold'em has a real `check` move alongside `call`. `check` would be kept working for a while and then removed. **All four.**
 
 ### 17. The language knows about cards: `card:colour`
 ```
@@ -143,9 +148,53 @@ card:colour        .(Red for hearts and diamonds, Black for spades and clubs)
 ```
 Facts that are true of a card in every game belong to the language, not the game spec. Today a card has `:rank`, `:suit` and `:value`; Klondike also needed its colour, and without this every patience game would define the same `red(card)` function. Other candidates to add when a game needs them: `:face` (true for Jack, Queen and King) and the next or previous rank. Things that change from game to game, such as what a card is worth, stay in `values` tables. **Klondike.**
 
+### 18. Suits in value tables
+```
+values suit_order { Clubs 1, Spades 2, Hearts 3, Diamonds 4 }
+
+card:suit_order
+```
+A `values` table can list suits instead of ranks. Pusoy Dos breaks ties between cards of the same rank by suit, and so do other climbing games (Big Two, Tiến lên) and many trick-taking games with a trump order. A table lists either ranks or suits, not both. Together with `*`, it gives each card a single place in the deck: `card:pusoy * 4 + card:suit_order`. **Pusoy Dos.**
+
+### 19. Variants: `extends` and `base()`
+```
+name pickering_pusoy_dos
+extends pusoy_dos
+
+values suit_order { Clubs 1, Hearts 2, Diamonds 3, Spades 4 }
+
+def card_strength(card){
+    if(reversed){
+        return(61 - base(card))
+    }
+    return(base(card))
+}
+```
+House rules and variants are how most card games are actually played, so a variant should be a short list of changes, not a copy of the whole game.
+- `extends pusoy_dos` starts from everything in `pusoy_dos.card` (in the same folder).
+- Anything the variant defines with the same name replaces the original: a `def`, a `move`, a `values` table, a declaration such as `players`. A replaced move keeps its place in the move order. Everything else is added.
+- Inside a replacement, `base(…)` runs the original. That's what keeps variants short: Pickering's jokers are one line (`max version v in cards: base(v)`), and its reversal wraps `card_strength` without repeating it.
+- The variant's header only describes what's different.
+
+It also gives a rule for writing games: **the functions a game names are the places a variant can change it.** Pickering only works in three short functions because the standard game sends every comparison through `strength` and every card through `card_strength`. It's another reason for principle 7 below. **Pusoy Dos (Pickering).**
+
+### 20. Jokers and wildcards
+```
+deck standard with jokers      .(adds two jokers, typed jk)
+
+max version v in cards: strength(v)
+```
+- `with jokers` adds two jokers to the deck. A joker's `:rank` and `:suit` are `Joker`.
+- `version` joins the quantifiers (proposal 9): each version of a pile is the pile with every joker replaced by a real card. A pile without jokers has one version, itself. So "a joker is whatever card makes your hand best" is `max version v in cards: …`, and "the move is allowed if the jokers can be read some way that works" is `any version v in cards: …`.
+- Two jokers give 1,378 versions (the order of the jokers doesn't matter). That's fine for checking a move, but it's the kind of work the per-move limit (roadmap 55) needs to allow for.
+
+Wildcards in other games (Canasta's twos, Rummy's jokers) fit the same pattern. **Pusoy Dos (Pickering).**
+
 ## Smaller observations
 
 - **A turn made of two moves** (Gin's take, then discard) works today: the first move sets `current_player = player` and a flag. `keep_turn()` would say it more clearly, but it doesn't seem worth a new built-in yet.
+- **A flag shared by the game** (`flag reversed`) follows from proposal 11, the same way `number` goes with `player number`.
+- **The number of players can't be read.** Pusoy Dos ends a round after `passes is 3`, which is right for four players but would need changing for three. `count player` (proposal 9 with no condition) would give it, so this probably doesn't need anything new.
 - **`>` means two things**: a transfer as a statement, "greater than" inside an expression. Statement position separates them and the drafts never got confused, but it's worth keeping in mind before adding more symbols.
 - **`:` also means two things**: a field (`p:score`) and the start of a condition (`every player p: …`). `every player p: p:score > 0` has both. Spacing helps; it hasn't been a problem yet.
 
@@ -160,7 +209,7 @@ The drafts suggest a rule of thumb based on how you'd say it in English:
 | "do *x*" | a **function** used as a statement | `shuffle(deck)`, `turn_up(c)`, `end()`, `winner(p)` |
 | "*x* must be so" | a **rule**, `must(…)` | `must(count(played) is 1, play one card)` |
 | "the *x* of these" / "how many" | a **function** that gives a value | `count(pile)`, `sum(pile)`, `poker_rank(cards)` |
-| "for every / any / the first / the most…" | a **quantifier** | `every player p: …`, `first pile c in columns: …` |
+| "for every / any / the first / the most…" | a **quantifier** | `every player p: …`, `first pile c in columns: …`, `max version v in cards: …` |
 | "move these cards there" | a **transfer** | `deck > players 10` |
 
 Some principles behind it:
