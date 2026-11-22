@@ -4,7 +4,7 @@ All known bugs and planned work in one place, in priority order. It replaces the
 
 **Keeping it current:** when you fix something, mark it ✅ here, then update [limitations.md](limitations.md) and the [language reference](language-reference.md) in the same PR.
 
-Status: ✅ done · 🟡 partly done · ⬜ not started · ⚠️ needs a design decision first
+Status: ✅ done · 🟡 partly done · ⬜ not started · ⚠️ needs a design decision first · ➡️ moved
 
 ## Milestone 1: never crash, never hang ✅
 
@@ -108,21 +108,21 @@ Making the interpreter pleasant to play at.
 
 ## Milestone 7: web and embedding
 
-Started: 48, 53, 55 and 56 are done. The aim is to use cardlang as the rules engine inside other programs, such as a web app, and not only the CLI. There are two ways to run it:
+Not started, apart from 48, 53, 55 and 56, which moved to Milestone 9 and are done. The aim is to use cardlang as the rules engine inside other programs, such as a web app, and not only the CLI. There are two ways to run it:
 - **On a server**, which acts as the referee for networked play. Players can't cheat, and each sees only what they're allowed to.
 - **In the browser via WebAssembly**, for pass-and-play, offline play, or a playground for writing games. The engine can see every card there, so it's not enough on its own for play between people who don't trust each other.
 
 | # | Item | Status | Notes |
 |---|---|---|---|
-| 48 | Split into a library crate plus the CLI binary | ✅ | `src/lib.rs` is the engine; `src/main.rs` is the CLI built on it. `tests/library.rs` uses only the public API. |
+| 48 | Split into a library crate plus the CLI binary | ➡️ | Moved to Milestone 9 |
 | 49 | Game state as data (e.g. JSON) instead of display text | ⬜ | `show` and the table are text for the terminal |
 | 50 | Visibility: who can see which cards, and a view of the game per player | ⬜ | ⚠️ Needs a design decision; probably declared in the game file (face up/down, owner-only hands) |
 | 51 | Event log of what happened in a move, e.g. "7h moved from player 1's hand to their collection" | ⬜ | For animation and history |
 | 52 | List the legal moves, or check one without making it | ⬜ | For highlighting playable cards; the engine can already try a move and undo it. Also unblocks compulsory capture (38). |
-| 53 | Seeded shuffles | ✅ | `start seed 42`, `cardlang play <file> --seed 42`, `Game::start_with_seed`. ChaCha8, so a seed deals the same everywhere, including WebAssembly. |
+| 53 | Seeded shuffles | ➡️ | Moved to Milestone 9 |
 | 54 | Save and load a game in progress | ⬜ | Between requests, or across restarts |
-| 55 | Limits on how much work one move can do | ✅ | 1,000,000 statements and expressions per move or setup (the heaviest Scopa move uses about 3,000). A stopped move is undone. `Game::set_step_limit` changes it. |
-| 56 | Return all errors and messages to the caller instead of printing to stderr | ✅ | `Game::take_messages()`; the CLI prints them to stderr. Loading gives `Result<Game, String>`. |
+| 55 | Limits on how much work one move can do | ➡️ | Moved to Milestone 9 |
+| 56 | Return all errors and messages to the caller instead of printing to stderr | ➡️ | Moved to Milestone 9 |
 | 57 | Proof of concept: a small WebAssembly page to play Simple Scopa by clicking cards | ⬜ | Builds on 48–50. Do this before committing to a server design. |
 
 ## Milestone 8: full Scopa ✅
@@ -155,11 +155,56 @@ Started: 48, 53, 55 and 56 are done. The aim is to use cardlang as the rules eng
 ### Plan from here
 
 1. ~~Specify Scopa~~ ✅
-2. Resolve issues or limitations it shows up
-3. Web and embedding (Milestone 7)
-4. Pick the next card game to specify
-5. Resolve the issues it shows up
+2. ~~Draft the next games to find what the language is missing~~ ✅ [Klondike, Hold'em, Gin Rummy, Pusoy Dos and Pusoy Dos with Pickering rules](../examples/drafts/PROPOSALS.md)
+3. ~~Groundwork: the parts of Milestone 7 that don't depend on the language (Milestone 9)~~ ✅
+4. Language 1.0 (Milestone 10)
+5. The rest of web and embedding (Milestone 7)
 6. Build a lightweight client
+
+The language comes before the rest of Milestone 7. Game state as data (49), visibility (50), the event log (51), listing legal moves (52) and saving games (54) all depend on what a game's state looks like, and the proposals change it: face up and face down, numbered piles, `none`, `flag` and `card`, players as numbers. Face up and face down *is* the visibility model. Building those first would mean building them twice. The groundwork in Milestone 9 isn't affected, and it makes the language work quicker: seeded shuffles give the new games repeatable tests, and returned errors let tests check messages.
+
+## Milestone 9: groundwork for 1.0 and embedding ✅
+
+Taken from Milestone 7 because they don't depend on the language.
+
+| # | Item | Status | Notes |
+|---|---|---|---|
+| 48 | Split into a library crate plus the CLI binary | ✅ | `src/lib.rs` is the engine; `src/main.rs` is the CLI built on it. `tests/library.rs` uses only the public API. |
+| 53 | Seeded shuffles | ✅ | `start seed 42`, `cardlang play <file> --seed 42`, `Game::start_with_seed`. ChaCha8, so a seed deals the same everywhere, including WebAssembly. |
+| 56 | Return all errors and messages to the caller instead of printing to stderr | ✅ | `Game::take_messages()`; the CLI prints them to stderr. Loading gives `Result<Game, String>`. |
+| 55 | Limits on how much work one move can do | ✅ | 1,000,000 statements and expressions per move or setup (the heaviest Scopa move uses about 3,000). A stopped move is undone. `Game::set_step_limit` changes it. |
+
+## Milestone 10: language 1.0
+
+**1.0 is done when** [Klondike](../examples/drafts/klondike.card), [Texas Hold'em](../examples/drafts/holdem.card), [Gin Rummy](../examples/drafts/gin_rummy.card) [Pusoy Dos](../examples/drafts/pusoy_dos.card) and [Pusoy Dos with Pickering rules](../examples/drafts/pusoy_dos_pickering.card), written as changes to Pusoy Dos, play from start to finish, each with tests that play whole games, and Scopa still passes. After 1.0, changes that break existing games need a very good reason.
+
+The work is the proposals in [PROPOSALS.md](../examples/drafts/PROPOSALS.md). Suggested order: renames first, while there are few games to update; then the changes to values; then face up and face down.
+
+| # | Proposal | Status | Games |
+|---|---|---|---|
+| P16 | `must` replaces `check` | ⬜ | all |
+| P12 | `not` (was 65) and `and` for `&` | ⬜ | Klondike, Hold'em, Gin, Pickering |
+| P14 | `*` and `/` (was 39b) | ⬜ | Hold'em, both Pusoy Dos |
+| P17 | `card:colour` | ⬜ | Klondike |
+| P18 | Suits in value tables | ⬜ | Pusoy Dos |
+| P19 | Variants: `extends` and `base()` | ⬜ | Pickering |
+| P20 | Jokers and wildcards (`with jokers`, `version`) | ⬜ | Pickering |
+| P21 | A range of players (`players 2 to 6`, `start 3`, `count player`) | ⬜ | both Pusoy Dos. Also changes how the CLI and an embedding program start a game |
+| P1 | `let` | ⬜ | all |
+| P2 | `none` | ⬜ | Klondike, Gin |
+| P10 | Players are their numbers | ⬜ | Hold'em, Gin |
+| P11 | `flag` and `card` declarations | ⬜ | Hold'em, Gin, Pickering |
+| P5 | `:top`, `:pile` | ⬜ | Klondike, Gin, Pusoy Dos |
+| P7 | `in` (replaces `cards_in_stack`) | ⬜ | Klondike, Gin, Pusoy Dos |
+| P8 | Pile `+` and `-` | ⬜ | Hold'em, Gin |
+| P9 | Quantifiers: `count`, `sum`, `min`, `max`, `first`, `next` | ⬜ | all |
+| P4 | Numbered piles | ⬜ | Klondike, Gin. May need stacks as real references (21) |
+| P6 | `from`, and counts as expressions | ⬜ | Klondike |
+| P3 | Face up and face down | ⬜ | all. Designed together with visibility (50) |
+| P13 | Number parameters on moves | ⬜ | Hold'em. Affects listing legal moves (52) |
+| P15 | `use poker` | ⬜ | Hold'em |
+
+The riskiest are `use poker` and number parameters on moves, and only Hold'em needs them. If they hold things up, Hold'em can move to 1.1 rather than delaying the rest.
 
 ## Backlog
 

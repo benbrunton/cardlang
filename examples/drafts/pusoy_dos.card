@@ -1,0 +1,209 @@
+.(PUSOY DOS - DRAFT. Uses proposed syntax, so it doesn't parse yet.
+  Proposals used: 1 let, 5 :top, 7 in, 9 quantifiers, 14 *, 16 must,
+  18 suits in value tables, 21 count player. See PROPOSALS.md.
+
+  HOW TO PLAY
+
+  Pusoy Dos ("big two") is a climbing game for four players from the
+  Philippines. Be the first to get rid of all your cards.
+
+  Card order
+    Twos are high and Threes are low:
+        3 4 5 6 7 8 9 10 J Q K A 2
+    Between cards of the same rank, the suit decides:
+        clubs (lowest), spades, hearts, diamonds (highest)
+    So 2d is the best card in the deck and 3c the worst.
+
+  Dealing
+    Deal all 52 cards, 13 each. The player with the three of clubs starts,
+    and their first play must include it.
+
+  Combinations
+    - a single card
+    - a pair: two cards of the same rank
+    - three of a kind
+    - a five-card hand. These are, from worst to best:
+        straight         five ranks in a row, in the order above: 9 10 J Q K,
+                         and J Q K A 2 is the best. They don't wrap round.
+        flush            five cards of one suit
+        full house       three of one rank and two of another
+        four of a kind   four of one rank, plus any other card
+        straight flush   a straight all in one suit
+  Pairs and threes are compared by their highest card: 7d 7c beats 7h 7s.
+  A better kind of five-card hand always wins. Between two of the same
+  kind, straights and flushes are compared by their highest card, full
+  houses by the three, and four of a kinds by the four.
+
+  Playing
+    The first player plays any combination: play 3c 3h
+    Each player after that either plays a better combination with the same
+    number of cards, or passes. Passing doesn't stop you playing later in the
+    same round. When all the other players have passed one after the
+    other, the round is over: the cards are cleared and the player who
+    played last starts again with any combination.
+
+  Winning
+    The first player with no cards left wins.
+
+  Left out to keep this short: scoring the cards left in the other hands
+  and playing several deals, and the variants with A 2 3 4 5 straights or
+  a different suit order.)
+
+name pusoy_dos
+players 4
+
+.(the rank order for this game: Three low, Two high)
+values pusoy {
+    Three 1, Four 2, Five 3, Six 4, Seven 5, Eight 6, Nine 7
+    Ten 8, Jack 9, Queen 10, King 11, Ace 12, Two 13
+}
+
+.(breaks ties between cards of the same rank)
+values suit_order {
+    Clubs 1, Spades 2, Hearts 3, Diamonds 4
+}
+
+stack middle          .(the combination to beat)
+stack played          .(cards cleared away at the end of each round)
+
+number passes         .(passes in a row since the last play)
+
+
+def setup(){
+    shuffle(deck)
+    deck > players end
+    current_player = first player p: [3c] in p:hand
+}
+
+
+.(Moves. `play` comes first, so typing just the cards plays them.)
+
+move play(player, cards){
+    must(cards in player:hand, you can only play cards from your hand)
+    must(strength(cards) > 0,
+        that's not a combination: one card, a pair, three of a kind, or a five-card hand)
+    if(count(middle) is 0 & count(played) is 0){
+        must([3c] in cards, the first play must include the three of clubs)
+    }
+    if(count(middle) > 0){
+        must(count(cards) is count(middle), play the same number of cards as the last player, or pass)
+        must(strength(cards) > strength(middle), that doesn't beat the cards in the middle - play higher, or pass)
+    }
+    middle > played
+    player:hand > middle taking cards
+    passes = 0
+    if(count(player:hand) is 0){
+        winner(player)
+        end()
+    }
+}
+
+move pass(player){
+    must(count(middle) > 0, you're starting the round - play any combination)
+    passes = passes + 1
+}
+
+.(after everyone else passes in a row, the turn has come back round to
+  whoever played last: clear the middle so they can start a new round)
+def after_move(){
+    if(passes is others()){
+        middle > played
+        passes = 0
+    }
+}
+
+.(everyone except the player who played last)
+def others(){
+    return((count player) - 1)
+}
+
+
+.(Comparing combinations
+
+  strength gives a number for a combination: higher beats lower, and 0
+  means it isn't a combination. Only combinations with the same number of
+  cards are ever compared, so singles, pairs and threes just use their
+  highest card. Five-card hands add 100 for each kind above a straight.)
+
+def strength(cards){
+    let n = count(cards)
+    if(n is 1 or ((n is 2 or n is 3) & same_rank(cards))){
+        return(highest(cards))
+    }
+    if(n is 5){
+        if(is_straight(cards) & is_flush(cards)){
+            return(500 + highest(cards))
+        }
+        if(any card c in cards: rank_count(cards, c) is 4){
+            return(400 + highest_in_set(cards, 4))
+        }
+        if(is_full_house(cards)){
+            return(300 + highest_in_set(cards, 3))
+        }
+        if(is_flush(cards)){
+            return(200 + highest(cards))
+        }
+        if(is_straight(cards)){
+            return(100 + highest(cards))
+        }
+    }
+    return(0)
+}
+
+.(a single card's place in the whole deck: 3c is 5, 2d is 56)
+def card_strength(card){
+    return(card:pusoy * 4 + card:suit_order)
+}
+
+def highest(cards){
+    return(max card c in cards: card_strength(c))
+}
+
+.(the highest card in the set: the three of a full house, or the four of a
+  four of a kind. In a single pack two sets never share a rank, so this is
+  just the set's rank, but a variant with wildcards can make a tie, and then
+  the suit decides, as it does for single cards)
+def highest_in_set(cards, size){
+    return(max card c in cards: strength_if_in_set(cards, c, size))
+}
+
+def strength_if_in_set(cards, card, size){
+    if(rank_count(cards, card) is size){
+        return(card_strength(card))
+    }
+    return(0)
+}
+
+.(how many cards in the group have the same rank as this one)
+def rank_count(cards, card){
+    return(count card c in cards: c:rank is card:rank)
+}
+
+def same_rank(cards){
+    return(every card c in cards: c:rank is cards:top:rank)
+}
+
+def is_flush(cards){
+    return(every card c in cards: c:suit is cards:top:suit)
+}
+
+.(five different ranks, and the highest is four above the lowest)
+def is_straight(cards){
+    let different = every card c in cards: rank_count(cards, c) is 1
+    return(different & top_rank(cards) - bottom_rank(cards) is 4)
+}
+
+.(every rank appears at least twice, and one appears three times: 3 + 2)
+def is_full_house(cards){
+    let pairs_or_more = every card c in cards: rank_count(cards, c) >= 2
+    let has_three = any card c in cards: rank_count(cards, c) is 3
+    return(pairs_or_more & has_three)
+}
+
+def top_rank(cards){
+    return(max card c in cards: c:pusoy)
+}
+
+def bottom_rank(cards){
+    return(min card c in cards: c:pusoy)
+}
