@@ -105,6 +105,7 @@ How calls work:
 - **Scope:** a function sees its own parameters, plus anything visible in the functions that called it. If two have the same name, the innermost one wins.
 - **Return value:** the value from `return(...)`. A function that ends without returning, or that a `check` or transfer stops, gives `false`.
 - **Recursion** is allowed, but stops at a depth of 256 calls (a message is printed to stderr).
+- **Too much work:** setup or a single move that runs more than 1,000,000 statements and expressions is stopped. A move that's stopped is undone and rejected with `the move stopped: it did too much work`; setup stops with a message on stderr. The example games use a few thousand at most, so this only catches mistakes like a function that calls itself twice. A program using cardlang as a library can change the limit.
 - Calling an **unknown function** prints `unknown function '<name>'` to stderr and gives `false`.
 - If your function has the same name as a built-in, the built-in is used.
 
@@ -324,7 +325,7 @@ Equality compares type as well as value: the number `1` is not equal to the text
 
 | Function | Does | Returns |
 |---|---|---|
-| `shuffle(deck)` | Shuffles the main deck. It always shuffles `deck`, whatever you pass. | nothing |
+| `shuffle(deck)` | Shuffles the main deck. It always shuffles `deck`, whatever you pass. A game started with a [seed](cli.md#interactive-mode-cardlang) shuffles the same way every time. | nothing |
 | `count(stack)` | Counts cards. Gives `0` for anything that isn't a stack, or when called with no argument. | number |
 | `sum(stack)` | Adds up the cards' [values](#card-values). | number |
 | `cards_in_stack(cards, stack)` | Checks every card in `cards` is in `stack`. | boolean |

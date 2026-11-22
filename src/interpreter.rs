@@ -23,7 +23,8 @@ use crate::runtime::{
     MoveInput,
     Runtime,
     InitialValues,
-    Callbacks
+    Callbacks,
+    DEFAULT_STEP_LIMIT
 };
 
 #[derive(Clone, Debug)]
@@ -31,11 +32,20 @@ pub struct Game {
     name: Option<String>,
     runtime: Runtime,
     initial_values: InitialValues,
-    callbacks: Callbacks
+    callbacks: Callbacks,
+    step_limit: u64
 }
 
 impl Game {
-    pub fn new(ast: Vec<Statement>) -> Game {
+    // Reads a game from its source. The error says what's wrong and on which
+    // line, e.g. "line 3: unexpected word or symbol".
+    pub fn from_source(source: &str) -> Result<Game, String> {
+        let tokens = crate::lex::lexer(source).map_err(|e| e.to_string())?;
+        let ast = crate::parse::parse(&tokens).map_err(|e| e.to_string())?;
+        Ok(Game::new(ast))
+    }
+
+    pub(crate) fn new(ast: Vec<Statement>) -> Game {
         let mut name = None;
 
         let mut initial_values = InitialValues{ 
@@ -120,13 +130,14 @@ impl Game {
 
         }
 
-        let runtime = Runtime::new(initial_values.clone(), callbacks.clone());
+        let runtime = Runtime::new(initial_values.clone(), callbacks.clone(), 0);
 
         Game {
             name,
             runtime,
             initial_values: initial_values.clone(),
-            callbacks: callbacks.clone()
+            callbacks: callbacks.clone(),
+            step_limit: DEFAULT_STEP_LIMIT
         }
     }
 
@@ -149,13 +160,45 @@ impl Game {
             "current_player" => {
                 format!("{}", self.runtime.get_current_player())
             },
+            "seed" => self.seed().to_string(),
             _ => self.check_exploded_show(key)
         }
     }
 
+    // Starts (or restarts) the game with a random seed
     pub fn start(&mut self) {
-        self.runtime = Runtime::new(self.initial_values.clone(), self.callbacks.clone());
+        self.start_with_seed(rand::random());
+    }
+
+    // Starts (or restarts) the game. The same seed always gives the same
+    // shuffles, so a game can be replayed, tested, or run in two places
+    // (a server and a browser) that agree on the deck.
+    pub fn start_with_seed(&mut self, seed: u64) {
+        self.runtime = Runtime::new(self.initial_values.clone(), self.callbacks.clone(), seed);
+        self.runtime.set_step_limit(self.step_limit);
         self.runtime.setup();
+    }
+
+    // How much work setup or one move may do before it's stopped, counted in
+    // statements and expressions run. A move that goes over is undone and
+    // reported as an error; setup that goes over stops with a message. The
+    // default is generous; a server running rules written by players might
+    // want less.
+    pub fn set_step_limit(&mut self, limit: u64) {
+        self.step_limit = limit;
+        self.runtime.set_step_limit(limit);
+    }
+
+    // Warnings about the game's rules since the last call, oldest first: for
+    // example an unknown function, or setup stopping early. The game carries
+    // on; these are for whoever wrote it.
+    pub fn take_messages(&mut self) -> Vec<String> {
+        self.runtime.take_messages()
+    }
+
+    // The seed the game was started with
+    pub fn seed(&self) -> u64 {
+        self.runtime.get_seed()
     }
 
     // What tab completion at the CLI can offer for this game right now

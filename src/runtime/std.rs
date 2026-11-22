@@ -1,10 +1,10 @@
 use crate::cards::Card;
 use rand::seq::SliceRandom;
+use rand_chacha::ChaCha8Rng;
 use super::{PrimitiveValue, GameState};
 
-pub fn shuffle(stack: &mut [Card]) {
-    let mut rng = rand::thread_rng();
-    stack.shuffle(&mut rng);
+pub fn shuffle(stack: &mut [Card], rng: &mut ChaCha8Rng) {
+    stack.shuffle(rng);
 }
 
 pub fn end(status: &mut GameState) {

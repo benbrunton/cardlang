@@ -108,7 +108,7 @@ Making the interpreter pleasant to play at.
 
 ## Milestone 7: web and embedding
 
-Not started. The aim is to use cardlang as the rules engine inside other programs, such as a web app, and not only the CLI. There are two ways to run it:
+Not started, apart from 48, 53, 55 and 56, which moved to Milestone 9 and are done. The aim is to use cardlang as the rules engine inside other programs, such as a web app, and not only the CLI. There are two ways to run it:
 - **On a server**, which acts as the referee for networked play. Players can't cheat, and each sees only what they're allowed to.
 - **In the browser via WebAssembly**, for pass-and-play, offline play, or a playground for writing games. The engine can see every card there, so it's not enough on its own for play between people who don't trust each other.
 
@@ -156,23 +156,23 @@ Not started. The aim is to use cardlang as the rules engine inside other program
 
 1. ~~Specify Scopa~~ ✅
 2. ~~Draft the next games to find what the language is missing~~ ✅ [Klondike, Hold'em, Gin Rummy, Pusoy Dos and Pusoy Dos with Pickering rules](../examples/drafts/PROPOSALS.md)
-3. Groundwork: the parts of Milestone 7 that don't depend on the language (Milestone 9)
+3. ~~Groundwork: the parts of Milestone 7 that don't depend on the language (Milestone 9)~~ ✅
 4. Language 1.0 (Milestone 10)
 5. The rest of web and embedding (Milestone 7)
 6. Build a lightweight client
 
 The language comes before the rest of Milestone 7. Game state as data (49), visibility (50), the event log (51), listing legal moves (52) and saving games (54) all depend on what a game's state looks like, and the proposals change it: face up and face down, numbered piles, `none`, `flag` and `card`, players as numbers. Face up and face down *is* the visibility model. Building those first would mean building them twice. The groundwork in Milestone 9 isn't affected, and it makes the language work quicker: seeded shuffles give the new games repeatable tests, and returned errors let tests check messages.
 
-## Milestone 9: groundwork for 1.0 and embedding
+## Milestone 9: groundwork for 1.0 and embedding ✅
 
 Taken from Milestone 7 because they don't depend on the language.
 
 | # | Item | Status | Notes |
 |---|---|---|---|
-| 48 | Split into a library crate plus the CLI binary | ⬜ | Lets the drafts run as tests against the engine directly |
-| 53 | Seeded shuffles | ⬜ | Today the Scopa test removes `shuffle(deck)` from the source to get a known deal |
-| 56 | Return all errors and messages to the caller instead of printing to stderr | ⬜ | So tests can check them |
-| 55 | Limits on how much work one move can do | ⬜ | The new quantifiers make runaway work easier to write |
+| 48 | Split into a library crate plus the CLI binary | ✅ | `src/lib.rs` is the engine; `src/main.rs` is the CLI built on it. `tests/library.rs` uses only the public API. |
+| 53 | Seeded shuffles | ✅ | `start seed 42`, `cardlang play <file> --seed 42`, `Game::start_with_seed`. ChaCha8, so a seed deals the same everywhere, including WebAssembly. |
+| 56 | Return all errors and messages to the caller instead of printing to stderr | ✅ | `Game::take_messages()`; the CLI prints them to stderr. Loading gives `Result<Game, String>`. |
+| 55 | Limits on how much work one move can do | ✅ | 1,000,000 statements and expressions per move or setup (the heaviest Scopa move uses about 3,000). A stopped move is undone. `Game::set_step_limit` changes it. |
 
 ## Milestone 10: language 1.0
 

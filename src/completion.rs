@@ -9,10 +9,9 @@ use rustyline::hint::Hinter;
 use rustyline::validate::Validator;
 use rustyline::{Context, Helper};
 
-use crate::interpreter::CompletionContext;
-use crate::move_input::RESERVED_WORDS;
+use cardlang::{CompletionContext, RESERVED_WORDS};
 
-const SHOW_TARGETS: [&str; 6] = ["game", "name", "players", "current_player", "deck", "player"];
+const SHOW_TARGETS: [&str; 7] = ["game", "name", "players", "current_player", "deck", "seed", "player"];
 
 #[derive(Debug, PartialEq)]
 pub enum Completion {
